@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socrates Training Platform</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        socrates: {
+                            primary: '#2563EB', // Blue 600
+                            primaryHover: '#1D4ED8', // Blue 700
+                            dark: '#0F172A', // Slate 900
+                            light: '#F8FAFC', // Slate 50
+                            accent: '#10B981', // Emerald 500
+                            border: '#E2E8F0', // Slate 200
+                            text: '#334155' // Slate 700
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #F1F5F9; color: #0F172A; }
+        .card { background: white; border: 1px solid #E2E8F0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); }
+        .btn-primary { background: #2563EB; color: white; border-radius: 8px; padding: 12px 20px; font-weight: 600; font-size: 14px; transition: 0.2s; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); }
+        .btn-primary:hover { background: #1D4ED8; transform: translateY(-1px); }
+        .btn-outline { border: 1px solid #CBD5E1; color: #475569; border-radius: 8px; padding: 12px 20px; font-weight: 600; font-size: 14px; transition: 0.2s; background: white;}
+        .btn-outline:hover { background: #F8FAFC; border-color: #94A3B8; }
+        .input-field { border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px 16px; font-size: 14px; width: 100%; outline: none; transition: 0.2s; }
+        .input-field:focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        @keyframes fall {
+            0% { transform: translateY(0) rotate(0deg); }
+            100% { transform: translateY(105vh) rotate(360deg); }
+        }
+        .animate-fall {
+            animation-name: fall;
+            animation-iteration-count: infinite;
+            animation-timing-function: linear;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+    {% raw %}
+        const { useState, useEffect } = React;
+        const socket = io();
+
+        const fallbackQuestions = {
+            'zero day': {
+                question: "What is the maximum LTV ratio allowed for a standard Two-Wheeler loan?",
+                options: ["75%", "85%", "90%", "100%"],
+                correctIndex: 1
+            },
+            'six days': {
+                question: "What is the minimum CIBIL score required for a 90% LTV approval?",
+                options: ["650", "700", "750", "800"],
+                correctIndex: 2
+            },
+            'twenty days': {
+                question: "Which document is mandatory for a loan amount exceeding ₹2 Lakhs?",
+                options: ["Electricity Bill", "Rent Agreement", "ITR / Form 16", "Passport"],
+                correctIndex: 2
+            }
+        };
+
+        const App = () => {
+            const [view, setView] = useState('login'); 
+            const [empId, setEmpId] = useState('');
+            const [empDetails, setEmpDetails] = useState(null);
+            const [pin, setPin] = useState('');
+            
+            // Dynamic assessment states broadcasted by trainer
+            const [activeQuestion, setActiveQuestion] = useState('');
+            const [activeOptions, setActiveOptions] = useState([]);
+            const [activeCorrectIndex, setActiveCorrectIndex] = useState(null);
+            const [activeAssignmentDay, setActiveAssignmentDay] = useState('zero day');
+            
+            // Student scores
+            const [preTestScore, setPreTestScore] = useState(null);
+            const [postTestScore, setPostTestScore] = useState(null);
+
+            // Listen to Trainer commands via Socket.IO
+            useEffect(() => {
+                socket.on('change_view', (data) => {
+                    if (data.view) {
+                        setView(data.view);
+                    }
+                    if (data.question) {
+                        setActiveQuestion(data.question);
+                    }
+                    if (data.options) {
+                        setActiveOptions(data.options);
+                    }
+                    if (data.correctIndex !== undefined) {
+                        setActiveCorrectIndex(data.correctIndex);
+                    }
+                    if (data.assignment_day) {
+                        setActiveAssignmentDay(data.assignment_day);
+                    }
+                });
+
+                return () => {
+                    socket.off('change_view');
+                };
+            }, []);
+
+            const renderContent = () => {
+                switch(view) {
+                    case 'dashboard': return <Dashboard empDetails={empDetails} />;
+                    case 'pretest': 
+                        return (
+                            <Quiz 
+                                type="Pre-Test" 
+                                empId={empId} 
+                                pin={pin}
+                                question={activeQuestion}
+                                options={activeOptions}
+                                correctIndex={activeCorrectIndex}
+                                assignmentDay={activeAssignmentDay}
+                                onScoreSubmit={(score) => setPreTestScore(score)}
+                            />
+                        );
+                    case 'training': return <Training assignmentDay={activeAssignmentDay} />;
+                    case 'posttest': 
+                        return (
+                            <Quiz 
+                                type="Post-Test" 
+                                empId={empId} 
+                                pin={pin}
+                                question={activeQuestion}
+                                options={activeOptions}
+                                correctIndex={activeCorrectIndex}
+                                assignmentDay={activeAssignmentDay}
+                                onScoreSubmit={(score) => setPostTestScore(score)}
+                            />
+                        );
+                    case 'result': 
+                        return (
+                            <Result 
+                                preScore={preTestScore} 
+                                postScore={postTestScore} 
+                                onFinish={() => {
+                                    setView('dashboard');
+                                    setPreTestScore(null);
+                                    setPostTestScore(null);
+                                }} 
+                            />
+                        );
+                    default: return null;
+                }
+            };
+
+            if (view === 'login') {
+                return (
+                    <Login 
+                        onLogin={(id, details, sessionPin) => { 
+                            setEmpId(id); 
+                            setEmpDetails(details); 
+                            setPin(sessionPin);
+                            setView('dashboard'); 
+                            socket.emit('join_session', {pin: sessionPin, emp_id: id}); 
+                        }} 
+                    />
+                );
+            }
+
+            return (
+                <div className="max-w-md mx-auto min-h-screen bg-socrates-light flex flex-col relative border-x border-socrates-border shadow-2xl">
+                    {/* Header */}
+                    <div className="bg-white border-b border-socrates-border px-5 py-4 flex justify-between items-center sticky top-0 z-10">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-socrates-primary rounded-lg flex items-center justify-center text-white text-sm shadow-md"><i className="fas fa-brain"></i></div>
+                            <span className="font-bold text-lg tracking-tight text-socrates-dark">Socrates</span>
+                        </div>
+                        <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
+                            <div className="w-2 h-2 rounded-full bg-socrates-accent"></div>
+                            <span className="text-xs text-socrates-text font-semibold">{empId}</span>
+                        </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto p-5">
+                        {renderContent()}
+                    </div>
+                </div>
+            );
+        };
+
+        const Login = ({onLogin}) => {
+            const [pin, setPin] = useState('');
+            const [searchQuery, setSearchQuery] = useState('');
+            const [searchResults, setSearchResults] = useState([]);
+            const [selectedEmp, setSelectedEmp] = useState(null);
+            const [showDropdown, setShowDropdown] = useState(false);
+
+            useEffect(() => {
+                const term = searchQuery.trim();
+                if (term.length >= 2) {
+                    const uppercaseQuery = term.toUpperCase();
+                    fetch(`/api/roster/search?q=${encodeURIComponent(uppercaseQuery)}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            setSearchResults(data);
+                            setShowDropdown(true);
+                        })
+                        .catch(err => console.error("Search failed:", err));
+                } else {
+                    setSearchResults([]);
+                    setShowDropdown(false);
+                }
+            }, [searchQuery]);
+
+            const handleSelect = (emp) => {
+                setSelectedEmp(emp);
+                setSearchQuery(emp.emp_name);
+                setShowDropdown(false);
+            };
+
+            const handleJoin = () => {
+                if (!pin) {
+                    alert("Please enter the 4-digit Session PIN from the trainer.");
+                    return;
+                }
+                if (!selectedEmp) {
+                    alert("Please search and select your Employee Name/Code first.");
+                    return;
+                }
+                onLogin(selectedEmp.emp_code, selectedEmp, pin);
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                    <div className="card w-full max-w-sm p-8 border-t-4 border-socrates-primary relative overflow-visible">
+                        <div className="flex justify-center mb-6">
+                            <div className="w-16 h-16 bg-blue-50 text-socrates-primary rounded-2xl flex items-center justify-center text-3xl shadow-sm border border-blue-100"><i className="fas fa-brain"></i></div>
+                        </div>
+                        <h1 className="text-2xl font-bold text-center text-socrates-dark mb-2 tracking-tight">Socrates AI</h1>
+                        <p className="text-sm text-center text-slate-500 mb-8 font-medium">Socratic Method Training Platform</p>
+                        
+                        <div className="space-y-5 relative">
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Session PIN</label>
+                                <input 
+                                    type="text" 
+                                    value={pin}
+                                    onChange={e => setPin(e.target.value)}
+                                    placeholder="4-digit PIN" 
+                                    className="input-field text-center tracking-widest font-bold text-xl" 
+                                />
+                            </div>
+                            
+                            <div className="relative">
+                                <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Search Employee Profile</label>
+                                <div className="relative">
+                                    <input 
+                                        type="text" 
+                                        placeholder="Type Name or Code..." 
+                                        value={searchQuery}
+                                        onChange={e => { setSearchQuery(e.target.value.toUpperCase()); setSelectedEmp(null); }}
+                                        className="input-field font-medium pr-10 uppercase" 
+                                    />
+                                    <div className="absolute right-3 top-3.5 text-slate-400">
+                                        <i className="fas fa-search"></i>
+                                    </div>
+                                </div>
+                                
+                                {/* Autocomplete Search Dropdown */}
+                                {showDropdown && searchResults.length > 0 && (
+                                    <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                                        {searchResults.map((emp) => (
+                                            <div 
+                                                key={emp.emp_code}
+                                                onClick={() => handleSelect(emp)}
+                                                className="px-4 py-3 hover:bg-slate-50 cursor-pointer text-sm transition-colors flex justify-between items-center"
+                                            >
+                                                <div>
+                                                    <div className="font-bold text-slate-800">{emp.emp_name}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">{emp.role || 'No Role'} &bull; {emp.branch_name} &bull; {emp.business_unit}</div>
+                                                </div>
+                                                <span className="text-[10px] font-bold text-socrates-primary bg-blue-50 px-2 py-1 rounded-md">{emp.emp_code}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Auto-Fetched Profile Details Card */}
+                            {selectedEmp && (
+                                <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl p-4 mt-2 animate-fade-in shadow-inner">
+                                    <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                        <i className="fas fa-check-circle text-emerald-500 text-xs"></i> Auto-Fetched Details
+                                    </div>
+                                    <div className="text-sm font-bold text-slate-800">{selectedEmp.emp_name}</div>
+                                    <div className="grid grid-cols-2 gap-y-1.5 gap-x-4 mt-2.5 text-xs text-slate-600 font-medium">
+                                        <div><span className="text-slate-400">Code:</span> {selectedEmp.emp_code}</div>
+                                        <div><span className="text-slate-400">Role:</span> {selectedEmp.role || 'N/A'}</div>
+                                        <div><span className="text-slate-400">Branch:</span> {selectedEmp.branch_name}</div>
+                                        <div><span className="text-slate-400">Unit:</span> {selectedEmp.business_unit}</div>
+                                        <div className="col-span-2"><span className="text-slate-400">Division:</span> {selectedEmp.division}</div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            <button 
+                                onClick={handleJoin} 
+                                className="w-full btn-primary mt-6 shadow-lg flex justify-center items-center gap-2"
+                            >
+                                Join Live Session <i className="fas fa-arrow-right text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const Dashboard = ({ empDetails }) => (
+            <div>
+                <div className="mb-8 mt-4 text-center">
+                    <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-emerald-100"><i className="fas fa-check-circle text-2xl text-socrates-accent"></i></div>
+                    <h2 className="text-xl font-bold text-socrates-dark">Welcome, {empDetails?.emp_name || 'Executive'}</h2>
+                    <p className="text-xs text-slate-500 mt-1">{empDetails?.role || 'Executive'} &bull; {empDetails?.emp_code} &bull; {empDetails?.branch_name}</p>
+                    <p className="text-sm text-slate-500 mt-3 font-medium px-4 leading-relaxed">Look at the presenter screen. The trainer will initiate the assessment shortly.</p>
+                </div>
+                
+                <div className="card p-6 border-l-4 border-socrates-primary relative overflow-hidden bg-white">
+                    <div className="absolute top-0 right-0 p-4 opacity-10"><i className="fas fa-book-open text-6xl text-socrates-primary"></i></div>
+                    <div className="flex justify-between items-start mb-4 relative z-10">
+                        <span className="text-[10px] font-bold text-socrates-primary bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-md uppercase tracking-widest">Active Refresher Session</span>
+                    </div>
+                    <h4 className="text-lg font-bold text-socrates-dark mb-2 relative z-10">{empDetails?.business_unit || 'Two-Wheeler'} Product Refresher</h4>
+                    <p className="text-sm text-slate-600 mb-2 relative z-10 flex items-center gap-2"><i className="fas fa-circle-notch fa-spin text-socrates-primary"></i> Live Connection Established</p>
+                    <div className="text-xs text-slate-400 bg-slate-50 p-2.5 rounded border border-slate-100 mt-4 leading-relaxed">
+                        <span className="font-semibold text-slate-600">Profile Verified:</span> {empDetails?.division} &bull; {empDetails?.zone}
+                    </div>
+                </div>
+            </div>
+        );
+
+        const Confetti = () => {
+            const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#ef4444'];
+            return (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden z-40">
+                    {Array.from({ length: 30 }).map((_, i) => {
+                        const size = Math.random() * 8 + 6;
+                        const delay = Math.random() * 2;
+                        const duration = Math.random() * 3 + 2;
+                        const left = Math.random() * 100;
+                        const color = colors[i % colors.length];
+                        return (
+                            <div 
+                                key={i} 
+                                className="absolute rounded-sm animate-fall"
+                                style={{
+                                    width: `${size}px`,
+                                    height: `${size}px`,
+                                    backgroundColor: color,
+                                    left: `${left}%`,
+                                    top: `-20px`,
+                                    animationDelay: `${delay}s`,
+                                    animationDuration: `${duration}s`,
+                                    opacity: Math.random() * 0.7 + 0.3
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        const Quiz = ({type, empId, pin, question, options, correctIndex, assignmentDay, onScoreSubmit}) => {
+            const [selected, setSelected] = useState(null);
+            const [submitted, setSubmitted] = useState(false);
+            const [scoreInfo, setScoreInfo] = useState(null);
+            
+            const qText = question || (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].question : fallbackQuestions['zero day'].question);
+            const qOpts = (options && options.length > 0) ? options : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].options : fallbackQuestions['zero day'].options);
+            const qCorrect = correctIndex !== null ? correctIndex : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].correctIndex : fallbackQuestions['zero day'].correctIndex);
+            
+            useEffect(() => {
+                socket.on('score_confirmation', (data) => {
+                    setScoreInfo(data);
+                });
+                return () => {
+                    socket.off('score_confirmation');
+                };
+            }, []);
+
+            useEffect(() => {
+                setSelected(null);
+                setSubmitted(false);
+                setScoreInfo(null);
+            }, [question]);
+
+            const submitAnswer = () => {
+                if(selected !== null) {
+                    setSubmitted(true);
+                    // Emit vote to Trainer Console
+                    socket.emit('submit_vote', {pin: pin, emp_id: empId, answer_idx: selected});
+                    
+                    const score = selected === qCorrect ? 100 : 0;
+                    onScoreSubmit(score);
+                    
+                    const payload = {
+                        emp_code: empId,
+                        module_id: 1, // Default module
+                        assignment_day: assignmentDay
+                    };
+                    if (type === 'Pre-Test') {
+                        payload.pre_test_score = score;
+                    } else {
+                        payload.post_test_score = score;
+                    }
+
+                    fetch('/api/assessments/submit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        console.log("Score saved:", data);
+                    })
+                    .catch(err => {
+                        console.error("Score submission error:", err);
+                    });
+                }
+            };
+            
+            return (
+                <div className="card h-full flex flex-col overflow-hidden relative min-h-[400px]">
+                    {submitted && scoreInfo && scoreInfo.is_correct && <Confetti />}
+
+                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                        <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                            <span className="font-bold text-sm text-socrates-dark uppercase tracking-wide">{type}</span>
+                        </div>
+                        <span className="text-xs font-semibold text-slate-500 bg-white px-2 py-1 border border-slate-200 rounded">{assignmentDay}</span>
+                    </div>
+                    
+                    <div className="p-6 flex-1 flex flex-col justify-between">
+                        {submitted ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-4 animate-fade-in">
+                                {!scoreInfo ? (
+                                    <div className="space-y-4">
+                                        <div className="w-10 h-10 border-4 border-socrates-primary border-t-transparent rounded-full fa-spin mx-auto"></div>
+                                        <h4 className="font-bold text-sm text-slate-600 animate-pulse">Evaluating agility scores...</h4>
+                                        <p className="text-xs text-slate-400">Comparing submission speeds and verifying option mappings.</p>
+                                    </div>
+                                ) : scoreInfo.is_correct ? (
+                                    <div className="space-y-6 w-full">
+                                        <div className="w-16 h-16 bg-emerald-50 text-emerald-500 border border-emerald-100 rounded-full flex items-center justify-center text-3xl mx-auto shadow-sm animate-bounce"><i className="fas fa-check-circle"></i></div>
+                                        <div>
+                                            <h4 className="font-extrabold text-2xl text-emerald-600 tracking-tight">Correct Answer!</h4>
+                                            <p className="text-xs text-slate-400 font-medium mt-1">Excellent agility and knowledge accuracy.</p>
+                                        </div>
+                                        
+                                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 shadow-inner space-y-3 w-full text-left">
+                                            <div className="flex justify-between items-center text-xs text-emerald-800 font-medium">
+                                                <span>Base Reward:</span>
+                                                <span className="font-bold font-mono">1000 pts</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs text-emerald-800 font-semibold border-b border-emerald-100 pb-2">
+                                                <span className="flex items-center gap-1"><i className="fas fa-bolt text-amber-500 animate-pulse"></i> Speed Bonus:</span>
+                                                <span className="font-bold font-mono text-emerald-600">+{scoreInfo.speed_bonus} pts</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-sm font-bold text-emerald-950 pt-1">
+                                                <span>Points Earned:</span>
+                                                <span className="font-extrabold font-mono text-lg text-socrates-accent">+{scoreInfo.points} pts</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center text-xs font-bold text-slate-600">
+                                            <span>Session Score:</span>
+                                            <span className="font-extrabold font-mono text-sm text-socrates-dark">{scoreInfo.total_score} pts</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6 w-full">
+                                        <div className="w-16 h-16 bg-red-50 text-red-500 border border-red-100 rounded-full flex items-center justify-center text-3xl mx-auto shadow-sm"><i className="fas fa-times-circle animate-pulse"></i></div>
+                                        <div>
+                                            <h4 className="font-extrabold text-2xl text-red-600 tracking-tight">Incorrect!</h4>
+                                            <p className="text-xs text-slate-400 font-medium mt-1">Better luck in the sustainment test round.</p>
+                                        </div>
+                                        
+                                        <div className="bg-red-50/50 border border-red-100 rounded-2xl p-5 shadow-inner space-y-2 w-full text-left">
+                                            <div className="flex justify-between items-center text-xs text-red-800 font-medium">
+                                                <span>Points Earned:</span>
+                                                <span className="font-bold font-mono">+0 pts</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs text-red-800 font-semibold">
+                                                <span>Response Speed:</span>
+                                                <span className="font-bold font-mono">{scoreInfo.response_time}s</span>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center text-xs font-bold text-slate-600">
+                                            <span>Session Score:</span>
+                                            <span className="font-extrabold font-mono text-sm text-socrates-dark">{scoreInfo.total_score} pts</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                <div>
+                                    <h3 className="text-base font-semibold text-socrates-dark mb-6 leading-relaxed">
+                                        {qText}
+                                    </h3>
+                                    
+                                    <div className="space-y-3">
+                                        {qOpts.map((opt, i) => (
+                                            <button 
+                                                key={i}
+                                                onClick={() => setSelected(i)}
+                                                className={`w-full text-left p-4 rounded-xl border-2 text-sm transition-all flex items-center gap-4 ${selected === i ? 'border-socrates-primary bg-blue-50 text-socrates-primary font-semibold shadow-sm' : 'border-slate-200 text-slate-700 hover:border-blue-200 hover:bg-slate-50'}`}
+                                            >
+                                                <div className={`w-6 h-6 rounded-md border flex items-center justify-center text-[11px] font-bold ${selected === i ? 'border-socrates-primary bg-socrates-primary text-white' : 'border-slate-300 text-slate-500 bg-white'}`}>
+                                                    {String.fromCharCode(65 + i)}
+                                                </div>
+                                                {opt}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                
+                                <div className="mt-8">
+                                    <button 
+                                        onClick={submitAnswer}
+                                        disabled={selected === null}
+                                        className={`w-full shadow-md flex justify-center items-center gap-2 ${selected !== null ? 'btn-primary' : 'btn-outline bg-slate-50 text-slate-400 border-slate-200 shadow-none'}`}
+                                    >
+                                        Submit Answer <i className="fas fa-paper-plane text-xs"></i>
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const Training = ({assignmentDay}) => (
+            <div className="card h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-white to-slate-50 border-t-4 border-socrates-primary">
+                <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center text-4xl text-socrates-primary shadow-sm border border-blue-100 mb-6"><i className="fas fa-chalkboard-teacher"></i></div>
+                <h2 className="text-xl font-bold text-socrates-dark mb-3">Gap Analysis Phase</h2>
+                <p className="text-sm text-slate-500 mb-8 leading-relaxed">The trainer is currently explaining the concepts based on the Pre-Test analytics on the main screen.</p>
+                
+                <div className="w-full bg-white border border-slate-200 rounded-xl p-5 mb-8 text-left shadow-sm">
+                    <p className="text-[11px] font-bold text-socrates-primary mb-2 uppercase tracking-widest"><i className="fas fa-lightbulb mr-1"></i> Key Takeaway</p>
+                    <p className="text-sm text-slate-700 font-medium leading-relaxed">
+                        {assignmentDay === 'zero day' && "Max LTV is 85%. 90% is only for CIBIL > 750 with approval."}
+                        {assignmentDay === 'six days' && "Min CIBIL required for 90% LTV approval is 750."}
+                        {assignmentDay === 'twenty days' && "ITR / Form 16 is strictly mandatory for any loan exceeding ₹2 Lakhs."}
+                    </p>
+                </div>
+                
+                <p className="text-xs text-slate-400 font-medium flex items-center gap-2"><i className="fas fa-circle-notch fa-spin"></i> Waiting for Post-Test...</p>
+            </div>
+        );
+
+        const Result = ({preScore, postScore, onFinish}) => (
+            <div className="card h-full flex flex-col items-center justify-center p-8 text-center border-t-4 border-socrates-accent">
+                <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-4xl text-socrates-accent shadow-sm border border-emerald-100 mb-6"><i className="fas fa-trophy"></i></div>
+                <h2 className="text-xl font-bold text-socrates-dark mb-2">Session Complete</h2>
+                <p className="text-sm text-slate-500 mb-8">Your assessment results have been recorded.</p>
+                
+                <div className="w-full space-y-3 mb-10">
+                    <div className="flex justify-between items-center p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                        <span className="text-sm text-slate-600 font-medium">Pre-Test Score</span>
+                        <span className="font-bold text-base text-socrates-dark">{preScore !== null ? `${preScore}%` : 'N/A'}</span>
+                    </div>
+                    <div className="flex justify-between items-center p-4 bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm">
+                        <span className="text-sm text-emerald-800 font-bold">Post-Test Score</span>
+                        <span className="font-bold text-lg text-emerald-600">{postScore !== null ? `${postScore}%` : 'N/A'}</span>
+                    </div>
+                </div>
+                
+                <button onClick={onFinish} className="w-full btn-primary">
+                    Return to Dashboard
+                </button>
+            </div>
+        );
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    {% endraw %}
+    </script>
+</body>
+</html>

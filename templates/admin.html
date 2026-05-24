@@ -1,0 +1,2326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socrates Admin Portal</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        socrates: {
+                            primary: '#2563EB', primaryHover: '#1D4ED8', dark: '#0F172A',
+                            light: '#F8FAFC', accent: '#10B981', border: '#E2E8F0', text: '#334155'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #F1F5F9; color: #0F172A; }
+        .card { background: white; border: 1px solid #E2E8F0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .btn-primary { background: #2563EB; color: white; border-radius: 8px; padding: 10px 18px; font-weight: 600; font-size: 14px; transition: 0.2s; cursor: pointer; }
+        .btn-primary:hover { background: #1D4ED8; transform: translateY(-1px); }
+        .btn-outline { border: 1px solid #CBD5E1; background: white; color: #475569; border-radius: 8px; padding: 10px 18px; font-weight: 600; font-size: 14px; transition: 0.2s; cursor: pointer; }
+        .btn-outline:hover { background: #F8FAFC; border-color: #94A3B8; }
+        .nav-link { display: flex; align-items: center; gap: 12px; padding: 12px 16px; color: #64748B; font-weight: 600; font-size: 14px; border-radius: 8px; transition: 0.2s; cursor: pointer; margin-bottom: 4px; }
+        .nav-link:hover { background: #F1F5F9; color: #0F172A; }
+        .nav-link.active { background: #EFF6FF; color: #2563EB; }
+        .input-field { border: 1px solid #CBD5E1; border-radius: 8px; padding: 10px 16px; font-size: 14px; width: 100%; outline: none; transition: 0.2s; }
+        .input-field:focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+        @keyframes fall {
+            0% { transform: translateY(0) rotate(0deg); }
+            100% { transform: translateY(105vh) rotate(360deg); }
+        }
+        .animate-fall {
+            animation-name: fall;
+            animation-iteration-count: infinite;
+            animation-timing-function: linear;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+    {% raw %}
+        const { useState, useEffect } = React;
+        const socket = io();
+
+        // MOCK OFFLINE DATABASE USING LOCALSTORAGE
+        const db = {
+            get: (key) => JSON.parse(localStorage.getItem(key) || '[]'),
+            set: (key, val) => localStorage.setItem(key, JSON.stringify(val)),
+            init: () => {
+                if(!localStorage.getItem('s_trainers')) {
+                    db.set('s_trainers', [
+                        { id: 'TR-1001', name: 'Sanjay Verma', zone: 'North Zone', status: 'Active', password: 'password123' },
+                        { id: 'TR-1002', name: 'Priya Desai', zone: 'West Zone', status: 'Active', password: 'password123' },
+                        { id: 'TR-1003', name: 'Arun Kumar', zone: 'South Zone', status: 'Active', password: 'password123' }
+                    ]);
+                }
+                if(!localStorage.getItem('s_modules')) {
+                    const sampleQuestions = [
+                        "What is the maximum Loan-to-Value (LTV) ratio allowed for Tier 1 cities?",
+                        "Which of the following documents is NOT accepted as valid address proof?",
+                        "What is the minimum CIBIL score required for a standard 2-wheeler loan approval?",
+                        "How many days is the standard grace period for the first EMI payment?",
+                        "Under the new AML policy, transactions above what amount require mandatory PAN card verification?",
+                        "What is the maximum tenure for a commercial vehicle loan?",
+                        "Who is the final approving authority for a loan deviation of 5% in the interest rate?",
+                        "In case of a bounced cheque, what is the standard bounce charge levied on the customer?",
+                        "Is physical verification mandatory for repeat customers with a clean track record?",
+                        "What is the processing fee percentage for two-wheeler loans under the festive offer?",
+                        "Which mobile application should the executive use to upload the customer's KYC documents?",
+                        "What is the maximum allowed gap between the date of invoice and loan disbursement?",
+                        "If a customer requests prepayment within 6 months, what is the foreclosure charge?",
+                        "Which insurance cover is mandatory before disbursing the vehicle loan?",
+                        "What is the TAT (Turn Around Time) for credit approval after complete document submission?"
+                    ];
+                    db.set('s_modules', [
+                        { id: 1, title: 'Two-Wheeler Product Policy V2', questions: 15, date: '2 days ago', qList: [...sampleQuestions] },
+                        { id: 2, title: 'AML & KYC Compliance 2026', questions: 15, date: '1 week ago', qList: [...sampleQuestions] }
+                    ]);
+                }
+                if(!localStorage.getItem('s_roster')) {
+                    db.set('s_roster', [
+                        { emp_code: 'SF-1001', emp_name: 'Rahul Singh', branch_name: 'Delhi South', zone: 'North Zone', business_unit: 'Two-Wheeler' },
+                        { emp_code: 'SF-1002', emp_name: 'Neha Sharma', branch_name: 'Mumbai Bandra', zone: 'West Zone', business_unit: 'Two-Wheeler' },
+                        { emp_code: 'SF-1003', emp_name: 'Karthik Iyer', branch_name: 'Bangalore Central', zone: 'South Zone', business_unit: 'Commercial' },
+                        { emp_code: 'SF-1004', emp_name: 'Amit Patel', branch_name: 'Ahmedabad', zone: 'West Zone', business_unit: 'Two-Wheeler' },
+                        { emp_code: 'SF-1005', emp_name: 'Sneha Gupta', branch_name: 'Lucknow', zone: 'North Zone', business_unit: 'Retail' }
+                    ]);
+                }
+            }
+        };
+        db.init();
+
+        const App = () => {
+            const [view, setView] = useState('login'); 
+            const [user, setUser] = useState(null); 
+
+            const renderContent = () => {
+                switch(view) {
+                    case 'dashboard': return <AdminDashboard onNav={setView} user={user} />;
+                    case 'live_session': return <LiveSession onClose={() => setView('dashboard')} user={user} />;
+                    case 'roster': return <RosterView />;
+                    case 'library': return <LibraryView user={user} />;
+                    case 'analytics': return <AnalyticsView />;
+                    case 'access_mgmt': return <AccessMgmtView />;
+                    default: return <AdminDashboard onNav={setView} user={user} />;
+                }
+            };
+
+            const downloadTemplate = () => {
+                const csvData = "Emp Code,Name,Branch,Zone,BU\nSF-1001,John Doe,HQ,North,Retail\nSF-1002,Jane Smith,Ahmedabad,West,Loans";
+                const blob = new Blob([csvData], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Socrates_Roster_Template.csv';
+                a.click();
+            };
+
+            const handleLogin = (id, pwd) => {
+                fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trainer_id: id.toUpperCase().trim(), password: pwd })
+                })
+                .then(res => {
+                    if (res.ok) {
+                        return res.json();
+                    } else {
+                        return res.json().then(err => { throw new Error(err.message || 'Invalid Credentials'); });
+                    }
+                })
+                .then(data => {
+                    setUser({ id: id.toUpperCase().trim(), name: data.name, role: data.role });
+                    setView('dashboard');
+                })
+                .catch(err => {
+                    console.error("Login failure:", err);
+                    alert("❌ Login Failed: " + err.message);
+                });
+            };
+
+            if (view === 'login') {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                        <div className="card w-full max-w-sm p-8 border-t-4 border-socrates-primary">
+                            <div className="flex justify-center mb-6">
+                                <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-socrates-primary text-3xl shadow-sm border border-blue-100"><i className="fas fa-brain"></i></div>
+                            </div>
+                            <h1 className="text-2xl font-bold text-center text-socrates-dark mb-2 tracking-tight">Socrates Admin</h1>
+                            <p className="text-sm text-center text-slate-500 mb-8 font-medium">Training Operations Console</p>
+                            
+                            <div className="space-y-5">
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Trainer / Admin ID</label>
+                                    <input type="text" id="loginId" defaultValue="ADMIN" className="input-field font-medium" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-semibold text-slate-600 mb-1.5 uppercase tracking-wide">Password</label>
+                                    <input type="password" id="loginPwd" defaultValue="admin123" className="input-field" />
+                                </div>
+                                <button onClick={() => handleLogin(document.getElementById('loginId').value, document.getElementById('loginPwd').value)} className="w-full btn-primary mt-6">Secure Login</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    <div className="w-64 bg-white border-r border-socrates-border flex flex-col z-10 hidden md:flex shadow-sm">
+                        <div className="p-6 border-b border-socrates-border">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-socrates-primary rounded-lg flex items-center justify-center text-white text-sm shadow-md"><i className="fas fa-brain"></i></div>
+                                <span className="font-bold text-xl tracking-tight text-socrates-dark">Socrates</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-2 uppercase font-bold tracking-widest">{user?.role} Console</p>
+                        </div>
+                        <div className="flex-1 p-4 overflow-y-auto">
+                            <div onClick={() => setView('dashboard')} className={`nav-link ${view==='dashboard'?'active':''}`}><i className="fas fa-layer-group w-5"></i> Dashboard</div>
+                            <div onClick={() => setView('live_session')} className={`nav-link ${view==='live_session'?'active':''}`}><i className="fas fa-satellite-dish w-5"></i> Live Session Control</div>
+                            <div onClick={() => setView('library')} className={`nav-link ${view==='library'?'active':''}`}><i className="fas fa-robot w-5"></i> AI Module Library</div>
+                            <div onClick={() => setView('roster')} className={`nav-link ${view==='roster'?'active':''}`}><i className="fas fa-users-cog w-5"></i> Employee Roster</div>
+                            <div onClick={() => setView('analytics')} className={`nav-link ${view==='analytics'?'active':''}`}><i className="fas fa-chart-pie w-5"></i> Analytics Hub</div>
+                            
+                            {user?.role === 'SuperAdmin' && (
+                                <div onClick={() => setView('access_mgmt')} className={`nav-link ${view==='access_mgmt'?'active':''} mt-4 border-t border-slate-100 pt-4`}><i className="fas fa-user-shield w-5 text-purple-500"></i> Access Control</div>
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-socrates-border bg-slate-50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-socrates-primary border border-blue-200">{user?.name?.substring(0,2)}</div>
+                                <div>
+                                    <div className="font-semibold text-sm text-socrates-dark">{user?.name}</div>
+                                    <div className="text-xs text-slate-500 font-medium cursor-pointer hover:text-socrates-primary transition-colors" onClick={() => {setUser(null); setView('login');}}>Log Out</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="flex-1 flex flex-col overflow-y-auto">
+                        <div className="bg-white border-b border-socrates-border px-8 py-5 flex justify-between items-center sticky top-0 z-10 shadow-sm">
+                            <h1 className="text-xl font-bold text-socrates-dark capitalize tracking-tight">{view.replace('_', ' ')}</h1>
+                            <div className="flex items-center gap-3">
+                                {view === 'roster' && <button onClick={downloadTemplate} className="btn-outline text-xs flex items-center shadow-sm"><i className="fas fa-download mr-2 text-socrates-primary"></i> Download Template</button>}
+                                <button className="btn-primary flex items-center shadow-md" onClick={() => setView('live_session')}><i className="fas fa-play mr-2"></i> Start Session</button>
+                            </div>
+                        </div>
+                        <div className="p-8 max-w-7xl mx-auto w-full">
+                            {renderContent()}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AdminDashboard = ({onNav, user}) => {
+            const [modules, setModules] = useState([]);
+            const [selectedModId, setSelectedModId] = useState('');
+            const [loading, setLoading] = useState(true);
+            const [stats, setStats] = useState({
+                sessions_count: 12,
+                branches_visited: 4,
+                execs_trained: 340,
+                avg_growth_delta: 42.0,
+                modules_count: 0,
+                recent_sessions: [],
+                top_branches: [],
+                pending_audits: []
+            });
+            
+            const loadModules = () => {
+                const trId = user?.id || 'ADMIN';
+                fetch(`/api/modules?trainer_id=${encodeURIComponent(trId)}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        setModules(data);
+                        if (data.length > 0) {
+                            setSelectedModId(data[0].id.toString());
+                        }
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Dashboard fetch modules error:", err);
+                        const fallback = db.get('s_modules') || [];
+                        setModules(fallback);
+                        if (fallback.length > 0) {
+                            setSelectedModId(fallback[0].id.toString());
+                        }
+                        setLoading(false);
+                    });
+            };
+
+            const loadStats = () => {
+                fetch('/api/dashboard/stats')
+                    .then(res => res.json())
+                    .then(data => setStats(data))
+                    .catch(err => console.error("Dashboard fetch stats error:", err));
+            };
+
+            useEffect(() => {
+                loadModules();
+                loadStats();
+            }, [user]);
+            
+            const selectedModule = modules.find(m => m.id.toString() === selectedModId);
+            const isPendingAudit = selectedModule && selectedModule.status === 'Pending Audit';
+            const approvedCount = selectedModule?.questions ? selectedModule.questions.filter(q => q.approved === 1).length : 0;
+            const totalCount = selectedModule?.questions_count || selectedModule?.questions?.length || 15;
+
+            const startSession = () => {
+                if(!selectedModId || modules.length === 0) {
+                    alert("Please select a module first.");
+                    return;
+                }
+                if (isPendingAudit) {
+                    alert(`⚠️ Live launch blocked. Module '${selectedModule.title}' is still pending trainer audit (${approvedCount}/${totalCount} approved). Please complete the audit in the AI Library first.`);
+                    return;
+                }
+                localStorage.setItem('socrates_active_module', JSON.stringify(selectedModule));
+                onNav('live_session');
+            };
+
+            return (
+                <div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 animate-fade-in">
+                        {/* Session Stats */}
+                        <div className="card p-6 border-l-4 border-l-blue-600 bg-white relative overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group">
+                            <div className="absolute right-3 top-3 w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center text-sm font-semibold opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all"><i className="fas fa-satellite-dish"></i></div>
+                            <div className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">Sessions (MTD)</div>
+                            <div className="text-3xl font-extrabold text-socrates-dark">{stats.sessions_count}</div>
+                            <div className="text-xs text-slate-500 mt-3 font-semibold flex items-center gap-1.5"><i className="fas fa-map-marker-alt text-slate-400"></i> {stats.branches_visited} Branches Visited</div>
+                        </div>
+
+                        {/* Growth Delta */}
+                        <div className="card p-6 border-l-4 border-l-emerald-500 bg-white relative overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group">
+                            <div className="absolute right-3 top-3 w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center text-sm font-semibold opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all"><i className="fas fa-chart-line"></i></div>
+                            <div className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">Avg Growth Delta</div>
+                            <div className="text-3xl font-extrabold text-emerald-600">+{stats.avg_growth_delta}%</div>
+                            <div className="text-xs text-emerald-600 mt-3 font-bold flex items-center gap-1.5"><i className="fas fa-arrow-up"></i> Growth pre vs post test</div>
+                        </div>
+
+                        {/* Execs Trained */}
+                        <div className="card p-6 border-l-4 border-l-purple-500 bg-white relative overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group">
+                            <div className="absolute right-3 top-3 w-10 h-10 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center text-sm font-semibold opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all"><i className="fas fa-users-class"></i></div>
+                            <div className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">Execs Trained</div>
+                            <div className="text-3xl font-extrabold text-socrates-dark">{stats.execs_trained}</div>
+                            <div className="text-xs text-slate-500 mt-3 font-semibold flex items-center gap-1.5"><i className="fas fa-globe"></i> Active across zones</div>
+                        </div>
+
+                        {/* AI Modules */}
+                        <div className="card p-6 border-l-4 border-l-amber-500 bg-white relative overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group cursor-pointer" onClick={() => onNav('library')}>
+                            <div className="absolute right-3 top-3 w-10 h-10 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center text-sm font-semibold opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all"><i className="fas fa-robot"></i></div>
+                            <div className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">AI Modules</div>
+                            <div className="text-3xl font-extrabold text-socrates-dark">{stats.modules_count || modules.length}</div>
+                            <div className="text-xs text-socrates-primary mt-3 font-bold flex items-center gap-1">Manage Library &rarr;</div>
+                        </div>
+                    </div>
+
+                    {/* Main Content Layout Grid */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+                        {/* Left Columns (Sess Control & History Log) */}
+                        <div className="lg:col-span-2 space-y-8">
+                            {/* Launch Session Card */}
+                            <div className="card p-8 bg-white border border-socrates-border relative overflow-hidden shadow-sm">
+                                <div className="absolute top-0 left-0 w-full h-1.5 bg-socrates-primary"></div>
+                                <div className="flex items-center justify-between mb-6">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-xl text-socrates-primary border border-blue-100 shadow-sm"><i className="fas fa-play"></i></div>
+                                        <div>
+                                            <h2 className="text-lg font-bold text-socrates-dark tracking-tight">Ready to Train?</h2>
+                                            <p className="text-xs text-slate-500 font-medium">Select an AI-generated module to launch the live broadcast environment</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+                                    <div className="md:col-span-2">
+                                        <label className="block text-[11px] font-bold text-slate-600 mb-2 uppercase tracking-wider"><i className="fas fa-book-open mr-1 text-socrates-primary"></i> Select Training Module</label>
+                                        {loading ? (
+                                            <div className="py-3 flex items-center justify-center gap-2 border border-slate-200 rounded-lg bg-slate-50">
+                                                <div className="w-4 h-4 border-2 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
+                                                <span className="text-xs font-semibold text-slate-400">Loading modules...</span>
+                                            </div>
+                                        ) : (
+                                            <select 
+                                                value={selectedModId} 
+                                                onChange={(e)=>setSelectedModId(e.target.value)} 
+                                                className="input-field bg-white shadow-sm border-slate-300 py-3 text-sm font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
+                                            >
+                                                {modules.length === 0 && <option value="">No modules available - Go to AI Library</option>}
+                                                {modules.map(m => {
+                                                    const appCount = m.questions ? m.questions.filter(q => q.approved === 1).length : 0;
+                                                    const totCount = m.questions_count || m.questions?.length || 15;
+                                                    const isPending = m.status === 'Pending Audit';
+                                                    return (
+                                                        <option key={m.id} value={m.id.toString()}>
+                                                            {m.title} {isPending ? `⚠️ (Pending Audit - ${appCount}/${totCount} Approved)` : `✓ (Ready - ${totCount} Qs)`}
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        )}
+                                    </div>
+
+                                    <div>
+                                        <button 
+                                            className={`w-full py-3 text-sm shadow-md flex items-center justify-center gap-2.5 transition-all ${
+                                                isPendingAudit || modules.length === 0
+                                                    ? 'bg-slate-300 text-slate-500 border border-slate-200 cursor-not-allowed shadow-none rounded-xl' 
+                                                    : 'btn-primary'
+                                            }`}
+                                            onClick={startSession}
+                                            disabled={isPendingAudit || modules.length === 0}
+                                        >
+                                            {isPendingAudit ? (
+                                                <><i className="fas fa-ban"></i> Audit Pending</>
+                                            ) : (
+                                                <><i className="fas fa-satellite-dish animate-pulse"></i> Launch Live Session</>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {!loading && isPendingAudit && (
+                                    <div className="mt-5 p-4 rounded-xl border border-amber-200 bg-amber-50/50 flex items-start gap-3 animate-fade-in">
+                                        <i className="fas fa-exclamation-triangle text-amber-600 text-sm mt-0.5 animate-bounce"></i>
+                                        <div>
+                                            <div className="text-xs font-bold text-amber-800">Trainer Audit Pending</div>
+                                            <p className="text-[11px] text-amber-700 font-medium mt-1 leading-normal">
+                                                This module is currently a Draft and cannot be launched in the broadcast environment until all questions are approved. 
+                                                Go to the <strong className="cursor-pointer underline text-socrates-primary hover:text-socrates-primaryHover" onClick={() => onNav('library')}>AI Library</strong> and click <strong>Resume Audit</strong> to review and approve questions.
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Recent Socratic Sessions Table */}
+                            <div className="card p-6 bg-white border border-socrates-border shadow-sm">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <i className="fas fa-history text-slate-400"></i>
+                                        <h3 className="font-bold text-base text-socrates-dark tracking-tight">Recent Socratic Sessions</h3>
+                                    </div>
+                                    <span className="text-[10px] bg-blue-50 text-socrates-primary font-bold px-2 py-1 rounded-full uppercase tracking-wider">Live Logs</span>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead>
+                                            <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
+                                                <th className="py-3 px-1 font-semibold text-[10px]">Date</th>
+                                                <th className="py-3 px-1 font-semibold text-[10px]">Module Title</th>
+                                                <th className="py-3 px-1 font-semibold text-[10px]">Branch / Location</th>
+                                                <th className="py-3 px-1 font-semibold text-[10px]">Trainer</th>
+                                                <th className="py-3 px-1 font-semibold text-[10px] text-center">Trainees</th>
+                                                <th className="py-3 px-1 font-semibold text-[10px] text-right">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-50 font-medium text-slate-700">
+                                            {stats.recent_sessions && stats.recent_sessions.map((sess, idx) => (
+                                                <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                    <td className="py-3 px-1 text-slate-500 font-bold">{sess.date}</td>
+                                                    <td className="py-3 px-1 font-semibold text-socrates-dark">{sess.module_title}</td>
+                                                    <td className="py-3 px-1"><i className="fas fa-map-marker-alt text-slate-400 mr-1"></i> {sess.branch_name}</td>
+                                                    <td className="py-3 px-1">{sess.trainer_name || 'System Auto'}</td>
+                                                    <td className="py-3 px-1 text-center"><span className="font-bold text-slate-900 bg-slate-50 rounded-lg px-2.5 py-1 inline-block">{sess.attendee_count}</span></td>
+                                                    <td className="py-3 px-1 text-right">
+                                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full"><i className="fas fa-circle-check"></i> Completed</span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Column (Leaderboards & Maker-Checker Alerts) */}
+                        <div className="space-y-8">
+                            {/* Branch Performance Leaderboard */}
+                            <div className="card p-6 bg-white border border-socrates-border shadow-sm">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <i className="fas fa-trophy text-amber-500"></i>
+                                        <h3 className="font-bold text-base text-socrates-dark tracking-tight">Branch Leaderboard</h3>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Top Performing</span>
+                                </div>
+                                <div className="space-y-4">
+                                    {stats.top_branches && stats.top_branches.map((b, idx) => {
+                                        const rankColors = ['bg-amber-100 text-amber-800 border-amber-200', 'bg-slate-100 text-slate-700 border-slate-200', 'bg-orange-100 text-orange-800 border-orange-200'];
+                                        const isTopThree = idx < 3;
+                                        return (
+                                            <div key={idx} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 hover:border-blue-100 hover:bg-blue-50/10 transition-all group">
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${isTopThree ? rankColors[idx] : 'bg-slate-50 text-slate-400 border-slate-150'}`}>{idx+1}</div>
+                                                    <div>
+                                                        <div className="text-xs font-bold text-socrates-dark tracking-tight">{b.branch_name}</div>
+                                                        <div className="text-[10px] text-slate-400 font-semibold">{b.count} executives trained</div>
+                                                    </div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full inline-block">+{b.growth_delta}%</div>
+                                                    <div className="text-[9px] text-slate-400 font-bold mt-0.5 uppercase tracking-widest">Growth Delta</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Pending Maker-Checker Audits */}
+                            <div className="card p-6 bg-white border border-socrates-border shadow-sm">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-2">
+                                        <i className="fas fa-clipboard-check text-purple-500"></i>
+                                        <h3 className="font-bold text-base text-socrates-dark tracking-tight">Maker-Checker Audits</h3>
+                                    </div>
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Awaiting Sign-off</span>
+                                </div>
+                                <div className="space-y-4">
+                                    {stats.pending_audits && stats.pending_audits.map((mod, idx) => {
+                                        const pct = Math.round((mod.approved_count / mod.questions_count) * 100);
+                                        return (
+                                            <div key={idx} className="p-3.5 rounded-xl border border-purple-100 bg-purple-50/10 hover:bg-purple-50/30 transition-all">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-xs font-bold text-socrates-dark truncate pr-2 max-w-[150px]">{mod.title}</span>
+                                                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100/50 px-2 py-0.5 rounded-full">{mod.approved_count}/{mod.questions_count} Qs</span>
+                                                </div>
+                                                {/* Visual progress bar */}
+                                                <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden mb-3">
+                                                    <div className="h-full bg-purple-600 rounded-full transition-all duration-500" style={{width: `${pct}%`}}></div>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{pct}% Complete</span>
+                                                    <button onClick={() => onNav('library')} className="text-[10px] text-purple-600 hover:text-purple-800 font-extrabold flex items-center gap-1 transition-colors">Resume &rarr;</button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const RosterView = () => {
+            const [emps, setEmps] = useState([]);
+            const [errorMsg, setErrorMsg] = useState('');
+            const [errorDetails, setErrorDetails] = useState([]);
+            const [successMsg, setSuccessMsg] = useState('');
+            const [showManualModal, setShowManualModal] = useState(false);
+            
+            // Manual form fields
+            const [empCode, setEmpCode] = useState('');
+            const [empName, setEmpName] = useState('');
+            const [branchName, setBranchName] = useState('');
+            const [zone, setZone] = useState('AMD_BU');
+            const [division, setDivision] = useState('');
+            const [bu, setBu] = useState('Two-Wheeler');
+            const [role, setRole] = useState('PL Exe');
+
+            const loadEmps = () => {
+                fetch('/api/roster')
+                    .then(res => res.json())
+                    .then(data => {
+                        setEmps(data);
+                    })
+                    .catch(err => {
+                        console.log("Using offline fallback", err);
+                        setEmps(db.get('s_roster'));
+                    });
+            };
+
+            useEffect(() => { loadEmps(); }, []);
+
+            const handleUpload = (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                
+                setErrorMsg('');
+                setErrorDetails([]);
+                setSuccessMsg('');
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                fetch('/api/roster/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setSuccessMsg(data.message);
+                        loadEmps();
+                    } else {
+                        setErrorMsg(data.message);
+                        setErrorDetails(data.details || []);
+                    }
+                })
+                .catch(err => {
+                    setErrorMsg("Server error uploading file. Duplicacy or network check failed.");
+                });
+            };
+
+            const handleManualSubmit = (e) => {
+                e.preventDefault();
+                setErrorMsg('');
+                setErrorDetails([]);
+                setSuccessMsg('');
+
+                const payload = {
+                    emp_code: empCode.toUpperCase().trim(),
+                    emp_name: empName.trim(),
+                    branch_name: branchName.trim(),
+                    zone: zone,
+                    division: division.trim(),
+                    business_unit: bu,
+                    role: role.trim()
+                };
+
+                fetch('/api/roster/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setSuccessMsg(data.message);
+                        setShowManualModal(false);
+                        // Reset form
+                        setEmpCode('');
+                        setEmpName('');
+                        setBranchName('');
+                        setDivision('');
+                        setRole('PL Exe');
+                        setZone('AMD_BU');
+                        loadEmps();
+                    } else {
+                        setErrorMsg(data.message);
+                        setErrorDetails(data.details || []);
+                    }
+                })
+                .catch(err => {
+                    setErrorMsg("Failed to add employee manually.");
+                });
+            };
+
+            return (
+                <div className="space-y-6">
+                    {/* Manual Entry Modal */}
+                    {showManualModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all">
+                                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-socrates-dark">Add Executive Manually</h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">Register a new employee for active training sessions.</p>
+                                    </div>
+                                    <button onClick={() => setShowManualModal(false)} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
+                                </div>
+                                <form onSubmit={handleManualSubmit}>
+                                    <div className="p-6 space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Employee Code (Required)</label>
+                                            <input type="text" value={empCode} onChange={e => setEmpCode(e.target.value.toUpperCase())} required placeholder="e.g. SF-1008" className="input-field uppercase font-bold" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Employee Name (Required)</label>
+                                            <input type="text" value={empName} onChange={e => setEmpName(e.target.value.toUpperCase())} required placeholder="e.g. RAJESH KUMAR" className="input-field uppercase" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Role / Designation</label>
+                                            <select value={role} onChange={e => setRole(e.target.value)} className="input-field bg-white">
+                                                <option value="PL Exe">PL Exe</option>
+                                                <option value="SPH / SBH">SPH / SBH</option>
+                                                <option value="CSE">CSE</option>
+                                                <option value="BTL">BTL</option>
+                                                <option value="DBH / DPH">DBH / DPH</option>
+                                                <option value="BH / BPH">BH / BPH</option>
+                                                <option value="CPU Team">CPU Team</option>
+                                                <option value="DTL">DTL</option>
+                                            </select>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
+                                                <input type="text" value={branchName} onChange={e => setBranchName(e.target.value.toUpperCase())} placeholder="e.g. AHMEDABAD" className="input-field uppercase" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
+                                                <input type="text" value={division} onChange={e => setDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
+                                                <select value={zone} onChange={e => setZone(e.target.value)} className="input-field bg-white">
+                                                    <option value="AMD_BU">AMD_BU</option>
+                                                    <option value="CH_BU">CH_BU</option>
+                                                    <option value="DEL_BU">DEL_BU</option>
+                                                    <option value="KOL_BU">KOL_BU</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
+                                                <select value={bu} onChange={e => setBu(e.target.value)} className="input-field bg-white">
+                                                    <option>Two-Wheeler</option>
+                                                    <option>Personal Loan</option>
+                                                    <option>Gold Loan</option>
+                                                    <option>Commercial Vehicle</option>
+                                                    <option>Retail</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                                        <button type="button" onClick={() => setShowManualModal(false)} className="btn-outline">Cancel</button>
+                                        <button type="submit" className="btn-primary shadow-md">Add Executive</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Alert Notifications */}
+                    {successMsg && (
+                        <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 rounded-lg text-emerald-800 text-sm font-medium flex items-center gap-3 shadow-sm animate-fade-in">
+                            <i className="fas fa-check-circle text-lg text-emerald-500"></i>
+                            <div>{successMsg}</div>
+                        </div>
+                    )}
+
+                    {errorMsg && (
+                        <div className="p-5 bg-red-50 border border-red-200 rounded-xl shadow-md text-red-900 animate-fade-in space-y-3">
+                            <div className="flex items-start gap-3">
+                                <i className="fas fa-exclamation-triangle text-xl text-red-600 mt-0.5"></i>
+                                <div>
+                                    <h4 className="font-extrabold text-red-800">{errorMsg}</h4>
+                                    <p className="text-xs text-red-700 mt-1">Please review and fix the duplicate records before uploading.</p>
+                                </div>
+                            </div>
+                            {errorDetails.length > 0 && (
+                                <div className="bg-white rounded-lg border border-red-100 p-3 max-h-40 overflow-y-auto space-y-1.5 shadow-inner">
+                                    {errorDetails.map((det, idx) => (
+                                        <div key={idx} className="text-xs text-red-700 flex items-center gap-2">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
+                                            {det}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Roster Controls */}
+                    <div className="card overflow-hidden">
+                        <div className="px-6 py-5 border-b border-socrates-border flex flex-wrap justify-between items-center gap-4 bg-white shadow-sm">
+                            <div>
+                                <h3 className="font-bold text-socrates-dark text-lg">Employee Master Roster</h3>
+                                <p className="text-xs text-slate-500 mt-0.5">Upload a CSV roster or add executives manually on the fly.</p>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={() => { setErrorMsg(''); setErrorDetails([]); setSuccessMsg(''); setShowManualModal(true); }} className="btn-outline text-sm flex items-center shadow-sm hover:border-socrates-primary">
+                                    <i className="fas fa-user-plus mr-2 text-socrates-primary"></i> Add Manually
+                                </button>
+                                <div className="relative overflow-hidden inline-block">
+                                    <button className="btn-primary text-sm flex items-center shadow-sm"><i className="fas fa-cloud-upload-alt mr-2"></i> Upload CSV</button>
+                                    <input type="file" accept=".csv" onChange={handleUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm border-collapse">
+                                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Emp Code</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Name</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Role</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Branch</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Zone</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Business Unit</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                    {emps.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="6" className="px-6 py-12 text-center text-slate-400 font-medium">
+                                                <i className="fas fa-users text-4xl text-slate-200 mb-3 block"></i>
+                                                No employees registered yet. Upload a CSV roster to begin.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        emps.map((e, i) => (
+                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-6 py-4 font-semibold text-socrates-primary">{e.emp_code}</td>
+                                                <td className="px-6 py-4 font-medium text-socrates-dark">{e.emp_name}</td>
+                                                <td className="px-6 py-4 font-medium text-slate-700">{e.role || 'N/A'}</td>
+                                                <td className="px-6 py-4 text-slate-600">{e.branch_name}</td>
+                                                <td className="px-6 py-4 text-slate-600">{e.zone}</td>
+                                                <td className="px-6 py-4 text-slate-600">{e.business_unit}</td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+
+        const LibraryView = ({user}) => {
+            const [status, setStatus] = useState('idle'); // idle, loading, generating, review
+            const [modules, setModules] = useState([]);
+            const [title, setTitle] = useState('');
+            const [qCount, setQCount] = useState(15);
+            const [selectedFile, setSelectedFile] = useState(null);
+            
+            // Auditor review states
+            const [reviewModuleId, setReviewModuleId] = useState(null);
+            const [reviewTitle, setReviewTitle] = useState('');
+            const [reviewQuestions, setReviewQuestions] = useState([]);
+
+            const loadModules = () => {
+                const trId = user?.id || 'ADMIN';
+                fetch(`/api/modules?trainer_id=${encodeURIComponent(trId)}`)
+                    .then(res => res.json())
+                    .then(data => setModules(data))
+                    .catch(err => {
+                        console.error("Using offline fallback modules:", err);
+                        setModules(db.get('s_modules') || []);
+                    });
+            };
+            
+            useEffect(() => { loadModules(); }, []);
+
+            const handleDelete = (id) => {
+                if(confirm('Are you sure you want to delete this module?')) {
+                    fetch(`/api/modules/${id}`, { method: 'DELETE' })
+                        .then(res => res.json())
+                        .then(() => {
+                            loadModules();
+                        })
+                        .catch(err => {
+                            console.error("Offline delete fallback:", err);
+                            const updated = modules.filter(m => m.id !== id);
+                            db.set('s_modules', updated);
+                            loadModules();
+                        });
+                }
+            };
+
+            const startGenerator = () => {
+                if(!title) return alert("Please enter a Module Title.");
+                
+                setStatus('loading');
+                const formData = new FormData();
+                formData.append('title', title);
+                formData.append('count', qCount);
+                formData.append('trainer_id', user?.id || 'ADMIN');
+                if (selectedFile) {
+                    formData.append('file', selectedFile);
+                }
+                
+                fetch('/api/modules/generate', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        // Open the Auditor panel with generated draft questions
+                        setReviewModuleId(null);
+                        setReviewTitle(data.title);
+                        // Map each question to have default approved=0 for auditor to audit
+                        const mappedQs = data.questions.map(q => ({
+                            question_text: q.question,
+                            option_a: q.options[0],
+                            option_b: q.options[1],
+                            option_c: q.options[2],
+                            option_d: q.options[3],
+                            correct_index: q.correctIndex,
+                            approved: 0
+                        }));
+                        setReviewQuestions(mappedQs);
+                        setStatus('review');
+                        setTitle('');
+                        setSelectedFile(null);
+                    } else {
+                        alert("AI Generation failed: " + data.message);
+                        setStatus('idle');
+                    }
+                })
+                .catch(err => {
+                    console.error("AI generator fetch crash:", err);
+                    alert("System error. Running offline fallback draft.");
+                    setStatus('idle');
+                });
+            };
+
+            const handleResumeAudit = (mod) => {
+                setReviewModuleId(mod.id);
+                setReviewTitle(mod.title);
+                // Map from database questions structure back to auditor draft
+                const mappedQs = mod.questions.map(q => ({
+                    id: q.id,
+                    question_text: q.question_text,
+                    option_a: q.option_a,
+                    option_b: q.option_b,
+                    option_c: q.option_c,
+                    option_d: q.option_d,
+                    correct_index: q.correct_index,
+                    approved: q.approved
+                }));
+                setReviewQuestions(mappedQs);
+                setStatus('review');
+            };
+
+            const toggleQuestionApproval = (idx) => {
+                const updated = [...reviewQuestions];
+                updated[idx].approved = updated[idx].approved === 1 ? 0 : 1;
+                setReviewQuestions(updated);
+            };
+
+            const updateQuestionField = (idx, field, value) => {
+                const updated = [...reviewQuestions];
+                updated[idx][field] = value;
+                setReviewQuestions(updated);
+            };
+
+            const commitModuleToDb = (isFinalize) => {
+                const pendingCount = reviewQuestions.filter(q => q.approved === 0).length;
+                
+                if (isFinalize && pendingCount > 0) {
+                    alert(`⚠️ Cannot Finalize Module. There are still ${pendingCount} questions pending trainer approval. Please audit all questions or click 'Save Draft Progress' instead.`);
+                    return;
+                }
+                
+                const payload = {
+                    title: reviewTitle,
+                    trainer_id: user?.id || 'ADMIN',
+                    module_id: reviewModuleId,
+                    questions: reviewQuestions.map(q => ({
+                        question: q.question_text,
+                        options: [q.option_a, q.option_b, q.option_c, q.option_d],
+                        correctIndex: q.correct_index,
+                        approved: q.approved
+                    }))
+                };
+                
+                fetch('/api/modules/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(data.message);
+                        setStatus('idle');
+                        loadModules();
+                    } else {
+                        alert("Error saving: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("Save failed:", err);
+                    alert("Database save error occurred.");
+                });
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative">
+                    
+                    {/* MAKER-CHECKER AUDIT WIZARD MODAL */}
+                    {status === 'review' && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden transform transition-all">
+                                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-socrates-dark flex items-center gap-2">
+                                            <i className="fas fa-user-shield text-socrates-primary"></i>
+                                            Trainer Auditor Console
+                                        </h3>
+                                        <p className="text-xs text-socrates-primary font-bold tracking-widest uppercase mt-0.5">{reviewTitle}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-xs font-bold bg-amber-50 border border-amber-200 text-amber-800 px-3 py-1 rounded-full">
+                                            Audited: {reviewQuestions.filter(q => q.approved === 1).length} / {reviewQuestions.length}
+                                        </span>
+                                        <button onClick={() => setStatus('idle')} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50">
+                                    {reviewQuestions.map((q, idx) => {
+                                        const isApproved = q.approved === 1;
+                                        return (
+                                            <div 
+                                                key={idx} 
+                                                className={`p-6 rounded-xl border bg-white transition-all shadow-sm ${isApproved ? 'border-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.05)]' : 'border-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.05)]'}`}
+                                            >
+                                                <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100">
+                                                    <span className="text-sm font-bold text-slate-800">Socratic Question {idx + 1}</span>
+                                                    
+                                                    {/* Pending Approval vs Approved Glow Badge */}
+                                                    <button 
+                                                        onClick={() => toggleQuestionApproval(idx)}
+                                                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+                                                            isApproved 
+                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' 
+                                                                : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                                                        }`}
+                                                    >
+                                                        {isApproved ? (
+                                                            <><i className="fas fa-check-circle"></i> ✓ Audited & Approved</>
+                                                        ) : (
+                                                            <><i className="fas fa-exclamation-circle animate-pulse"></i> ⚠️ Pending Trainer Approval</>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                                
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Question Dialogue Text</label>
+                                                        <textarea 
+                                                            value={q.question_text} 
+                                                            onChange={(e) => updateQuestionField(idx, 'question_text', e.target.value)}
+                                                            className="input-field min-h-[60px]"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        {['a', 'b', 'c', 'd'].map((ch, i) => (
+                                                            <div key={ch} className="relative">
+                                                                <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Option {ch.toUpperCase()}</label>
+                                                                <input 
+                                                                    type="text" 
+                                                                    value={q[`option_${ch}`]} 
+                                                                    onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
+                                                                    className="input-field pr-12 font-medium"
+                                                                />
+                                                                <button
+                                                                    onClick={() => updateQuestionField(idx, 'correct_index', i)}
+                                                                    className={`absolute right-2 top-6 w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold transition-all ${
+                                                                        q.correct_index === i 
+                                                                            ? 'bg-emerald-500 text-white shadow-sm' 
+                                                                            : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                                                    }`}
+                                                                    title="Set as Correct"
+                                                                >
+                                                                    {ch.toUpperCase()}
+                                                                </button>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                
+                                <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-between items-center rounded-b-2xl">
+                                    <button onClick={() => setStatus('idle')} className="btn-outline">Cancel</button>
+                                    <div className="flex gap-3">
+                                        <button 
+                                            onClick={() => commitModuleToDb(false)} 
+                                            className="btn-outline bg-amber-50/50 border-amber-300 text-amber-700 hover:bg-amber-50"
+                                            title="Saves your audited progress to resume later"
+                                        >
+                                            <i className="fas fa-save mr-1.5"></i> Save Progress as Draft
+                                        </button>
+                                        <button 
+                                            onClick={() => commitModuleToDb(true)} 
+                                            className="btn-primary shadow-lg flex items-center gap-1.5"
+                                        >
+                                            <i className="fas fa-check-double"></i> Finalize & Save Module
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* GENERATOR SETUP */}
+                    <div className="card p-8">
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center shadow-sm border border-purple-100"><i className="fas fa-magic text-xl"></i></div>
+                            <h3 className="font-bold text-xl text-socrates-dark tracking-tight">AI Module Generator</h3>
+                        </div>
+                        <p className="text-sm text-slate-500 mb-8 leading-relaxed">Upload a training program PDF or paste text policy. The system will extract it and generate customized MCQs.</p>
+                        
+                        {status === 'loading' ? (
+                            <div className="py-20 text-center space-y-4">
+                                <div className="w-16 h-16 border-4 border-socrates-primary border-t-transparent rounded-full fa-spin mx-auto"></div>
+                                <h4 className="font-bold text-base text-slate-800 animate-pulse">Socrates AI is generating Socratic questions...</h4>
+                                <p className="text-xs text-slate-400 max-w-xs mx-auto">Analyzing policy clauses, generating multiple options, and mapping correct answer structures.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Module Title</label>
+                                    <input type="text" value={title} onChange={(e)=>setTitle(e.target.value)} className="input-field" placeholder="e.g. KYC Updates" />
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Number of Questions</label>
+                                        <select 
+                                            value={qCount} 
+                                            onChange={(e) => setQCount(parseInt(e.target.value))} 
+                                            className="input-field bg-white py-3 text-sm font-semibold"
+                                        >
+                                            <option value="5">5 Questions</option>
+                                            <option value="10">10 Questions</option>
+                                            <option value="15">15 Questions</option>
+                                            <option value="20">20 Questions</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Upload Training File</label>
+                                        <div className="relative">
+                                            <input 
+                                                type="file" 
+                                                accept=".pdf"
+                                                onChange={(e) => setSelectedFile(e.target.files[0])}
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+                                            />
+                                            <div className="border border-slate-300 rounded-xl py-2.5 text-center bg-slate-50 hover:bg-slate-100 transition-colors flex items-center justify-center gap-2 cursor-pointer pr-10 overflow-hidden text-ellipsis whitespace-nowrap">
+                                                <i className="fas fa-file-pdf text-red-500 text-sm"></i>
+                                                <span className="text-xs font-bold text-slate-600">
+                                                    {selectedFile ? selectedFile.name : "Choose PDF..."}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="relative">
+                                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+                                    <div className="relative flex justify-center text-xs"><span className="bg-white px-2 text-slate-400 font-bold uppercase">OR</span></div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Paste Training Material</label>
+                                    <textarea className="input-field h-24 resize-none" placeholder="Paste policy changes here..."></textarea>
+                                </div>
+                                
+                                <button onClick={startGenerator} className="w-full btn-primary py-3 flex items-center justify-center gap-2 text-base shadow-md mt-2">
+                                    <i className="fas fa-robot"></i> Auto-Generate Test
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* MANAGE LIBRARY MODULES */}
+                    <div className="card overflow-hidden flex flex-col">
+                        <div className="px-6 py-5 border-b border-socrates-border bg-slate-50 flex justify-between items-center">
+                            <h3 className="font-bold text-socrates-dark text-lg">Manage Modules</h3>
+                            <span className="text-xs font-bold bg-blue-100 text-socrates-primary px-2 py-1 rounded-md">{modules.length} Available</span>
+                        </div>
+                        <div className="p-6 flex-1 space-y-4 overflow-y-auto bg-white max-h-[460px]">
+                            {modules.map((mod) => {
+                                const approvedCount = mod.questions ? mod.questions.filter(q => q.approved === 1).length : 0;
+                                const isReady = mod.status === 'Ready';
+                                return (
+                                    <div key={mod.id} className={`p-5 border rounded-xl transition-all group relative border-slate-200 hover:border-socrates-primary hover:shadow-sm`}>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <h4 className={`font-bold text-base text-socrates-dark group-hover:text-socrates-primary transition-colors`}>{mod.title}</h4>
+                                                <p className="text-[10px] text-slate-400 mt-0.5 font-medium">Created by: {mod.created_by || 'ADMIN'}</p>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {!isReady && (
+                                                    <button 
+                                                        onClick={() => handleResumeAudit(mod)} 
+                                                        className="btn-outline py-1 px-2.5 text-xs text-amber-700 bg-amber-50 border-amber-300 hover:bg-amber-100 flex items-center gap-1"
+                                                        title="Complete Question Audits"
+                                                    >
+                                                        <i className="fas fa-clipboard-check"></i> Resume Audit
+                                                    </button>
+                                                )}
+                                                <button onClick={() => handleDelete(mod.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1" title="Delete Module"><i className="fas fa-trash-alt"></i></button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
+                                            <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                                                <span><i className="fas fa-list-ol mr-1"></i> {mod.questions_count || (mod.questions ? mod.questions.length : 0)} Qs</span>
+                                                <span>&bull;</span>
+                                                <span>{mod.created_at || 'Just Now'}</span>
+                                            </div>
+                                            
+                                            {/* Status Badge with progress info */}
+                                            <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                                                isReady 
+                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                                    : 'bg-amber-50 text-amber-800 border border-amber-200 shadow-sm'
+                                            }`}>
+                                                {isReady ? (
+                                                    '✓ Ready'
+                                                ) : (
+                                                    `⚠️ Audit (${approvedCount}/${mod.questions_count || 15} Approved)`
+                                                )}
+                                            </span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            {modules.length === 0 && (
+                                <p className="text-center text-xs text-slate-400 py-10 italic">No modules available. Upload a policy above to generate one.</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AccessMgmtView = () => {
+            const [trainers, setTrainers] = useState([]);
+            const [tid, setTid] = useState('');
+            const [name, setName] = useState('');
+            const [zone, setZone] = useState('AMD_BU');
+
+            const loadTrainers = () => {
+                fetch('/api/trainers')
+                    .then(res => res.json())
+                    .then(data => setTrainers(data))
+                    .catch(err => {
+                        console.error("Fetch trainers failed, offline fallback:", err);
+                        setTrainers(db.get('s_trainers') || []);
+                    });
+            };
+
+            useEffect(() => { loadTrainers(); }, []);
+
+            const handleToggle = (id, currentStatus) => {
+                const newStatus = currentStatus === 'Active' ? 'Revoked' : 'Active';
+                fetch(`/api/trainers/${id}/status`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        loadTrainers();
+                    } else {
+                        alert("Failed to update trainer status: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("Status toggle failed, offline fallback:", err);
+                    const updated = trainers.map(t => t.id === id ? {...t, status: newStatus} : t);
+                    db.set('s_trainers', updated);
+                    loadTrainers();
+                });
+            };
+
+            const handleCreate = () => {
+                if(!tid || !name) return alert("Please enter Trainer ID and Name");
+                const payload = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, password: 'password123' };
+                
+                fetch('/api/trainers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('Trainer Credential Created Successfully in SQLite Database!');
+                        setTid(''); 
+                        setName('');
+                        loadTrainers();
+                    } else {
+                        alert("Failed to create trainer: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("Trainer creation failed, offline fallback:", err);
+                    const newTrainer = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, status: 'Active', password: 'password123' };
+                    db.set('s_trainers', [...trainers, newTrainer]);
+                    setTid(''); setName('');
+                    loadTrainers();
+                });
+            };
+
+            return (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="lg:col-span-2 card overflow-hidden">
+                        <div className="px-6 py-5 border-b border-socrates-border bg-white flex justify-between items-center">
+                            <div>
+                                <h3 className="font-bold text-socrates-dark text-lg">Trainer Accounts</h3>
+                                <p className="text-xs text-slate-500">Manage who has access to conduct live training sessions.</p>
+                            </div>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm border-collapse">
+                                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                                    <tr>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Trainer ID / Name</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Region</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Status</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px] text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {trainers.map(tr => (
+                                        <tr key={tr.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="px-6 py-4"><div className="font-bold text-socrates-dark">{tr.id}</div><div className="text-slate-500 text-xs mt-0.5">{tr.name}</div></td>
+                                            <td className="px-6 py-4 text-slate-600 font-medium">{tr.zone}</td>
+                                            <td className="px-6 py-4"><span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-widest ${tr.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tr.status}</span></td>
+                                            <td className="px-6 py-4 text-right">
+                                                <button onClick={()=>handleToggle(tr.id, tr.status)} className={`text-xs border px-3 py-1.5 rounded transition-colors font-semibold ${tr.status === 'Active' ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-emerald-600 border-emerald-200 hover:bg-emerald-50'}`}>
+                                                    {tr.status === 'Active' ? 'Revoke Access' : 'Re-activate'}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div className="card p-6 h-fit bg-slate-50 border-socrates-primary border-t-4">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-10 h-10 bg-white text-socrates-primary rounded-lg flex items-center justify-center shadow-sm border border-slate-200"><i className="fas fa-user-plus text-xl"></i></div>
+                            <h3 className="font-bold text-lg text-socrates-dark tracking-tight">Create Trainer ID</h3>
+                        </div>
+                        <div className="space-y-4">
+                            <input type="text" value={tid} onChange={(e)=>setTid(e.target.value)} className="input-field bg-white" placeholder="Trainer ID (e.g. TR-1005)" />
+                            <input type="text" value={name} onChange={(e)=>setName(e.target.value)} className="input-field bg-white" placeholder="Full Name" />
+                            <select value={zone} onChange={(e)=>setZone(e.target.value)} className="input-field bg-white">
+                                <option value="AMD_BU">AMD_BU</option>
+                                <option value="CH_BU">CH_BU</option>
+                                <option value="DEL_BU">DEL_BU</option>
+                                <option value="KOL_BU">KOL_BU</option>
+                            </select>
+                            <button onClick={handleCreate} className="w-full btn-primary mt-4 shadow-md"><i className="fas fa-plus mr-2"></i> Create Credentials</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AnalyticsView = () => {
+            const [tab, setTab] = useState('executive');
+            const [loading, setLoading] = useState(true);
+            const [analytics, setAnalytics] = useState(null);
+            
+            // Cascading dynamic filters
+            const [selectedZone, setSelectedZone] = useState('');
+            const [selectedDiv, setSelectedDiv] = useState('');
+            const [selectedBranch, setSelectedBranch] = useState('');
+            const [selectedEmp, setSelectedEmp] = useState('');
+            
+            const [filterOptions, setFilterOptions] = useState({
+                zones: [],
+                divisions: [],
+                branches: [],
+                executives: []
+            });
+
+            const loadAnalytics = () => {
+                setLoading(true);
+                let url = '/api/analytics?';
+                if (selectedZone) url += `zone=${encodeURIComponent(selectedZone)}&`;
+                if (selectedDiv) url += `division=${encodeURIComponent(selectedDiv)}&`;
+                if (selectedBranch) url += `branch=${encodeURIComponent(selectedBranch)}&`;
+                if (selectedEmp) url += `emp_code=${encodeURIComponent(selectedEmp)}&`;
+                
+                fetch(url)
+                    .then(res => res.json())
+                    .then(data => {
+                        setAnalytics(data);
+                        if (data.filter_options) {
+                            setFilterOptions(data.filter_options);
+                        }
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Failed to load live analytics:", err);
+                        setLoading(false);
+                    });
+            };
+
+            useEffect(() => {
+                loadAnalytics();
+            }, [selectedZone, selectedDiv, selectedBranch, selectedEmp]);
+
+            // Cascading lists filters
+            const filteredDivisions = filterOptions.divisions.filter(d => !selectedZone || d.zone === selectedZone);
+            const filteredBranches = filterOptions.branches.filter(b => 
+                (!selectedZone || b.zone === selectedZone) && 
+                (!selectedDiv || b.division === selectedDiv)
+            );
+            const filteredExecutives = filterOptions.executives.filter(e => !selectedBranch || e.branch === selectedBranch);
+
+            const resetFilters = () => {
+                setSelectedZone('');
+                setSelectedDiv('');
+                setSelectedBranch('');
+                setSelectedEmp('');
+            };
+
+            const temporal = analytics?.temporal || {
+                'ZERO DAY': { pre: 40.0, post: 65.0, count: 0 },
+                'SIX DAYS': { pre: 50.0, post: 80.0, count: 0 },
+                'TWENTY DAYS': { pre: 60.0, post: 90.0, count: 0 }
+            };
+
+            const hasLive = analytics?.has_live_data;
+
+            // Compute delta and memory decay retention metrics
+            const zeroDayGrowth = Math.round(temporal['ZERO DAY'].post - temporal['ZERO DAY'].pre);
+            const sixDayGrowth = Math.round(temporal['SIX DAYS'].post - temporal['SIX DAYS'].pre);
+            const twentyDayGrowth = Math.round(temporal['TWENTY DAYS'].post - temporal['TWENTY DAYS'].pre);
+            const memoryDecay = Math.round(temporal['TWENTY DAYS'].post - temporal['ZERO DAY'].post);
+
+            return (
+                <div className="card overflow-hidden">
+                    {/* Header Tabs */}
+                    <div className="flex justify-between items-center border-b border-socrates-border bg-slate-50 px-4 pt-2">
+                        <div className="flex">
+                            <button 
+                                onClick={() => setTab('executive')} 
+                                className={`px-6 py-4 font-bold text-sm transition-all rounded-t-lg ${tab==='executive' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
+                            >
+                                <i className="fas fa-chart-line mr-2 text-socrates-primary"></i>
+                                Learning Curves & Growth (Delta)
+                            </button>
+                            <button 
+                                onClick={() => setTab('trainer')} 
+                                className={`px-6 py-4 font-bold text-sm transition-all rounded-t-lg ${tab==='trainer' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
+                            >
+                                <i className="fas fa-crown text-amber-500 mr-2"></i> 
+                                Trainer Productivity Index
+                            </button>
+                        </div>
+                        {tab === 'executive' && (
+                            <button 
+                                onClick={() => {
+                                    let url = '/api/analytics/export?';
+                                    if (selectedZone) url += `zone=${encodeURIComponent(selectedZone)}&`;
+                                    if (selectedDiv) url += `division=${encodeURIComponent(selectedDiv)}&`;
+                                    if (selectedBranch) url += `branch=${encodeURIComponent(selectedBranch)}&`;
+                                    if (selectedEmp) url += `emp_code=${encodeURIComponent(selectedEmp)}&`;
+                                    window.open(url, '_blank');
+                                }}
+                                className="btn-primary py-2 px-4 text-xs font-bold flex items-center gap-2 shadow-md hover:bg-socrates-primaryHover transform transition hover:-translate-y-0.5 mb-2"
+                                title="Download complete analytical report for active filters"
+                            >
+                                <i className="fas fa-file-csv text-base"></i> Download Analytics Report
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="p-8 bg-white">
+                        {tab === 'executive' && (
+                            <div className="animate-fade-in space-y-8">
+                                
+                                {/* Dynamic Cascading Control Filters Bar */}
+                                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 items-end shadow-sm">
+                                    <div className="space-y-1.5">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-globe mr-1 text-slate-400"></i> Zone</label>
+                                        <select 
+                                            value={selectedZone} 
+                                            onChange={(e) => { setSelectedZone(e.target.value); setSelectedDiv(''); setSelectedBranch(''); setSelectedEmp(''); }} 
+                                            className="input-field bg-white py-2 text-xs font-semibold"
+                                        >
+                                            <option value="">All Zones</option>
+                                            {filterOptions.zones.map(z => <option key={z} value={z}>{z}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-map mr-1 text-slate-400"></i> Division</label>
+                                        <select 
+                                            value={selectedDiv} 
+                                            onChange={(e) => { setSelectedDiv(e.target.value); setSelectedBranch(''); setSelectedEmp(''); }} 
+                                            disabled={!selectedZone}
+                                            className="input-field bg-white py-2 text-xs font-semibold disabled:bg-slate-100 disabled:text-slate-400"
+                                        >
+                                            <option value="">All Divisions</option>
+                                            {filteredDivisions.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-store mr-1 text-slate-400"></i> Branch</label>
+                                        <select 
+                                            value={selectedBranch} 
+                                            onChange={(e) => { setSelectedBranch(e.target.value); setSelectedEmp(''); }} 
+                                            disabled={!selectedDiv}
+                                            className="input-field bg-white py-2 text-xs font-semibold disabled:bg-slate-100 disabled:text-slate-400"
+                                        >
+                                            <option value="">All Branches</option>
+                                            {filteredBranches.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-user mr-1 text-slate-400"></i> Executive</label>
+                                        <select 
+                                            value={selectedEmp} 
+                                            onChange={(e) => setSelectedEmp(e.target.value)} 
+                                            disabled={!selectedBranch}
+                                            className="input-field bg-white py-2 text-xs font-semibold disabled:bg-slate-100 disabled:text-slate-400"
+                                        >
+                                            <option value="">All Executives</option>
+                                            {filteredExecutives.map(e => <option key={e.code} value={e.code}>{e.name} ({e.code})</option>)}
+                                        </select>
+                                    </div>
+                                    <button 
+                                        onClick={resetFilters} 
+                                        className="btn-outline w-full py-2.5 text-xs text-slate-500 hover:text-socrates-primary flex items-center justify-center gap-1.5 border-slate-300 hover:border-blue-300 shadow-sm"
+                                    >
+                                        <i className="fas fa-undo-alt text-[10px]"></i> Reset Filters
+                                    </button>
+                                </div>
+
+                                {/* Fallback/Blank Database State Warning Banner */}
+                                {!hasLive && (
+                                    <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-800 text-xs font-semibold flex items-center gap-2.5 animate-fade-in shadow-sm">
+                                        <i className="fas fa-info-circle text-sm text-blue-500"></i>
+                                        <span>No live trainees have submitted results yet. Displaying industry baseline placeholders.</span>
+                                    </div>
+                                )}
+
+                                {/* Main Visualization Charts Side-by-Side Panel */}
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                    
+                                    {/* CHART 1: Pre-Test vs Post-Test Growth Delta (Aggregated double-bars) */}
+                                    <div className="lg:col-span-2 border border-slate-200 rounded-2xl p-6 bg-slate-50/40 relative shadow-sm">
+                                        <div className="flex justify-between items-center mb-6">
+                                            <div>
+                                                <h4 className="font-bold text-sm text-socrates-dark tracking-tight">Pre-Test vs. Post-Test growth</h4>
+                                                <p className="text-[10px] text-slate-400 font-medium">Measuring core knowledge levels before & after training</p>
+                                            </div>
+                                            <div className="flex gap-4 text-xs font-semibold">
+                                                <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-blue-500 rounded-md"></span> Pre Score</span>
+                                                <span className="flex items-center gap-1.5"><span className="w-3 h-3 bg-emerald-500 rounded-md"></span> Post Score</span>
+                                            </div>
+                                        </div>
+
+                                        {loading ? (
+                                            <div className="h-64 flex flex-col justify-center items-center gap-3">
+                                                <div className="w-8 h-8 border-3 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
+                                                <span className="text-xs font-bold text-slate-400">Loading learning deltas...</span>
+                                            </div>
+                                        ) : (
+                                            <div className="h-64 flex items-end justify-around pb-6 pt-4 relative border-b border-slate-200 px-4">
+                                                {/* Zero Day Bars */}
+                                                <div className="flex flex-col items-center w-28 group">
+                                                    <div className="flex items-end gap-3 h-44 relative">
+                                                        <div 
+                                                            style={{ height: `${temporal['ZERO DAY'].pre}%` }} 
+                                                            className="w-8 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
+                                                            title={`Pre-Test: ${temporal['ZERO DAY'].pre}%`}
+                                                        >
+                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-blue-600">{temporal['ZERO DAY'].pre}%</span>
+                                                        </div>
+                                                        <div 
+                                                            style={{ height: `${temporal['ZERO DAY'].post}%` }} 
+                                                            className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
+                                                            title={`Post-Test: ${temporal['ZERO DAY'].post}%`}
+                                                        >
+                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-600">{temporal['ZERO DAY'].post}%</span>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4">Zero Day</span>
+                                                    <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1.5 shadow-sm">
+                                                        <i className="fas fa-arrow-up mr-0.5"></i> +{zeroDayGrowth}%
+                                                    </span>
+                                                </div>
+
+                                                {/* Six Days Bars */}
+                                                <div className="flex flex-col items-center w-28 group">
+                                                    <div className="flex items-end gap-3 h-44 relative">
+                                                        <div 
+                                                            style={{ height: `${temporal['SIX DAYS'].pre}%` }} 
+                                                            className="w-8 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
+                                                            title={`Pre-Test: ${temporal['SIX DAYS'].pre}%`}
+                                                        >
+                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-blue-600">{temporal['SIX DAYS'].pre}%</span>
+                                                        </div>
+                                                        <div 
+                                                            style={{ height: `${temporal['SIX DAYS'].post}%` }} 
+                                                            className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
+                                                            title={`Post-Test: ${temporal['SIX DAYS'].post}%`}
+                                                        >
+                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-600">{temporal['SIX DAYS'].post}%</span>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4">Six Days</span>
+                                                    <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1.5 shadow-sm">
+                                                        <i className="fas fa-arrow-up mr-0.5"></i> +{sixDayGrowth}%
+                                                    </span>
+                                                </div>
+
+                                                {/* Twenty Days Bars */}
+                                                <div className="flex flex-col items-center w-28 group">
+                                                    <div className="flex items-end gap-3 h-44 relative">
+                                                        <div 
+                                                            style={{ height: `${temporal['TWENTY DAYS'].pre}%` }} 
+                                                            className="w-8 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
+                                                            title={`Pre-Test: ${temporal['TWENTY DAYS'].pre}%`}
+                                                        >
+                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-blue-600">{temporal['TWENTY DAYS'].pre}%</span>
+                                                        </div>
+                                                        <div 
+                                                            style={{ height: `${temporal['TWENTY DAYS'].post}%` }} 
+                                                            className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
+                                                            title={`Post-Test: ${temporal['TWENTY DAYS'].post}%`}
+                                                        >
+                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-600">{temporal['TWENTY DAYS'].post}%</span>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4">Twenty Days</span>
+                                                    <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1.5 shadow-sm">
+                                                        <i className="fas fa-arrow-up mr-0.5"></i> +{twentyDayGrowth}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* CHART 2: Socratic Learning Decay / Retention Curve Timeline */}
+                                    <div className="border border-slate-200 rounded-2xl p-6 bg-slate-50/40 flex flex-col justify-between shadow-sm">
+                                        <div>
+                                            <h4 className="font-bold text-sm text-socrates-dark tracking-tight">Policy Retention Curve</h4>
+                                            <p className="text-[10px] text-slate-400 font-medium mb-4">Post-test mastery tracking over 20 days</p>
+                                        </div>
+
+                                        {loading ? (
+                                            <div className="h-44 flex items-center justify-center">
+                                                <div className="w-6 h-6 border-2 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-6">
+                                                {/* Timeline Horizontal Line Node Connectors */}
+                                                <div className="flex items-center justify-between relative px-2 mb-4">
+                                                    <div className="absolute top-1/2 left-0 right-0 h-1 bg-slate-200 -translate-y-1/2"></div>
+                                                    
+                                                    {/* Day 0 Node */}
+                                                    <div className="z-10 flex flex-col items-center">
+                                                        <div className="w-8 h-8 rounded-full bg-emerald-500 border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold">{temporal['ZERO DAY'].post}%</div>
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-1.5">Day 0</span>
+                                                    </div>
+
+                                                    {/* Day 6 Node */}
+                                                    <div className="z-10 flex flex-col items-center">
+                                                        <div className={`w-8 h-8 rounded-full border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold ${temporal['SIX DAYS'].post >= 75 ? 'bg-emerald-500' : 'bg-amber-500'}`}>{temporal['SIX DAYS'].post}%</div>
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-1.5">Day 6</span>
+                                                    </div>
+
+                                                    {/* Day 20 Node */}
+                                                    <div className="z-10 flex flex-col items-center">
+                                                        <div className={`w-8 h-8 rounded-full border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold ${temporal['TWENTY DAYS'].post >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}>{temporal['TWENTY DAYS'].post}%</div>
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-1.5">Day 20</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Growth Decay Calculator card */}
+                                                <div className={`p-4 rounded-xl border flex items-center justify-between shadow-sm ${
+                                                    memoryDecay >= 0 
+                                                        ? 'bg-emerald-50/50 border-emerald-200 text-emerald-800' 
+                                                        : 'bg-amber-50/50 border-amber-200 text-amber-800'
+                                                }`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg ${
+                                                            memoryDecay >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
+                                                        }`}>
+                                                            <i className={memoryDecay >= 0 ? "fas fa-shield-virus" : "fas fa-brain-circuit"}></i>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-[10px] font-bold uppercase tracking-wider">Retention Performance</div>
+                                                            <div className="text-xs font-semibold mt-0.5">
+                                                                {memoryDecay >= 0 
+                                                                    ? "Learning retained successfully!" 
+                                                                    : `Early memory decay detected!`}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-sm font-extrabold whitespace-nowrap">
+                                                        {memoryDecay >= 0 ? `+${memoryDecay}%` : `${memoryDecay}%`}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Dynamic Breakdown Ranking Table (Zone/Div/Branch/Executive) */}
+                                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                                    <div className="px-6 py-4 border-b border-socrates-border bg-slate-50 flex justify-between items-center">
+                                        <div>
+                                            <h4 className="font-bold text-sm text-socrates-dark tracking-tight">
+                                                {selectedBranch ? "Individual Executive Learning Delta Table" :
+                                                 selectedDiv ? "Branch Learning Performance Comparison" :
+                                                 selectedZone ? "Division Learning Performance Comparison" :
+                                                 "Zone Learning Performance Comparison"}
+                                            </h4>
+                                            <p className="text-[9px] text-slate-400 font-medium">Ranked by score growth delta ($\Delta$)</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead className="bg-slate-50/50 text-slate-500 border-b border-slate-200">
+                                                <tr>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px]">
+                                                        {selectedBranch ? "Executive" :
+                                                         selectedDiv ? "Branch Name" :
+                                                         selectedZone ? "Division Name" :
+                                                         "Zone / Region"}
+                                                    </th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg. Pre-Test</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg. Post-Test</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Growth Delta ($\Delta$)</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Trainees</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-right">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {loading ? (
+                                                    <tr>
+                                                        <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
+                                                            <i className="fas fa-spinner fa-spin text-xl text-slate-200 mr-2"></i>
+                                                            Loading comparison rankings...
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    (!analytics?.breakdown || analytics.breakdown.length === 0) ? (
+                                                        <tr>
+                                                            <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
+                                                                <i className="fas fa-folder-open text-xl text-slate-200 mb-2 block"></i>
+                                                                No training records found under this scope.
+                                                            </td>
+                                                        </tr>
+                                                    ) : (
+                                                        analytics.breakdown.map((row) => (
+                                                            <tr key={row.id} className="hover:bg-slate-50/40 transition-colors">
+                                                                <td className="px-6 py-4 font-bold text-socrates-dark">
+                                                                    {selectedBranch ? (
+                                                                        <div className="flex items-center gap-2.5">
+                                                                            <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center font-bold text-socrates-primary text-[10px]">{row.id.substring(3,5)}</div>
+                                                                            <div>
+                                                                                <div className="font-extrabold text-socrates-dark text-xs">{row.name}</div>
+                                                                                <div className="text-[9px] text-slate-400 font-semibold">{row.id}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : row.name}
+                                                                </td>
+                                                                <td className="px-6 py-4 text-slate-600 font-bold text-center">{row.pre}%</td>
+                                                                <td className="px-6 py-4 text-slate-600 font-bold text-center">{row.post}%</td>
+                                                                <td className="px-6 py-4 text-center">
+                                                                    <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold ${
+                                                                        row.growth >= 20 
+                                                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' 
+                                                                            : row.growth >= 0 
+                                                                                ? 'bg-blue-50 text-blue-700 border border-blue-100' 
+                                                                                : 'bg-red-50 text-red-700 border border-red-100'
+                                                                    }`}>
+                                                                        {row.growth >= 0 ? `+${row.growth}%` : `${row.growth}%`}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-slate-500 font-bold text-center">{row.count}</td>
+                                                                <td className="px-6 py-4 text-right">
+                                                                    {selectedBranch ? (
+                                                                        <button 
+                                                                            onClick={() => setSelectedEmp(row.id)}
+                                                                            className="text-[10px] text-socrates-primary border border-blue-200 bg-blue-50/20 hover:bg-blue-50 px-2.5 py-1 rounded font-bold transition-colors"
+                                                                        >
+                                                                            View Card
+                                                                        </button>
+                                                                    ) : !selectedZone ? (
+                                                                        <button 
+                                                                            onClick={() => setSelectedZone(row.id)}
+                                                                            className="text-[10px] text-slate-500 hover:text-socrates-primary border border-slate-200 hover:border-blue-200 px-2.5 py-1 rounded font-bold transition-colors bg-white shadow-sm"
+                                                                        >
+                                                                            Drill Down
+                                                                        </button>
+                                                                    ) : !selectedDiv ? (
+                                                                        <button 
+                                                                            onClick={() => setSelectedDiv(row.id)}
+                                                                            className="text-[10px] text-slate-500 hover:text-socrates-primary border border-slate-200 hover:border-blue-200 px-2.5 py-1 rounded font-bold transition-colors bg-white shadow-sm"
+                                                                        >
+                                                                            Drill Down
+                                                                        </button>
+                                                                    ) : (
+                                                                        <button 
+                                                                            onClick={() => setSelectedBranch(row.id)}
+                                                                            className="text-[10px] text-slate-500 hover:text-socrates-primary border border-slate-200 hover:border-blue-200 px-2.5 py-1 rounded font-bold transition-colors bg-white shadow-sm"
+                                                                        >
+                                                                            Drill Down
+                                                                        </button>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    )
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {tab === 'trainer' && (
+                            <div className="animate-fade-in space-y-6">
+                                <div className="flex flex-wrap justify-between items-end mb-4 gap-4">
+                                    <div>
+                                        <h3 className="font-bold text-base text-socrates-dark tracking-tight">Trainer Productivity Tracker</h3>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Evaluating trainer session volumes, regional visits, and learning metrics</p>
+                                    </div>
+                                    <div className="flex flex-col gap-1">
+                                        <label className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Select Date Range</label>
+                                        <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-2 shadow-sm">
+                                            <i className="fas fa-calendar-alt text-socrates-primary text-xs"></i>
+                                            <input type="date" defaultValue="2026-05-01" className="bg-transparent text-xs font-semibold outline-none text-socrates-dark cursor-pointer" />
+                                            <span className="text-slate-400 text-[10px] font-extrabold px-1">TO</span>
+                                            <input type="date" defaultValue="2026-05-15" className="bg-transparent text-xs font-semibold outline-none text-socrates-dark cursor-pointer" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                                    <table className="w-full text-left text-xs border-collapse">
+                                        <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                                            <tr>
+                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px]">Trainer Name</th>
+                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Sessions Conducted</th>
+                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Branches Visited</th>
+                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Avg. Learning Delta</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            <tr className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-6 py-4 font-extrabold text-socrates-dark flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-socrates-primary flex items-center justify-center font-bold text-xs border border-blue-100">AS</div> 
+                                                    Amit Sharma
+                                                </td>
+                                                <td className="px-6 py-4 font-bold text-slate-700 text-center">18</td>
+                                                <td className="px-6 py-4 text-slate-600 font-semibold text-center">12</td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className="px-2.5 py-1 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm">
+                                                        +45% <i className="fas fa-arrow-up text-[8px] ml-0.5"></i>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                            <tr className="hover:bg-slate-50 transition-colors">
+                                                <td className="px-6 py-4 font-extrabold text-socrates-dark flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-xs border border-purple-100">PV</div> 
+                                                    Priya Verma
+                                                </td>
+                                                <td className="px-6 py-4 font-bold text-slate-700 text-center">14</td>
+                                                <td className="px-6 py-4 text-slate-600 font-semibold text-center">8</td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className="px-2.5 py-1 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm">
+                                                        +38% <i className="fas fa-arrow-up text-[8px] ml-0.5"></i>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const milestoneQuestions = {
+            'zero day': {
+                question: "What is the maximum LTV ratio allowed for a standard Two-Wheeler loan?",
+                options: ["75%", "85%", "90%", "100%"],
+                correctIndex: 1
+            },
+            'six days': {
+                question: "What is the minimum CIBIL score required for a 90% LTV approval?",
+                options: ["650", "700", "750", "800"],
+                correctIndex: 2
+            },
+            'twenty days': {
+                question: "Which document is mandatory for a loan amount exceeding ₹2 Lakhs?",
+                options: ["Electricity Bill", "Rent Agreement", "ITR / Form 16", "Passport"],
+                correctIndex: 2
+            }
+        };
+
+        const Confetti = () => {
+            const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#ef4444'];
+            return (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden z-40">
+                    {Array.from({ length: 80 }).map((_, i) => {
+                        const size = Math.random() * 8 + 6;
+                        const delay = Math.random() * 6;
+                        const duration = Math.random() * 4 + 3;
+                        const left = Math.random() * 100;
+                        const color = colors[i % colors.length];
+                        return (
+                            <div 
+                                key={i} 
+                                className="absolute rounded-sm animate-fall"
+                                style={{
+                                    width: `${size}px`,
+                                    height: `${size}px`,
+                                    backgroundColor: color,
+                                    left: `${left}%`,
+                                    top: `-20px`,
+                                    animationDelay: `${delay}s`,
+                                    animationDuration: `${duration}s`,
+                                    opacity: Math.random() * 0.7 + 0.3
+                                }}
+                            />
+                        );
+                    })}
+                </div>
+            );
+        };
+
+        const LiveSession = ({onClose}) => {
+            const [stage, setStage] = useState('waiting');
+            const [users, setUsers] = useState([]);
+            const [sessionId, setSessionId] = useState('');
+            const [votes, setVotes] = useState({0:0, 1:0, 2:0, 3:0});
+            const [assignmentDay, setAssignmentDay] = useState('zero day');
+            const [activeModule, setActiveModule] = useState(null);
+            const [activeQIdx, setActiveQIdx] = useState(0);
+            
+            // Gamification & Leaderboard States
+            const [activeTab, setActiveTab] = useState('chart'); // chart or leaderboard
+            const [leaderboard, setLeaderboard] = useState([]);
+            const [showPodium, setShowPodium] = useState(false);
+            
+            const totalVotes = Object.values(votes).reduce((a,b) => a+b, 0);
+
+            useEffect(() => {
+                const stored = localStorage.getItem('socrates_active_module');
+                if (stored) {
+                    try {
+                        setActiveModule(JSON.parse(stored));
+                    } catch(e) {
+                        console.error("Error parsing stored active module:", e);
+                    }
+                }
+
+                const pin = Math.floor(1000 + Math.random() * 9000).toString();
+                setSessionId(pin);
+                
+                // Join room via Socket.IO
+                socket.emit('join_session', {pin: pin, emp_id: 'TRAINER'});
+                
+                // Listen to employee connections
+                socket.on('user_connected', (data) => {
+                    if (data.emp_id && data.emp_id !== 'TRAINER') {
+                        setUsers(prev => [...new Set([...prev, data.emp_id])]);
+                    }
+                });
+
+                // Listen to employee vote submissions
+                socket.on('vote_update', (data) => {
+                    setVotes(prev => ({
+                        ...prev, 
+                        [data.answer_idx]: (prev[data.answer_idx] || 0) + 1
+                    }));
+                });
+
+                // Listen to real-time leaderboard broadcasts
+                socket.on('leaderboard_update', (data) => {
+                    setLeaderboard(data.leaderboard || []);
+                });
+
+                // Listen to global presenter command synchronizer
+                socket.on('client_command', (data) => {
+                    if (data.command === 'show_podium') {
+                        setShowPodium(true);
+                    }
+                });
+
+                return () => {
+                    socket.off('user_connected');
+                    socket.off('vote_update');
+                    socket.off('leaderboard_update');
+                    socket.off('client_command');
+                };
+            }, []);
+
+            const getActiveQuestionData = () => {
+                if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
+                    const q = activeModule.questions[activeQIdx];
+                    return {
+                        question: q.question_text,
+                        options: [q.option_a, q.option_b, q.option_c, q.option_d],
+                        correctIndex: q.correct_index,
+                        isDynamic: true
+                    };
+                }
+                const q = milestoneQuestions[assignmentDay];
+                return {
+                    question: q.question,
+                    options: q.options,
+                    correctIndex: q.correctIndex,
+                    isDynamic: false
+                };
+            };
+
+            const currentQ = getActiveQuestionData();
+
+            const pushView = (viewName) => {
+                setStage(viewName);
+                
+                // Reset votes when starting a new quiz stage
+                if (viewName === 'pretest' || viewName === 'posttest') {
+                    setVotes({0:0, 1:0, 2:0, 3:0});
+                }
+                
+                socket.emit('trainer_broadcast', {
+                    pin: sessionId,
+                    view: viewName,
+                    assignment_day: assignmentDay,
+                    question: currentQ.question,
+                    options: currentQ.options,
+                    correctIndex: currentQ.correctIndex
+                });
+            };
+
+            const triggerFinalPodium = () => {
+                socket.emit('trainer_command', { pin: sessionId, command: 'show_podium' });
+            };
+            
+            return (
+                <div className="card h-[calc(100vh-140px)] flex flex-col border-2 border-socrates-primary shadow-xl overflow-hidden relative">
+                    
+                    {/* FULL-SCREEN CONFETTI PODIUM CELEBRATION OVERLAY */}
+                    {showPodium && (
+                        <div className="absolute inset-0 bg-slate-900 z-50 flex flex-col justify-between p-10 text-center animate-fade-in overflow-hidden">
+                            <Confetti />
+                            
+                            <div className="z-10 mt-6 animate-bounce">
+                                <span className="text-xs font-bold bg-amber-500/10 border border-amber-500/30 text-amber-400 px-4 py-1.5 rounded-full tracking-widest uppercase"><i className="fas fa-crown mr-1.5"></i> Training Championship</span>
+                                <h2 className="text-4xl font-extrabold text-white mt-4 tracking-tight drop-shadow-md">Socrates Live Podium</h2>
+                                <p className="text-slate-400 text-sm font-medium mt-1">Socratic learning curves finalized. Congratulations, champions!</p>
+                            </div>
+                            
+                            {/* Horizontal Podium Layout */}
+                            <div className="z-10 flex justify-center items-end gap-6 max-w-3xl mx-auto w-full flex-1 mb-10 min-h-[300px]">
+                                
+                                {/* 2nd Place Podium */}
+                                {leaderboard.length > 1 && (
+                                    <div className="flex-1 flex flex-col items-center animate-fade-in" style={{ animationDelay: '0.4s' }}>
+                                        <div className="w-16 h-16 rounded-full bg-slate-700 border-2 border-slate-400 flex items-center justify-center text-xl text-white font-extrabold shadow-lg mb-3">🥈</div>
+                                        <div className="font-bold text-base text-slate-200 truncate max-w-[150px]">{leaderboard[1].emp_name}</div>
+                                        <div className="text-xs text-slate-400 font-semibold mb-3">{leaderboard[1].emp_code}</div>
+                                        <div className="w-full bg-slate-700 border-t-2 border-slate-400 h-28 rounded-t-xl flex flex-col justify-center items-center shadow-lg transform transition-transform duration-500 hover:scale-105">
+                                            <span className="text-xs text-slate-300 font-bold uppercase tracking-wider">2nd Place</span>
+                                            <span className="text-xl font-extrabold text-white mt-1">{leaderboard[1].score} pts</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 1st Place Podium */}
+                                {leaderboard.length > 0 && (
+                                    <div className="flex-1 flex flex-col items-center animate-fade-in">
+                                        <div className="w-20 h-20 rounded-full bg-amber-500 border-4 border-amber-300 flex items-center justify-center text-3xl text-white font-extrabold shadow-2xl mb-3 animate-pulse">👑</div>
+                                        <div className="font-black text-lg text-white truncate max-w-[180px]">{leaderboard[0].emp_name}</div>
+                                        <div className="text-xs text-amber-400 font-bold mb-3">{leaderboard[0].emp_code}</div>
+                                        <div className="w-full bg-gradient-to-t from-amber-600 to-amber-500 border-t-4 border-amber-300 h-40 rounded-t-2xl flex flex-col justify-center items-center shadow-2xl transform transition-transform duration-500 hover:scale-105">
+                                            <span className="text-xs text-amber-100 font-bold uppercase tracking-wider">1st Champion</span>
+                                            <span className="text-2xl font-black text-white mt-1 drop-shadow">{leaderboard[0].score} pts</span>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 3rd Place Podium */}
+                                {leaderboard.length > 2 && (
+                                    <div className="flex-1 flex flex-col items-center animate-fade-in" style={{ animationDelay: '0.8s' }}>
+                                        <div className="w-14 h-14 rounded-full bg-amber-700 border-2 border-amber-600 flex items-center justify-center text-lg text-white font-extrabold shadow-lg mb-3">🥉</div>
+                                        <div className="font-bold text-sm text-slate-300 truncate max-w-[140px]">{leaderboard[2].emp_name}</div>
+                                        <div className="text-xs text-slate-400 font-semibold mb-3">{leaderboard[2].emp_code}</div>
+                                        <div className="w-full bg-amber-800 border-t-2 border-amber-600 h-20 rounded-t-lg flex flex-col justify-center items-center shadow-lg transform transition-transform duration-500 hover:scale-105">
+                                            <span className="text-[10px] text-amber-200 font-bold uppercase tracking-wider">3rd Place</span>
+                                            <span className="text-lg font-extrabold text-white mt-0.5">{leaderboard[2].score} pts</span>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="z-10 flex gap-4 justify-center">
+                                <button onClick={onClose} className="btn-primary bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 px-8 py-3 rounded-full text-base font-bold shadow-lg hover:from-amber-600 hover:to-amber-700">
+                                    <i className="fas fa-sign-out-alt mr-2"></i> Close Broadcast Room
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="px-8 py-4 border-b border-slate-200 flex justify-between items-center bg-white shadow-sm z-10">
+                        <div className="flex items-center gap-4">
+                            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
+                            <div>
+                                <span className="text-[10px] font-bold text-socrates-primary uppercase tracking-widest">Live Broadcasting</span>
+                                <h2 className="text-lg font-bold text-socrates-dark leading-tight flex items-center gap-2">
+                                    Socrates Live Room 
+                                    {activeModule && (
+                                        <span className="text-xs font-bold bg-purple-50 border border-purple-100 text-purple-700 px-2.5 py-0.5 rounded-full shadow-sm">
+                                            Module: {activeModule.title}
+                                        </span>
+                                    )}
+                                </h2>
+                            </div>
+                        </div>
+                        <button onClick={onClose} className="btn-outline bg-white text-xs text-red-600 border-red-200 hover:bg-red-50"><i className="fas fa-power-off mr-2"></i> End Session</button>
+                    </div>
+                    
+                    <div className="flex-1 flex overflow-hidden">
+                        <div className="flex-1 border-r border-slate-200 flex flex-col items-center justify-center p-12 text-center bg-slate-50 relative overflow-y-auto">
+                            
+                            {/* waiting stage */}
+                            {stage === 'waiting' && (
+                                <div className="animate-fade-in flex flex-col items-center w-full max-w-md">
+                                    <div className="bg-white p-8 rounded-3xl shadow-lg border border-slate-100 w-full text-center">
+                                        <h3 className="text-slate-500 mb-4 uppercase tracking-widest font-bold text-sm">Join the Session</h3>
+                                        <div className="text-8xl font-black tracking-widest text-socrates-primary mb-8 font-mono">{sessionId}</div>
+                                        <div className="text-sm font-bold text-slate-400 bg-slate-50 p-2 rounded mb-4">Code generated successfully</div>
+                                        {activeModule && (
+                                            <div className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-100 px-3 py-1.5 rounded-xl mb-4">
+                                                Active Quiz: <strong>{activeModule.title}</strong> ({activeModule.questions ? activeModule.questions.length : 0} Qs)
+                                            </div>
+                                        )}
+                                        <div className="text-xs text-slate-500 font-semibold flex items-center justify-center gap-2">
+                                            <i className="fas fa-spinner fa-spin text-socrates-primary"></i> 
+                                            <span>Executives Connected: {users.length}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* pretest/posttest stage */}
+                            {(stage === 'pretest' || stage === 'posttest') && (
+                                <div className="w-full max-w-3xl animate-fade-in flex flex-col">
+                                    
+                                    {/* Tabs for toggling chart vs leaderboard */}
+                                    <div className="flex bg-slate-200/60 p-1 rounded-xl mb-6 self-center border border-slate-200">
+                                        <button 
+                                            onClick={() => setActiveTab('chart')} 
+                                            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                                                activeTab === 'chart' 
+                                                    ? 'bg-white text-socrates-primary shadow-sm' 
+                                                    : 'text-slate-500 hover:text-slate-800'
+                                            }`}
+                                        >
+                                            <i className="fas fa-chart-bar"></i> Votes Distribution
+                                        </button>
+                                        <button 
+                                            onClick={() => setActiveTab('leaderboard')} 
+                                            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
+                                                activeTab === 'leaderboard' 
+                                                    ? 'bg-white text-purple-600 shadow-sm' 
+                                                    : 'text-slate-500 hover:text-slate-800'
+                                            }`}
+                                        >
+                                            <i className="fas fa-list-ol"></i> Live Leaderboard ({leaderboard.length})
+                                        </button>
+                                    </div>
+                                    
+                                    {activeTab === 'chart' ? (
+                                        <div className="bg-white p-10 rounded-2xl shadow-md border border-slate-100 animate-fade-in w-full text-left">
+                                            <div className="flex justify-between items-center mb-6 border-b pb-4">
+                                                <span className="text-xs font-extrabold uppercase text-socrates-primary tracking-widest bg-blue-50 border border-blue-100 px-3 py-1 rounded-md">
+                                                    {activeModule ? `${activeModule.title} (Q${activeQIdx + 1})` : assignmentDay} - {stage === 'pretest' ? 'Pre-Test' : 'Post-Test'}
+                                                </span>
+                                                <span className="text-xs font-semibold text-slate-500">Votes Counted: {totalVotes}</span>
+                                            </div>
+                                            <h3 className="text-2xl font-bold text-socrates-dark mb-10 leading-tight">
+                                                {currentQ.question}
+                                            </h3>
+                                            <div className="space-y-6">
+                                                {currentQ.options.map((opt, i) => {
+                                                    const pct = totalVotes === 0 ? 0 : Math.round((votes[i]/totalVotes)*100);
+                                                    const isCorrect = i === currentQ.correctIndex;
+                                                    return (
+                                                        <div key={i} className="flex items-center gap-6">
+                                                            <div className={`w-36 text-right font-bold text-sm ${isCorrect ? 'text-emerald-600 flex items-center justify-end gap-1.5 font-extrabold' : 'text-socrates-dark'}`}>
+                                                                {isCorrect && <i className="fas fa-check-circle text-emerald-500 text-xs"></i>}
+                                                                {opt}
+                                                            </div>
+                                                            <div className={`flex-1 h-12 bg-slate-100 rounded-md overflow-hidden border ${isCorrect ? 'border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]' : 'border-slate-200'} shadow-inner relative flex items-center`}>
+                                                                <div className={`h-full ${isCorrect ? 'bg-socrates-accent' : 'bg-socrates-primary'} transition-all duration-700 flex items-center justify-end pr-4 text-white font-bold`} style={{width: `${pct}%`, minWidth: pct>0?'3rem':'0'}}>
+                                                                    {pct > 5 && `${pct}%`}
+                                                                </div>
+                                                                {isCorrect && (
+                                                                    <div className="absolute left-3 text-emerald-600 text-xs font-bold bg-white border border-emerald-300 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
+                                                                        <i className="fas fa-check text-[10px]"></i> Correct Option
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="bg-white rounded-2xl shadow-md border border-slate-100 overflow-hidden animate-fade-in w-full text-left">
+                                            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                                                <h4 className="font-bold text-socrates-dark text-sm">Real-Time Rankings</h4>
+                                                <span className="text-[10px] font-bold uppercase tracking-wider bg-purple-50 text-purple-700 px-2.5 py-1 rounded border border-purple-100">Speed points active</span>
+                                            </div>
+                                            <div className="max-h-[380px] overflow-y-auto divide-y divide-slate-100">
+                                                {leaderboard.length === 0 ? (
+                                                    <div className="py-12 text-center text-xs text-slate-400 italic">No responses recorded yet for this question round.</div>
+                                                ) : (
+                                                    leaderboard.map((tr, idx) => {
+                                                        const isTop3 = idx < 3;
+                                                        const badge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+                                                        return (
+                                                            <div key={tr.emp_code} className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                                                                <div className="flex items-center gap-4">
+                                                                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm ${isTop3 ? 'bg-amber-50 text-base shadow-sm border border-amber-200' : 'text-slate-400'}`}>
+                                                                        {badge}
+                                                                    </span>
+                                                                    <div>
+                                                                        <div className="font-bold text-socrates-dark text-sm">{tr.emp_name}</div>
+                                                                        <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">{tr.emp_code}</div>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-6">
+                                                                    {tr.last_speed > 0 && (
+                                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 bg-slate-100 text-slate-600 border border-slate-200`}>
+                                                                            <i className="fas fa-bolt text-amber-500"></i> {tr.last_speed}s
+                                                                        </span>
+                                                                    )}
+                                                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                                                        tr.last_correct 
+                                                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                                                            : 'bg-red-50 text-red-600 border border-red-200'
+                                                                    }`}>
+                                                                        {tr.last_correct ? 'Correct' : 'Incorrect'}
+                                                                    </span>
+                                                                    <span className="font-extrabold text-socrates-dark text-base font-mono w-16 text-right">{tr.score} pts</span>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Socratic Gap analysis stage */}
+                            {stage === 'training' && (
+                                <div className="animate-fade-in max-w-2xl bg-white p-12 rounded-3xl shadow-lg border border-slate-100">
+                                    <div className="w-24 h-24 bg-blue-50 text-socrates-primary rounded-2xl flex items-center justify-center text-4xl mx-auto mb-8 shadow-sm border border-blue-100"><i className="fas fa-chalkboard-teacher"></i></div>
+                                    <h3 className="text-3xl font-extrabold mb-4 text-socrates-dark tracking-tight">Socratic Gap Analysis</h3>
+                                    <p className="text-slate-500 font-medium text-sm leading-relaxed mb-6">Review the Pre-Test answers with the trainees. Engage them in dialogue regarding key criteria before initiating the Post-Test.</p>
+                                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-left text-xs text-amber-800 font-medium leading-relaxed">
+                                        <i className="fas fa-lightbulb mr-1"></i> <strong>Socratic Tip:</strong> Ask executives why incorrect options were chosen rather than simply stating the correct one.
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        
+                        {/* SIDEBAR MASTER CONTROL */}
+                        <div className="w-80 flex flex-col bg-white">
+                            <div className="p-6 border-b border-slate-200 bg-slate-50">
+                                <h4 className="font-bold text-xs mb-4 uppercase text-slate-500 tracking-widest flex items-center gap-2"><i className="fas fa-gamepad text-socrates-primary"></i> Master Control</h4>
+                                
+                                {activeModule && activeModule.questions && activeModule.questions.length > 0 ? (
+                                    <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                        <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest flex items-center gap-1">
+                                            <i className="fas fa-list-ol text-purple-600"></i> Active Question Index
+                                        </label>
+                                        <select 
+                                            value={activeQIdx} 
+                                            onChange={(e) => {
+                                                setActiveQIdx(parseInt(e.target.value));
+                                                setVotes({0:0, 1:0, 2:0, 3:0});
+                                                setActiveTab('chart');
+                                            }} 
+                                            className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-purple-600 focus:ring-purple-100"
+                                        >
+                                            {activeModule.questions.map((q, idx) => (
+                                                <option key={idx} value={idx}>
+                                                    Q{idx + 1}: {q.question_text.length > 25 ? `${q.question_text.substring(0, 25)}...` : q.question_text}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ) : (
+                                    <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                        <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest"><i className="fas fa-calendar-day text-socrates-primary mr-1"></i> Choose Milestone</label>
+                                        <select 
+                                            value={assignmentDay} 
+                                            onChange={(e) => {
+                                                setAssignmentDay(e.target.value);
+                                                setVotes({0:0, 1:0, 2:0, 3:0});
+                                                setActiveTab('chart');
+                                            }} 
+                                            className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-socrates-primary"
+                                        >
+                                            <option value="zero day">zero day</option>
+                                            <option value="six days">six days</option>
+                                            <option value="twenty days">twenty days</option>
+                                        </select>
+                                    </div>
+                                )}
+ 
+                                <div className="space-y-3">
+                                    <button onClick={() => pushView('pretest')} className={`w-full py-3 shadow-sm ${stage==='pretest'?'btn-primary':'btn-outline'}`}>1. Push Pre-Test</button>
+                                    <button onClick={() => pushView('training')} className={`w-full py-3 shadow-sm ${stage==='training'?'btn-primary':'btn-outline'}`}>2. Training Lock Screen</button>
+                                    <button onClick={() => pushView('posttest')} className={`w-full py-3 shadow-sm ${stage==='posttest'?'btn-primary':'btn-outline'}`}>3. Push Post-Test</button>
+                                    <div className="pt-2 border-t border-slate-200 mt-2">
+                                        <button onClick={triggerFinalPodium} className="w-full btn-primary bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 py-3 shadow-md flex items-center justify-center gap-1.5 hover:from-amber-600 hover:to-amber-700">
+                                            <i className="fas fa-crown"></i> 4. Show Final Podium
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="p-6 flex-1 overflow-y-auto divide-y divide-slate-100">
+                                <h5 className="font-bold text-xs text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5"><i className="fas fa-users text-slate-400"></i> Trainees Joined ({users.length})</h5>
+                                {users.map(u => (
+                                    <div key={u} className="py-2.5 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-socrates-accent shadow-[0_0_6px_rgba(16,185,129,0.5)]"></span>
+                                        <span className="text-xs font-bold text-slate-700">{u}</span>
+                                    </div>
+                                ))}
+                                {users.length === 0 && (
+                                    <p className="text-xs text-slate-400 py-4 italic">Waiting for trainees to connect...</p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    {% endraw %}
+    </script>
+</body>
+</html>

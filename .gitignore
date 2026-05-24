@@ -1,0 +1,29 @@
+# Python environment files
+venv/
+ENV/
+env/
+.env
+.venv
+poetry.lock
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Caches and temporary files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store
+
+# Local SQLite databases (we want Render to generate a fresh one or connect to cloud storage)
+socrates.db
+*.db-journal
+*.db-wal
+
+# User uploads and runtime files
+uploads/
+logs/
+*.log
