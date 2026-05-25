@@ -31,14 +31,17 @@
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #F1F5F9; color: #0F172A; }
-        .card { background: white; border: 1px solid #E2E8F0; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); }
-        .btn-primary { background: #2563EB; color: white; border-radius: 8px; padding: 12px 20px; font-weight: 600; font-size: 14px; transition: 0.2s; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); }
-        .btn-primary:hover { background: #1D4ED8; transform: translateY(-1px); }
-        .btn-outline { border: 1px solid #CBD5E1; color: #475569; border-radius: 8px; padding: 12px 20px; font-weight: 600; font-size: 14px; transition: 0.2s; background: white;}
-        .btn-outline:hover { background: #F8FAFC; border-color: #94A3B8; }
-        .input-field { border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px 16px; font-size: 14px; width: 100%; outline: none; transition: 0.2s; }
-        .input-field:focus { border-color: #2563EB; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+        body { font-family: 'Inter', sans-serif; background-color: #F8FAFC; color: #0F172A; }
+        .card { background: white; border: 1px solid rgba(226, 232, 240, 0.8); border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.02), 0 4px 6px -4px rgba(15, 23, 42, 0.02); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .card:hover { transform: translateY(-2px); box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.04), 0 8px 10px -6px rgba(15, 23, 42, 0.04); border-color: rgba(37, 99, 235, 0.25); }
+        .btn-primary { background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); color: white; border-radius: 12px; padding: 11px 20px; font-weight: 700; font-size: 14px; transition: all 0.25s ease; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(37,99,235,0.15); border: none; outline: none; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-primary:hover { background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%); transform: translateY(-1px); box-shadow: 0 8px 12px -1px rgba(37,99,235,0.25); }
+        .btn-primary:active { transform: translateY(0.5px); }
+        .btn-outline { border: 1.5px solid #E2E8F0; background: white; color: #475569; border-radius: 12px; padding: 10px 20px; font-weight: 700; font-size: 14px; transition: all 0.25s ease; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-outline:hover { background: #F8FAFC; border-color: #CBD5E1; color: #0F172A; transform: translateY(-1px); }
+        .btn-outline:active { transform: translateY(0.5px); }
+        .input-field { border: 1.5px solid #E2E8F0; border-radius: 12px; padding: 11px 16px; font-size: 14px; width: 100%; outline: none; transition: all 0.25s ease; background: #F8FAFC; }
+        .input-field:focus { border-color: #2563EB; background: white; box-shadow: 0 0 0 4px rgba(37,99,235,0.08); }
         @keyframes fall {
             0% { transform: translateY(0) rotate(0deg); }
             100% { transform: translateY(105vh) rotate(360deg); }
