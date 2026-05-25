@@ -2625,21 +2625,47 @@
         };
 
         const milestoneQuestions = {
-            'zero day': {
-                question: "What is the maximum LTV ratio allowed for a standard Two-Wheeler loan?",
-                options: ["75%", "85%", "90%", "100%"],
-                correctIndex: 1
-            },
-            'six days': {
-                question: "What is the minimum CIBIL score required for a 90% LTV approval?",
-                options: ["650", "700", "750", "800"],
-                correctIndex: 2
-            },
-            'twenty days': {
-                question: "Which document is mandatory for a loan amount exceeding ₹2 Lakhs?",
-                options: ["Electricity Bill", "Rent Agreement", "ITR / Form 16", "Passport"],
-                correctIndex: 2
-            }
+            'zero day': [
+                {
+                    question: "What is the maximum LTV ratio allowed for a standard Two-Wheeler loan?",
+                    options: ["75%", "85%", "90%", "100%"],
+                    correctIndex: 1
+                },
+                {
+                    question: "What is the maximum tenure for a commercial vehicle loan under standard policy?",
+                    options: ["36 Months", "48 Months", "60 Months", "72 Months"],
+                    correctIndex: 2
+                },
+                {
+                    question: "What is the grace period allowed for interest payments before late fees apply?",
+                    options: ["No Grace Period", "3 Days", "5 Days", "10 Days"],
+                    correctIndex: 1
+                }
+            ],
+            'six days': [
+                {
+                    question: "What is the minimum CIBIL score required for a 90% LTV approval?",
+                    options: ["650", "700", "750", "800"],
+                    correctIndex: 2
+                },
+                {
+                    question: "Which CIBIL score tier is considered high-risk under 2026 guidelines?",
+                    options: ["Above 750", "700-750", "600-699", "Below 600"],
+                    correctIndex: 3
+                }
+            ],
+            'twenty days': [
+                {
+                    question: "Which document is mandatory for a loan amount exceeding ₹2 Lakhs?",
+                    options: ["Electricity Bill", "Rent Agreement", "ITR / Form 16", "Passport"],
+                    correctIndex: 2
+                },
+                {
+                    question: "What primary proof is required to verify a self-employed applicant's business existence?",
+                    options: ["GST Registration / Trade License", "Visiting Card", "Bank Statement Only", "Letter from local vendor"],
+                    correctIndex: 0
+                }
+            ]
         };
 
         const Confetti = () => {
@@ -2742,20 +2768,23 @@
 
             const getActiveQuestionData = () => {
                 if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
-                    const q = activeModule.questions[activeQIdx];
+                    const q = activeModule.questions[activeQIdx] || activeModule.questions[0];
                     return {
                         question: q.question_text,
                         options: [q.option_a, q.option_b, q.option_c, q.option_d],
                         correctIndex: q.correct_index,
-                        isDynamic: true
+                        isDynamic: true,
+                        totalQs: activeModule.questions.length
                     };
                 }
-                const q = milestoneQuestions[assignmentDay];
+                const qs = milestoneQuestions[assignmentDay] || [];
+                const q = qs[activeQIdx] || qs[0] || { question: "N/A", options: ["N/A", "N/A", "N/A", "N/A"], correctIndex: 0 };
                 return {
                     question: q.question,
                     options: q.options,
                     correctIndex: q.correctIndex,
-                    isDynamic: false
+                    isDynamic: false,
+                    totalQs: qs.length
                 };
             };
 
@@ -2764,18 +2793,87 @@
             const pushView = (viewName) => {
                 setStage(viewName);
                 
-                // Reset votes when starting a new quiz stage
+                let qData;
                 if (viewName === 'pretest' || viewName === 'posttest') {
                     setVotes({0:0, 1:0, 2:0, 3:0});
+                    setActiveQIdx(0);
+                    setActiveTab('chart');
+                    
+                    // Fetch the 0-th question directly to avoid stale state in Socket emit
+                    if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
+                        const q = activeModule.questions[0];
+                        qData = {
+                            question: q.question_text,
+                            options: [q.option_a, q.option_b, q.option_c, q.option_d],
+                            correctIndex: q.correct_index
+                        };
+                    } else {
+                        const q = milestoneQuestions[assignmentDay][0];
+                        qData = {
+                            question: q.question,
+                            options: q.options,
+                            correctIndex: q.correctIndex
+                        };
+                    }
+                } else {
+                    qData = {
+                        question: currentQ.question,
+                        options: currentQ.options,
+                        correctIndex: currentQ.correctIndex
+                    };
                 }
                 
                 socket.emit('trainer_broadcast', {
                     pin: sessionId,
                     view: viewName,
                     assignment_day: assignmentDay,
-                    question: currentQ.question,
-                    options: currentQ.options,
-                    correctIndex: currentQ.correctIndex
+                    question: qData.question,
+                    options: qData.options,
+                    correctIndex: qData.correctIndex
+                });
+            };
+
+            const navigateToQuestion = (newIdx) => {
+                if (newIdx < 0) return;
+                
+                let total = 0;
+                if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
+                    total = activeModule.questions.length;
+                } else {
+                    total = (milestoneQuestions[assignmentDay] || []).length;
+                }
+                
+                if (newIdx >= total) return;
+                
+                setActiveQIdx(newIdx);
+                setVotes({0:0, 1:0, 2:0, 3:0});
+                setActiveTab('chart');
+                
+                // Fetch the question data directly using newIdx to avoid stale state in Socket emit
+                let nextQ;
+                if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
+                    const q = activeModule.questions[newIdx];
+                    nextQ = {
+                        question: q.question_text,
+                        options: [q.option_a, q.option_b, q.option_c, q.option_d],
+                        correctIndex: q.correct_index
+                    };
+                } else {
+                    const q = milestoneQuestions[assignmentDay][newIdx];
+                    nextQ = {
+                        question: q.question,
+                        options: q.options,
+                        correctIndex: q.correctIndex
+                    };
+                }
+                
+                socket.emit('trainer_broadcast', {
+                    pin: sessionId,
+                    view: stage,
+                    assignment_day: assignmentDay,
+                    question: nextQ.question,
+                    options: nextQ.options,
+                    correctIndex: nextQ.correctIndex
                 });
             };
 
@@ -2893,6 +2991,37 @@
                             {(stage === 'pretest' || stage === 'posttest') && (
                                 <div className="w-full max-w-3xl animate-fade-in flex flex-col">
                                     
+                                    {/* Active Question Controller Toolbar */}
+                                    <div className="bg-white p-4 rounded-2xl shadow-md border border-slate-100 flex justify-between items-center mb-6 w-full animate-fade-in">
+                                        <div className="flex items-center gap-3">
+                                            <span className="w-8 h-8 rounded-full bg-purple-50 text-purple-700 flex items-center justify-center font-bold text-xs border border-purple-100 shadow-sm">
+                                                <i className="fas fa-list-ol"></i>
+                                            </span>
+                                            <div>
+                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Controller</div>
+                                                <div className="text-sm font-extrabold text-socrates-dark">Question {activeQIdx + 1} of {currentQ.totalQs}</div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="flex gap-3">
+                                            <button 
+                                                onClick={() => navigateToQuestion(activeQIdx - 1)}
+                                                disabled={activeQIdx === 0}
+                                                className="btn-outline border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 disabled:hover:bg-transparent"
+                                            >
+                                                <i className="fas fa-chevron-left"></i> Back Question
+                                            </button>
+                                            
+                                            <button 
+                                                onClick={() => navigateToQuestion(activeQIdx + 1)}
+                                                disabled={activeQIdx >= currentQ.totalQs - 1}
+                                                className="btn-primary bg-gradient-to-r from-socrates-primary to-blue-600 border-none text-white px-6 py-2 text-xs font-bold flex items-center gap-1.5 shadow-md hover:shadow-lg disabled:opacity-40"
+                                            >
+                                                Next Question <i className="fas fa-chevron-right"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
                                     {/* Tabs for toggling chart vs leaderboard */}
                                     <div className="flex bg-slate-200/60 p-1 rounded-xl mb-6 self-center border border-slate-200">
                                         <button 
@@ -2921,7 +3050,7 @@
                                         <div className="bg-white p-10 rounded-2xl shadow-md border border-slate-100 animate-fade-in w-full text-left">
                                             <div className="flex justify-between items-center mb-6 border-b pb-4">
                                                 <span className="text-xs font-extrabold uppercase text-socrates-primary tracking-widest bg-blue-50 border border-blue-100 px-3 py-1 rounded-md">
-                                                    {activeModule ? `${activeModule.title} (Q${activeQIdx + 1})` : assignmentDay} - {stage === 'pretest' ? 'Pre-Test' : 'Post-Test'}
+                                                    {activeModule ? `${activeModule.title} (Q${activeQIdx + 1})` : `${assignmentDay} (Q${activeQIdx + 1})`} - {stage === 'pretest' ? 'Pre-Test' : 'Post-Test'}
                                                 </span>
                                                 <span className="text-xs font-semibold text-slate-500">Votes Counted: {totalVotes}</span>
                                             </div>
@@ -3021,7 +3150,7 @@
                                 <h4 className="font-bold text-xs mb-4 uppercase text-slate-500 tracking-widest flex items-center gap-2"><i className="fas fa-gamepad text-socrates-primary"></i> Master Control</h4>
                                 
                                 {activeModule && activeModule.questions && activeModule.questions.length > 0 ? (
-                                    <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                    <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm animate-fade-in">
                                         <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest flex items-center gap-1">
                                             <i className="fas fa-list-ol text-purple-600"></i> Active Question Index
                                         </label>
@@ -3031,8 +3160,13 @@
                                                 setActiveQIdx(parseInt(e.target.value));
                                                 setVotes({0:0, 1:0, 2:0, 3:0});
                                                 setActiveTab('chart');
+                                                
+                                                // If already in a quiz stage, auto-broadcast the selected question immediately
+                                                if (stage === 'pretest' || stage === 'posttest') {
+                                                    navigateToQuestion(parseInt(e.target.value));
+                                                }
                                             }} 
-                                            className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-purple-600 focus:ring-purple-100"
+                                            className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-purple-600 focus:ring-purple-100 animate-fade-in"
                                         >
                                             {activeModule.questions.map((q, idx) => (
                                                 <option key={idx} value={idx}>
@@ -3042,21 +3176,58 @@
                                         </select>
                                     </div>
                                 ) : (
-                                    <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                        <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest"><i className="fas fa-calendar-day text-socrates-primary mr-1"></i> Choose Milestone</label>
-                                        <select 
-                                            value={assignmentDay} 
-                                            onChange={(e) => {
-                                                setAssignmentDay(e.target.value);
-                                                setVotes({0:0, 1:0, 2:0, 3:0});
-                                                setActiveTab('chart');
-                                            }} 
-                                            className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-socrates-primary"
-                                        >
-                                            <option value="zero day">zero day</option>
-                                            <option value="six days">six days</option>
-                                            <option value="twenty days">twenty days</option>
-                                        </select>
+                                    <div className="animate-fade-in">
+                                        <div className="mb-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                            <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest flex items-center gap-1">
+                                                <i className="fas fa-calendar-day text-socrates-primary"></i> Choose Milestone
+                                            </label>
+                                            <select 
+                                                value={assignmentDay} 
+                                                onChange={(e) => {
+                                                    setAssignmentDay(e.target.value);
+                                                    setActiveQIdx(0);
+                                                    setVotes({0:0, 1:0, 2:0, 3:0});
+                                                    setActiveTab('chart');
+                                                    
+                                                    // If already in a quiz stage, auto-broadcast the 0-th question of new milestone immediately
+                                                    if (stage === 'pretest' || stage === 'posttest') {
+                                                        setTimeout(() => {
+                                                            navigateToQuestion(0);
+                                                        }, 50);
+                                                    }
+                                                }} 
+                                                className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-socrates-primary"
+                                            >
+                                                <option value="zero day">zero day</option>
+                                                <option value="six days">six days</option>
+                                                <option value="twenty days">twenty days</option>
+                                            </select>
+                                        </div>
+                                        <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                            <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest flex items-center gap-1">
+                                                <i className="fas fa-list-ol text-socrates-primary"></i> Active Question Index
+                                            </label>
+                                            <select 
+                                                value={activeQIdx} 
+                                                onChange={(e) => {
+                                                    setActiveQIdx(parseInt(e.target.value));
+                                                    setVotes({0:0, 1:0, 2:0, 3:0});
+                                                    setActiveTab('chart');
+                                                    
+                                                    // If already in a quiz stage, auto-broadcast the selected question immediately
+                                                    if (stage === 'pretest' || stage === 'posttest') {
+                                                        navigateToQuestion(parseInt(e.target.value));
+                                                    }
+                                                }} 
+                                                className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-socrates-primary"
+                                            >
+                                                {(milestoneQuestions[assignmentDay] || []).map((q, idx) => (
+                                                    <option key={idx} value={idx}>
+                                                        Q{idx + 1}: {q.question.length > 25 ? `${q.question.substring(0, 25)}...` : q.question}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
                                 )}
  
