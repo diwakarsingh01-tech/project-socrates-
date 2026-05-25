@@ -1203,6 +1203,7 @@
             const [tid, setTid] = useState('');
             const [name, setName] = useState('');
             const [zone, setZone] = useState('AMD_BU');
+            const [password, setPassword] = useState('password123');
 
             const loadTrainers = () => {
                 fetch('/api/trainers')
@@ -1240,8 +1241,8 @@
             };
 
             const handleCreate = () => {
-                if(!tid || !name) return alert("Please enter Trainer ID and Name");
-                const payload = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, password: 'password123' };
+                if(!tid || !name || !password) return alert("Please enter Trainer ID, Name, and Password");
+                const payload = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, password: password.trim() };
                 
                 fetch('/api/trainers', {
                     method: 'POST',
@@ -1254,6 +1255,7 @@
                         alert('Trainer Credential Created Successfully in SQLite Database!');
                         setTid(''); 
                         setName('');
+                        setPassword('password123');
                         loadTrainers();
                     } else {
                         alert("Failed to create trainer: " + data.message);
@@ -1261,9 +1263,9 @@
                 })
                 .catch(err => {
                     console.error("Trainer creation failed, offline fallback:", err);
-                    const newTrainer = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, status: 'Active', password: 'password123' };
+                    const newTrainer = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, status: 'Active', password: password.trim() };
                     db.set('s_trainers', [...trainers, newTrainer]);
-                    setTid(''); setName('');
+                    setTid(''); setName(''); setPassword('password123');
                     loadTrainers();
                 });
             };
@@ -1311,14 +1313,27 @@
                             <h3 className="font-bold text-lg text-socrates-dark tracking-tight">Create Trainer ID</h3>
                         </div>
                         <div className="space-y-4">
-                            <input type="text" value={tid} onChange={(e)=>setTid(e.target.value)} className="input-field bg-white" placeholder="Trainer ID (e.g. TR-1005)" />
-                            <input type="text" value={name} onChange={(e)=>setName(e.target.value)} className="input-field bg-white" placeholder="Full Name" />
-                            <select value={zone} onChange={(e)=>setZone(e.target.value)} className="input-field bg-white">
-                                <option value="AMD_BU">AMD_BU</option>
-                                <option value="CH_BU">CH_BU</option>
-                                <option value="DEL_BU">DEL_BU</option>
-                                <option value="KOL_BU">KOL_BU</option>
-                            </select>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Trainer ID</label>
+                                <input type="text" value={tid} onChange={(e)=>setTid(e.target.value)} className="input-field bg-white" placeholder="Trainer ID (e.g. TR-1005)" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Full Name</label>
+                                <input type="text" value={name} onChange={(e)=>setName(e.target.value)} className="input-field bg-white" placeholder="Full Name" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Password</label>
+                                <input type="text" value={password} onChange={(e)=>setPassword(e.target.value)} className="input-field bg-white font-mono" placeholder="Password" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Region</label>
+                                <select value={zone} onChange={(e)=>setZone(e.target.value)} className="input-field bg-white">
+                                    <option value="AMD_BU">AMD_BU</option>
+                                    <option value="CH_BU">CH_BU</option>
+                                    <option value="DEL_BU">DEL_BU</option>
+                                    <option value="KOL_BU">KOL_BU</option>
+                                </select>
+                            </div>
                             <button onClick={handleCreate} className="w-full btn-primary mt-4 shadow-md"><i className="fas fa-plus mr-2"></i> Create Credentials</button>
                         </div>
                     </div>
