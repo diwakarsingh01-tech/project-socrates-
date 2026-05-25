@@ -708,7 +708,12 @@ def search_roster():
 def handle_modules():
     conn = get_db_connection()
     if request.method == 'GET':
-        modules = conn.execute("SELECT * FROM modules ORDER BY id DESC").fetchall()
+        modules = conn.execute("""
+            SELECT m.*, t.name as creator_name
+            FROM modules m
+            LEFT JOIN trainers t ON m.created_by = t.trainer_id
+            ORDER BY m.id DESC
+        """).fetchall()
             
         res_list = []
         for m in modules:
@@ -743,6 +748,124 @@ def delete_module(module_id):
     conn.commit()
     conn.close()
     return jsonify({"status": "success"})
+
+def generate_heuristic_questions(text_content, count, title="Module"):
+    import re
+    import random
+    
+    # Clean text content
+    paragraphs = [p.strip() for p in text_content.split('\n') if len(p.strip()) > 30]
+    sentences = []
+    for p in paragraphs:
+        for s in re.split(r'\. |\n', p):
+            s_clean = s.strip()
+            if len(s_clean) > 20 and len(s_clean) < 220:
+                sentences.append(s_clean)
+                
+    questions = []
+    
+    # Heuristic 1: Extract sentences with percentages (e.g. 85%, 90%)
+    for s in sentences:
+        pct_match = re.search(r'(\d+)\s*%', s)
+        if pct_match:
+            correct_val = pct_match.group(0)
+            val_num = int(pct_match.group(1))
+            masked_s = s.replace(correct_val, "_____")
+            
+            choices = [correct_val]
+            choices.append(f"{max(0, val_num - 10)}%")
+            choices.append(f"{val_num + 10}%")
+            choices.append(f"{val_num + 5}%" if val_num < 95 else f"{val_num - 5}%")
+            
+            choices = list(set(choices))
+            while len(choices) < 4:
+                choices.append(f"{random.randint(5, 9) * 10}%")
+            choices = list(set(choices))[:4]
+            random.shuffle(choices)
+            
+            questions.append({
+                "question": f"According to the policy document: \"{masked_s}\" What is the correct percentage?",
+                "options": choices,
+                "correctIndex": choices.index(correct_val),
+                "approved": 0
+            })
+            
+    # Heuristic 2: Extract sentences with numbers/amounts (e.g. 3 Days, 60 Months, ₹2 Lakhs)
+    for s in sentences:
+        if len(questions) >= count:
+            break
+        num_match = re.search(r'(\d+)\s*(Months|Days|Years|Lakhs|Rs|₹)', s, re.IGNORECASE)
+        if num_match:
+            correct_val = num_match.group(0)
+            val_num = int(num_match.group(1))
+            unit = num_match.group(2)
+            masked_s = re.sub(re.escape(correct_val), "_____", s, flags=re.IGNORECASE)
+            
+            choices = [correct_val]
+            choices.append(f"{max(0, val_num - 2)} {unit}")
+            choices.append(f"{val_num + 2} {unit}")
+            choices.append(f"{val_num * 2} {unit}")
+            
+            choices = list(set(choices))
+            while len(choices) < 4:
+                choices.append(f"{random.randint(1, 100)} {unit}")
+            choices = list(set(choices))[:4]
+            random.shuffle(choices)
+            
+            questions.append({
+                "question": f"Based on the uploaded guidelines: \"{masked_s}\" What is the correct threshold?",
+                "options": choices,
+                "correctIndex": choices.index(correct_val),
+                "approved": 0
+            })
+            
+    # Heuristic 3: Reading comprehension split
+    for p in paragraphs:
+        if len(questions) >= count:
+            break
+        p_sentences = [s.strip() for s in re.split(r'\. |\n', p) if len(s.strip()) > 20]
+        if len(p_sentences) >= 2:
+            target_sentence = p_sentences[-1]
+            intro_p = " ".join(p_sentences[:-1])
+            if len(intro_p) > 60 and len(intro_p) < 250:
+                questions.append({
+                    "question": f"Given the section: \"{intro_p}\" Which of the following is correct regarding policy enforcement?",
+                    "options": [
+                        target_sentence,
+                        "Address verification is bypassed for high-profile customers.",
+                        "All credit policy rules are subject to verbal approval only.",
+                        "No formal documentation is required for secondary applicants."
+                    ],
+                    "correctIndex": 0,
+                    "approved": 0
+                })
+                opts = questions[-1]["options"]
+                correct_opt = opts[0]
+                random.shuffle(opts)
+                questions[-1]["options"] = opts
+                questions[-1]["correctIndex"] = opts.index(correct_opt)
+
+    # Fallback if we still need more questions
+    while len(questions) < count:
+        q_idx = len(questions)
+        questions.append({
+            "question": f"[{title} Q{q_idx + 1}] Under the uploaded guidelines, what is the primary standard procedure for compliance audits?",
+            "options": [
+                "Perform comprehensive daily reconciliations against standard guidelines.",
+                "Review files only at the end of each fiscal quarter.",
+                "Disburse loans first and perform verification post-facto.",
+                "Audits are conducted purely on a voluntary basis."
+            ],
+            "correctIndex": 0,
+            "approved": 0
+        })
+        opts = questions[-1]["options"]
+        correct_opt = opts[0]
+        random.shuffle(opts)
+        questions[-1]["options"] = opts
+        questions[-1]["correctIndex"] = opts.index(correct_opt)
+            
+    return questions[:count]
 
 @app.route('/api/modules/generate', methods=['POST'])
 def generate_module():
@@ -794,6 +917,8 @@ def generate_module():
             
             prompt = f"""
             You are a senior Socratic Trainer with 20 years of experience.
+            CRITICAL INSTRUCTION: You MUST only generate questions directly and strictly based on the provided policy content document. DO NOT assume, hallucinate, or import any external knowledge, other bank/lending policies, or generic rules. If the subject of the document is different (e.g. KYC, credit approval, compliance), ONLY base your questions on that specific subject. Every numeric limit, threshold, rule, or exception in your questions MUST be directly traceable to the provided text below.
+            
             Perform deep research on this policy content and generate exactly {count} multiple-choice Socratic assessment questions.
             Each question must have exactly 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
             Ensure the questions are challenging, dialogue-oriented, and directly based on the key rules, constraints, numeric thresholds, and exceptions inside the text.
@@ -854,67 +979,10 @@ def generate_module():
         except Exception as e:
             print(f"Gemini API call failed, falling back to Socratic Offline Generator: {str(e)}")
             
-    # 3. High-Fidelity Socratic Offline Fallback Generator
+    # 3. High-Fidelity Socratic Offline Fallback Heuristic Generator
     if not gemini_success:
-        # Standard offline pool of high-quality Socratic questions to serve
-        offline_pool = [
-            {
-                "question": "Under the standard Two-Wheeler policy, what is the maximum Loan-to-Value (LTV) ratio permitted without special credit approvals?",
-                "options": ["75%", "85%", "90%", "100%"],
-                "correctIndex": 1
-            },
-            {
-                "question": "What is the absolute minimum CIBIL score required for an executive to approve a 90% LTV loan amount?",
-                "options": ["650", "700", "750", "800"],
-                "correctIndex": 2
-            },
-            {
-                "question": "Which specific verification document is strictly mandatory for any credit disbursement exceeding ₹2 Lakhs?",
-                "options": ["Electricity Bill", "Rent Agreement", "ITR / Form 16", "Passport"],
-                "correctIndex": 2
-            },
-            {
-                "question": "If an applicant's monthly debt obligation exceeds 50% of net income, what is the maximum loan tenure permitted?",
-                "options": ["24 Months", "36 Months", "48 Months", "60 Months"],
-                "correctIndex": 1
-            },
-            {
-                "question": "For co-applicants on a standard retail loan, whose CIBIL score is considered as the primary rating for approval?",
-                "options": ["Primary applicant only", "Co-applicant only", "The higher score of the two", "The average score of both"],
-                "correctIndex": 2
-            },
-            {
-                "question": "What is the maximum age limit of the applicant at the time of loan maturity under the Two-Wheeler policy?",
-                "options": ["58 Years", "60 Years", "65 Years", "70 Years"],
-                "correctIndex": 2
-            },
-            {
-                "question": "Under what circumstance can a loan be disbursed without a physical address verification report?",
-                "options": ["Loan below ₹50,000", "Customer has active banking with us", "Under no circumstance", "Approved by Zone Credit Manager"],
-                "correctIndex": 2
-            },
-            {
-                "question": "What is the standard processing fee percentage charged for commercial vehicle loans?",
-                "options": ["1.0%", "1.5%", "2.0%", "2.5%"],
-                "correctIndex": 2
-            },
-            {
-                "question": "Which of the following is considered an acceptable income proof for a self-employed applicant?",
-                "options": ["3-month bank statement", "Declaration on letterhead", "Latest 2 years Audited ITR", "GST registration copy only"],
-                "correctIndex": 2
-            }
-        ]
-        
-        generated_questions = []
-        for i in range(count):
-            pool_item = offline_pool[i % len(offline_pool)]
-            edited_q = {
-                "question": f"({title}) {pool_item['question']}" if i < 3 else pool_item['question'],
-                "options": pool_item['options'],
-                "correctIndex": pool_item['correctIndex'],
-                "approved": 0
-            }
-            generated_questions.append(edited_q)
+        print("Using Dynamic Offline Socratic Heuristic Generator based on uploaded document...")
+        generated_questions = generate_heuristic_questions(text_content, count, title)
             
     return jsonify({
         "status": "success",

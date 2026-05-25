@@ -125,6 +125,12 @@
                 }
             }, [user]);
 
+            useEffect(() => {
+                if (view !== 'live_session') {
+                    localStorage.removeItem('socrates_active_module');
+                }
+            }, [view]);
+
             const renderContent = () => {
                 switch(view) {
                     case 'dashboard': return <AdminDashboard onNav={setView} user={activeTrainer} />;
@@ -1596,7 +1602,7 @@
                                                 <div className="flex flex-wrap gap-2 mt-1.5">
                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-500 text-[10px] font-bold">
                                                         <i className="fas fa-magic text-[9px] text-purple-500"></i>
-                                                        Maker: {mod.created_by || 'ADMIN'}
+                                                        Maker: {mod.creator_name ? `${mod.creator_name} (${mod.created_by})` : (mod.created_by === 'ADMIN' ? 'Super Admin (ADMIN)' : mod.created_by)}
                                                     </span>
                                                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
                                                         isReady 
