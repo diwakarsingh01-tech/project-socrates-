@@ -123,7 +123,7 @@
             };
 
             const downloadTemplate = () => {
-                const csvData = "Emp Code,Name,Branch,Zone,BU\nSF-1001,John Doe,HQ,North,Retail\nSF-1002,Jane Smith,Ahmedabad,West,Loans";
+                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role\nSF-1001,Rahul Singh,Delhi South,North Zone,Delhi Division,Two-Wheeler,PL Exe\nSF-1002,Neha Sharma,Mumbai Bandra,West Zone,Mumbai Division,Two-Wheeler,PL Exe";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
