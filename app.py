@@ -30,14 +30,23 @@ def init_db():
         zone TEXT,
         division TEXT,
         business_unit TEXT,
-        role TEXT
+        role TEXT,
+        product_name TEXT,
+        status TEXT DEFAULT 'ACTIVE',
+        change_detail TEXT DEFAULT 'ADDED MANUALLY'
     )''')
     
-    # Run migration to add 'role' column if db was created in older version
+    # Run migration to add columns if db was created in older version
     cursor.execute("PRAGMA table_info(employees)")
     cols = [row[1] for row in cursor.fetchall()]
     if 'role' not in cols:
         cursor.execute("ALTER TABLE employees ADD COLUMN role TEXT")
+    if 'product_name' not in cols:
+        cursor.execute("ALTER TABLE employees ADD COLUMN product_name TEXT")
+    if 'status' not in cols:
+        cursor.execute("ALTER TABLE employees ADD COLUMN status TEXT DEFAULT 'ACTIVE'")
+    if 'change_detail' not in cols:
+        cursor.execute("ALTER TABLE employees ADD COLUMN change_detail TEXT DEFAULT 'ADDED MANUALLY'")
     
     # Trainers
     cursor.execute('''
@@ -48,13 +57,29 @@ def init_db():
         password TEXT,
         status TEXT DEFAULT 'Active',
         role TEXT DEFAULT 'Trainer',
-        last_login TEXT
+        last_login TEXT,
+        zones TEXT DEFAULT 'ALL',
+        divisions TEXT DEFAULT 'ALL',
+        branches TEXT DEFAULT 'ALL',
+        business_units TEXT DEFAULT 'ALL'
     )''')
+    
+    # Run migration to add trainer scope columns if db was created in older version
+    cursor.execute("PRAGMA table_info(trainers)")
+    trainer_cols = [row[1] for row in cursor.fetchall()]
+    if 'zones' not in trainer_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN zones TEXT DEFAULT 'ALL'")
+    if 'divisions' not in trainer_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN divisions TEXT DEFAULT 'ALL'")
+    if 'branches' not in trainer_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN branches TEXT DEFAULT 'ALL'")
+    if 'business_units' not in trainer_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN business_units TEXT DEFAULT 'ALL'")
     
     # Add a default Super Admin if none exists
     cursor.execute("SELECT * FROM trainers WHERE trainer_id='ADMIN'")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin')")
+        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, zones, divisions, branches, business_units) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin', 'ALL', 'ALL', 'ALL', 'ALL')")
     
     # Modules
     cursor.execute('''
@@ -155,19 +180,31 @@ def admin_login():
     return jsonify({"status": "error", "message": "Invalid Credentials or Account Revoked"}), 401
 
 # 2. TRAINER MANAGEMENT (Super Admin Only)
+# 2. TRAINER MANAGEMENT (Super Admin Only)
 @app.route('/api/trainers', methods=['GET', 'POST'])
 def handle_trainers():
     conn = get_db_connection()
     if request.method == 'GET':
-        trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login FROM trainers WHERE role='Trainer'").fetchall()
+        trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units, password FROM trainers WHERE role='Trainer'").fetchall()
         conn.close()
         return jsonify([dict(t) for t in trainers])
     
     elif request.method == 'POST':
         data = request.json
         try:
-            conn.execute("INSERT INTO trainers (trainer_id, name, zone, password) VALUES (?, ?, ?, ?)",
-                         (data['id'].upper().strip(), data['name'], data['zone'], data['password']))
+            conn.execute(
+                "INSERT INTO trainers (trainer_id, name, zone, password, zones, divisions, branches, business_units) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    data['id'].upper().strip(),
+                    data['name'].strip(),
+                    data.get('zone', 'ALL'),
+                    data['password'].strip(),
+                    data.get('zones', 'ALL'),
+                    data.get('divisions', 'ALL'),
+                    data.get('branches', 'ALL'),
+                    data.get('business_units', 'ALL')
+                )
+            )
             conn.commit()
         except sqlite3.IntegrityError:
             conn.close()
@@ -175,15 +212,48 @@ def handle_trainers():
         conn.close()
         return jsonify({"status": "success"})
 
-@app.route('/api/trainers/<trainer_id>', methods=['DELETE'])
-def delete_trainer(trainer_id):
-    if trainer_id.upper() == 'ADMIN':
-        return jsonify({"status": "error", "message": "Super Admin cannot be deleted"}), 400
+@app.route('/api/trainers/<trainer_id>', methods=['PUT', 'DELETE'])
+def handle_single_trainer(trainer_id):
+    trainer_id = trainer_id.upper().strip()
     conn = get_db_connection()
-    conn.execute("DELETE FROM trainers WHERE trainer_id=?", (trainer_id.upper().strip(),))
-    conn.commit()
-    conn.close()
-    return jsonify({"status": "success"})
+    
+    if request.method == 'DELETE':
+        if trainer_id == 'ADMIN':
+            return jsonify({"status": "error", "message": "Super Admin cannot be deleted"}), 400
+        try:
+            conn.execute("DELETE FROM trainers WHERE trainer_id=?", (trainer_id,))
+            conn.commit()
+        except Exception as e:
+            conn.close()
+            return jsonify({"status": "error", "message": str(e)}), 500
+        conn.close()
+        return jsonify({"status": "success", "message": "Trainer deleted successfully"})
+        
+    elif request.method == 'PUT':
+        data = request.json
+        name = data.get('name', '').strip()
+        password = data.get('password', '').strip()
+        zone = data.get('zone', 'ALL')
+        zones = data.get('zones', 'ALL')
+        divisions = data.get('divisions', 'ALL')
+        branches = data.get('branches', 'ALL')
+        business_units = data.get('business_units', 'ALL')
+        
+        if not name or not password:
+            conn.close()
+            return jsonify({"status": "error", "message": "Name and Password are required."}), 400
+            
+        try:
+            conn.execute(
+                "UPDATE trainers SET name=?, password=?, zone=?, zones=?, divisions=?, branches=?, business_units=? WHERE trainer_id=?",
+                (name, password, zone, zones, divisions, branches, business_units, trainer_id)
+            )
+            conn.commit()
+        except Exception as e:
+            conn.close()
+            return jsonify({"status": "error", "message": str(e)}), 500
+        conn.close()
+        return jsonify({"status": "success", "message": "Trainer updated successfully"})
 
 @app.route('/api/trainers/<trainer_id>/status', methods=['PUT'])
 def update_trainer_status(trainer_id):
@@ -193,6 +263,126 @@ def update_trainer_status(trainer_id):
     conn.commit()
     conn.close()
     return jsonify({"status": "success"})
+
+@app.route('/api/trainers/upload', methods=['POST'])
+def upload_trainers():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No selected file"}), 400
+    
+    if file:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        REQUIRED_HEADERS = ['Trainer ID', 'Trainer Name', 'Password', 'Business Units', 'Zones', 'Divisions', 'Branches']
+        
+        rows = []
+        headers = []
+        try:
+            try:
+                with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
+                    reader = csv.reader(csvfile)
+                    headers = [h.strip() for h in next(reader)]
+                    for row_idx, r in enumerate(reader, start=2):
+                        if not r or len(r) < len(headers):
+                            continue
+                        rows.append((row_idx, r))
+            except (UnicodeDecodeError, ValueError):
+                rows = []
+                with open(filepath, 'r', encoding='latin-1') as csvfile:
+                    reader = csv.reader(csvfile)
+                    headers = [h.strip() for h in next(reader)]
+                    for row_idx, r in enumerate(reader, start=2):
+                        if not r or len(r) < len(headers):
+                            continue
+                        rows.append((row_idx, r))
+            
+            missing_headers = [req for req in REQUIRED_HEADERS if req not in headers]
+            if missing_headers:
+                return jsonify({
+                    "status": "error", 
+                    "message": f"Invalid CSV format. Missing column headers: {', '.join(missing_headers)}"
+                }), 400
+                
+            hdr_indices = {h: headers.index(h) for h in REQUIRED_HEADERS}
+            
+            final_rows = []
+            for row_idx, r in rows:
+                row_data = {
+                    'id': r[hdr_indices['Trainer ID']].strip().upper(),
+                    'name': r[hdr_indices['Trainer Name']].strip(),
+                    'password': r[hdr_indices['Password']].strip(),
+                    'business_units': r[hdr_indices['Business Units']].strip(),
+                    'zones': r[hdr_indices['Zones']].strip(),
+                    'divisions': r[hdr_indices['Divisions']].strip(),
+                    'branches': r[hdr_indices['Branches']].strip(),
+                }
+                final_rows.append((row_idx, row_data))
+            rows = final_rows
+
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to parse CSV: {str(e)}"}), 400
+            
+        seen_ids = {}
+        duplicates = []
+        
+        conn = get_db_connection()
+        for idx, row in rows:
+            tid = row['id']
+            if not tid:
+                continue
+            
+            if tid in seen_ids:
+                duplicates.append(f"Row {idx}: Trainer ID '{tid}' is duplicated in the file.")
+            else:
+                seen_ids[tid] = idx
+                
+            db_match = conn.execute("SELECT name FROM trainers WHERE trainer_id=?", (tid,)).fetchone()
+            if db_match:
+                duplicates.append(f"Row {idx}: Trainer ID '{tid}' already exists in the database as '{db_match['name']}'.")
+        
+        if duplicates:
+            conn.close()
+            return jsonify({
+                "status": "error", 
+                "message": "This is the duplicacy. You remove that.",
+                "details": duplicates
+            }), 400
+            
+        for _, row in rows:
+            try:
+                conn.execute(
+                    "INSERT INTO trainers (trainer_id, name, zone, password, zones, divisions, branches, business_units) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (row['id'], row['name'], row['zones'].split(',')[0].strip().upper() if row['zones'] else 'ALL', row['password'], row['zones'].upper(), row['divisions'].upper(), row['branches'].upper(), row['business_units'].upper())
+                )
+            except Exception as e:
+                conn.rollback()
+                conn.close()
+                return jsonify({"status": "error", "message": f"Database insertion failed: {str(e)}"}), 500
+                
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Trainers uploaded and registered successfully!"})
+
+@app.route('/api/metadata', methods=['GET'])
+def get_metadata():
+    conn = get_db_connection()
+    zones = conn.execute("SELECT DISTINCT zone FROM employees WHERE zone IS NOT NULL AND zone != '' ORDER BY zone").fetchall()
+    divisions = conn.execute("SELECT DISTINCT division FROM employees WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()
+    branches = conn.execute("SELECT DISTINCT branch_name FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
+    conn.close()
+    
+    bus = ["Two-Wheeler", "Personal Loan", "Gold Loan", "Commercial Vehicle", "Retail"]
+    
+    return jsonify({
+        "business_units": bus,
+        "zones": [r[0] for r in zones],
+        "divisions": [r[0] for r in divisions],
+        "branches": [r[0] for r in branches]
+    })
 
 @app.route('/api/admin/reset-database', methods=['POST'])
 def reset_database():
@@ -240,7 +430,8 @@ def get_roster():
         query += " AND division = ?"
         params.append(division)
     if search:
-        query += " AND (emp_code LIKE ? OR emp_name LIKE ?)"
+        query += " AND (emp_code LIKE ? OR emp_name LIKE ? OR product_name LIKE ?)"
+        params.append(f"%{search}%")
         params.append(f"%{search}%")
         params.append(f"%{search}%")
         
@@ -255,14 +446,16 @@ def get_roster():
 def get_roster_filters():
     conn = get_db_connection()
     zones = conn.execute("SELECT DISTINCT zone FROM employees WHERE zone IS NOT NULL AND zone != '' ORDER BY zone").fetchall()
-    divisions = conn.execute("SELECT DISTINCT division FROM employees WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()
-    branches = conn.execute("SELECT DISTINCT branch_name FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
+    divisions = conn.execute("SELECT DISTINCT division, zone FROM employees WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()
+    branches = conn.execute("SELECT DISTINCT branch_name, division FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
     conn.close()
     
     return jsonify({
         "zones": [r[0] for r in zones],
         "divisions": [r[0] for r in divisions],
-        "branches": [r[0] for r in branches]
+        "branches": [r[0] for r in branches],
+        "divisions_meta": [{"name": r[0], "zone": r[1]} for r in divisions],
+        "branches_meta": [{"name": r[0], "division": r[1]} for r in branches]
     })
 
 @app.route('/api/roster/upload', methods=['POST'])
@@ -311,12 +504,13 @@ def upload_roster():
                 }), 400
                 
             # Map columns by index
-            hdr_indices = {h: headers.index(h) for h in REQUIRED_HEADERS}
+            hdr_indices = {h: headers.index(h) for h in headers}
             
             # Form final row data
             final_rows = []
             for row_idx, r in rows:
-                row_data = {h: r[hdr_indices[h]].strip().upper() for h in REQUIRED_HEADERS}
+                row_data = {h: r[hdr_indices[h]].strip().upper() if h in hdr_indices else '' for h in REQUIRED_HEADERS}
+                row_data['Product Name'] = r[hdr_indices['Product Name']].strip().upper() if 'Product Name' in hdr_indices else 'N/A'
                 final_rows.append((row_idx, row_data))
             rows = final_rows
 
@@ -346,7 +540,6 @@ def upload_roster():
         
         if duplicates:
             conn.close()
-            # Explicit requirement: "This is the duplicacy. You remove that."
             return jsonify({
                 "status": "error", 
                 "message": "This is the duplicacy. You remove that.",
@@ -354,11 +547,12 @@ def upload_roster():
             }), 400
             
         # Insert records if no duplicates found
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d")
         for _, row in rows:
             try:
                 conn.execute(
-                    "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (row['Employee Code'], row['Employee Name'], row['Branch Name'], row['Zone'], row['Division'], row['Business Unit'], row['Role'])
+                    "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
+                    (row['Employee Code'], row['Employee Name'], row['Branch Name'], row['Zone'], row['Division'], row['Business Unit'], row['Role'], row['Product Name'], f"UPLOADED VIA CSV ON {now_str}")
                 )
             except Exception as e:
                 conn.rollback()
@@ -379,7 +573,12 @@ def add_roster_manual():
     division = data.get('division', '').strip().upper()
     business_unit = data.get('business_unit', '').strip().upper()
     role = data.get('role', '').strip().upper()
+    product_name = data.get('product_name', '').strip().upper()
+    change_detail = data.get('change_detail', '').strip().upper()
     
+    if not change_detail:
+        change_detail = "ADDED MANUALLY"
+        
     if not emp_code or not emp_name:
         return jsonify({"status": "error", "message": "Employee Code and Name are required."}), 400
         
@@ -393,11 +592,75 @@ def add_roster_manual():
             "details": [f"Employee Code '{emp_code}' already exists in the database as '{existing['emp_name']}'."]
         }), 400
         
-    conn.execute("INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                 (emp_code, emp_name, branch_name, zone, division, business_unit, role))
+    conn.execute("INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
+                 (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, change_detail))
     conn.commit()
     conn.close()
     return jsonify({"status": "success", "message": f"Employee '{emp_name}' added manually successfully!"})
+
+@app.route('/api/roster/<emp_code>', methods=['PUT', 'DELETE'])
+def handle_single_roster_item(emp_code):
+    emp_code = emp_code.upper().strip()
+    conn = get_db_connection()
+    
+    if request.method == 'DELETE':
+        hard = request.args.get('hard', 'false').lower() == 'true'
+        try:
+            if hard:
+                conn.execute("DELETE FROM employees WHERE emp_code=?", (emp_code,))
+                conn.commit()
+                conn.close()
+                return jsonify({"status": "success", "message": "Employee permanently deleted successfully"})
+            else:
+                reason = request.args.get('reason', '').strip().upper()
+                if not reason:
+                    try:
+                        data = request.json or {}
+                        reason = data.get('reason', '').strip().upper()
+                    except Exception:
+                        pass
+                if not reason:
+                    reason = "NO REASON SPECIFIED"
+                
+                now_str = datetime.datetime.now().strftime("%Y-%m-%d")
+                conn.execute(
+                    "UPDATE employees SET status='DELETED', change_detail=? WHERE emp_code=?",
+                    (f"DELETED ON {now_str}: {reason}", emp_code)
+                )
+                conn.commit()
+                conn.close()
+                return jsonify({"status": "success", "message": "Employee status set to DELETED"})
+        except Exception as e:
+            conn.close()
+            return jsonify({"status": "error", "message": str(e)}), 500
+        
+    elif request.method == 'PUT':
+        data = request.json
+        emp_name = data.get('emp_name', '').strip().upper()
+        branch_name = data.get('branch_name', '').strip().upper()
+        zone = data.get('zone', '').strip().upper()
+        division = data.get('division', '').strip().upper()
+        business_unit = data.get('business_unit', '').strip().upper()
+        role = data.get('role', '').strip().upper()
+        product_name = data.get('product_name', '').strip().upper()
+        status = data.get('status', 'ACTIVE').strip().upper()
+        change_detail = data.get('change_detail', '').strip().upper()
+        
+        if not emp_name:
+            conn.close()
+            return jsonify({"status": "error", "message": "Employee Name is required."}), 400
+            
+        try:
+            conn.execute(
+                "UPDATE employees SET emp_name=?, branch_name=?, zone=?, division=?, business_unit=?, role=?, product_name=?, status=?, change_detail=? WHERE emp_code=?",
+                (emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail, emp_code)
+            )
+            conn.commit()
+        except Exception as e:
+            conn.close()
+            return jsonify({"status": "error", "message": str(e)}), 500
+        conn.close()
+        return jsonify({"status": "success", "message": "Employee updated successfully"})
 
 @app.route('/api/roster/search', methods=['GET'])
 def search_roster():
@@ -406,7 +669,6 @@ def search_roster():
         return jsonify([])
         
     conn = get_db_connection()
-    # Case-insensitive query matches emp_name or emp_code
     results = conn.execute(
         "SELECT * FROM employees WHERE emp_name LIKE ? OR emp_code LIKE ? LIMIT 10",
         (f"%{query}%", f"%{query}%")
@@ -948,37 +1210,113 @@ def export_analytics():
 
 @app.route('/api/dashboard/stats', methods=['GET'])
 def get_dashboard_stats():
+    trainer_id = request.args.get('trainer_id', '').strip().upper()
     conn = get_db_connection()
+    
+    where_clauses = []
+    query_params = []
+    
+    # Extract Trainer Scopes if a trainer is logged in/impersonated
+    if trainer_id and trainer_id != 'ADMIN':
+        trainer = conn.execute("SELECT * FROM trainers WHERE trainer_id=?", (trainer_id,)).fetchone()
+        if trainer:
+            zones = trainer['zones'].strip().upper() if trainer['zones'] else 'ALL'
+            divisions = trainer['divisions'].strip().upper() if trainer['divisions'] else 'ALL'
+            branches = trainer['branches'].strip().upper() if trainer['branches'] else 'ALL'
+            business_units = trainer['business_units'].strip().upper() if trainer['business_units'] else 'ALL'
+            
+            if zones != 'ALL' and zones != '':
+                clause = "e.zone IN (" + ",".join(["?"] * len(zones.split(','))) + ")"
+                where_clauses.append(clause)
+                query_params.extend([z.strip() for z in zones.split(',')])
+            if divisions != 'ALL' and divisions != '':
+                clause = "e.division IN (" + ",".join(["?"] * len(divisions.split(','))) + ")"
+                where_clauses.append(clause)
+                query_params.extend([d.strip() for d in divisions.split(',')])
+            if branches != 'ALL' and branches != '':
+                clause = "e.branch_name IN (" + ",".join(["?"] * len(branches.split(','))) + ")"
+                where_clauses.append(clause)
+                query_params.extend([b.strip() for b in branches.split(',')])
+            if business_units != 'ALL' and business_units != '':
+                clause = "e.business_unit IN (" + ",".join(["?"] * len(business_units.split(','))) + ")"
+                where_clauses.append(clause)
+                query_params.extend([bu.strip() for bu in business_units.split(',')])
+
+    where_str = ""
+    if where_clauses:
+        where_str = "WHERE " + " AND ".join(where_clauses)
+        
     try:
         # 1. Main stats counters
-        sessions_res = conn.execute("SELECT COUNT(*) FROM training_sessions").fetchone()[0]
-        branches_res = conn.execute("SELECT COUNT(DISTINCT branch_name) FROM training_sessions").fetchone()[0]
-        if not branches_res:
-            branches_res = conn.execute("SELECT COUNT(DISTINCT branch_name) FROM employees WHERE branch_name IS NOT NULL AND branch_name != ''").fetchone()[0]
+        # Sessions: Count sessions of this trainer specifically, or matching their branches
+        if trainer_id and trainer_id != 'ADMIN':
+            sessions_res = conn.execute("SELECT COUNT(*) FROM training_sessions WHERE trainer_id=?", (trainer_id,)).fetchone()[0]
+        else:
+            sessions_res = conn.execute("SELECT COUNT(*) FROM training_sessions").fetchone()[0]
             
-        execs_res = conn.execute("SELECT COUNT(DISTINCT emp_code) FROM assessment_results").fetchone()[0]
-        growth_res = conn.execute("SELECT AVG(post_test_score) - AVG(pre_test_score) FROM assessment_results").fetchone()[0]
+        # Visited branches
+        if trainer_id and trainer_id != 'ADMIN':
+            branches_res = conn.execute("SELECT COUNT(DISTINCT branch_name) FROM training_sessions WHERE trainer_id=?", (trainer_id,)).fetchone()[0]
+            if not branches_res:
+                # Fallback to scoped roster branches count
+                br_query = f"SELECT COUNT(DISTINCT branch_name) FROM employees e {where_str}"
+                branches_res = conn.execute(br_query, query_params).fetchone()[0]
+        else:
+            branches_res = conn.execute("SELECT COUNT(DISTINCT branch_name) FROM training_sessions").fetchone()[0]
+            if not branches_res:
+                branches_res = conn.execute("SELECT COUNT(DISTINCT branch_name) FROM employees WHERE branch_name IS NOT NULL AND branch_name != ''").fetchone()[0]
+            
+        # Execs trained (matching scope)
+        execs_query = f"""
+            SELECT COUNT(DISTINCT ar.emp_code) 
+            FROM assessment_results ar
+            JOIN employees e ON ar.emp_code = e.emp_code
+            {where_str}
+        """
+        execs_res = conn.execute(execs_query, query_params).fetchone()[0]
+        
+        # Learning curve growth
+        growth_query = f"""
+            SELECT AVG(ar.post_test_score) - AVG(ar.pre_test_score) 
+            FROM assessment_results ar
+            JOIN employees e ON ar.emp_code = e.emp_code
+            {where_str}
+        """
+        growth_res = conn.execute(growth_query, query_params).fetchone()[0]
+        
         modules_res = conn.execute("SELECT COUNT(*) FROM modules").fetchone()[0]
         
         # 2. Recent Socratic Sessions
-        recent_sessions_rows = conn.execute('''
-            SELECT ts.session_id, ts.date, ts.branch_name, m.title AS module_title, tr.name AS trainer_name,
-                   (SELECT COUNT(DISTINCT emp_code) FROM assessment_results ar WHERE ar.module_id = ts.module_id AND ar.assignment_day = 'Day 0') AS attendee_count
-            FROM training_sessions ts
-            LEFT JOIN modules m ON ts.module_id = m.id
-            LEFT JOIN trainers tr ON ts.trainer_id = tr.trainer_id
-            ORDER BY ts.date DESC, ts.session_id DESC LIMIT 5
-        ''').fetchall()
+        if trainer_id and trainer_id != 'ADMIN':
+            recent_sessions_rows = conn.execute('''
+                SELECT ts.session_id, ts.date, ts.branch_name, m.title AS module_title, tr.name AS trainer_name,
+                       (SELECT COUNT(DISTINCT emp_code) FROM assessment_results ar WHERE ar.module_id = ts.module_id AND ar.assignment_day = 'Day 0') AS attendee_count
+                FROM training_sessions ts
+                LEFT JOIN modules m ON ts.module_id = m.id
+                LEFT JOIN trainers tr ON ts.trainer_id = tr.trainer_id
+                WHERE ts.trainer_id = ?
+                ORDER BY ts.date DESC, ts.session_id DESC LIMIT 5
+            ''', (trainer_id,)).fetchall()
+        else:
+            recent_sessions_rows = conn.execute('''
+                SELECT ts.session_id, ts.date, ts.branch_name, m.title AS module_title, tr.name AS trainer_name,
+                       (SELECT COUNT(DISTINCT emp_code) FROM assessment_results ar WHERE ar.module_id = ts.module_id AND ar.assignment_day = 'Day 0') AS attendee_count
+                FROM training_sessions ts
+                LEFT JOIN modules m ON ts.module_id = m.id
+                LEFT JOIN trainers tr ON ts.trainer_id = tr.trainer_id
+                ORDER BY ts.date DESC, ts.session_id DESC LIMIT 5
+            ''').fetchall()
         
-        # 3. Top Branches by Learning Growth Delta
-        top_branches_rows = conn.execute('''
+        # 3. Top Branches by Learning Growth Delta (matching scope)
+        top_branches_query = f"""
             SELECT e.branch_name, AVG(ar.post_test_score) - AVG(ar.pre_test_score) AS growth_delta, COUNT(DISTINCT ar.emp_code) AS count
             FROM assessment_results ar
             JOIN employees e ON ar.emp_code = e.emp_code
-            WHERE e.branch_name IS NOT NULL AND e.branch_name != ''
+            {where_str}
             GROUP BY e.branch_name
             ORDER BY growth_delta DESC LIMIT 5
-        ''').fetchall()
+        """
+        top_branches_rows = conn.execute(top_branches_query, query_params).fetchall()
         
         # 4. Pending Audits (Maker-Checker drafts awaiting trainer sign-off)
         pending_audits_rows = conn.execute('''
@@ -994,15 +1332,19 @@ def get_dashboard_stats():
         return jsonify({"status": "error", "message": str(e)}), 500
     conn.close()
     
-    # 5. Core Fallback configurations for zero-records
     sessions = sessions_res
     branches = branches_res
     execs = execs_res
     growth = round(growth_res, 1) if growth_res is not None else 0.0
     
-    # Map raw lists
     recent_sessions = [dict(r) for r in recent_sessions_rows]
-    top_branches = [dict(r) for r in top_branches_rows]
+    top_branches = [
+        {
+            "branch_name": r["branch_name"],
+            "growth_delta": round(r["growth_delta"], 1) if r["growth_delta"] is not None else 0.0,
+            "count": r["count"]
+        } for r in top_branches_rows
+    ]
     pending_audits = [dict(r) for r in pending_audits_rows]
     
     return jsonify({

@@ -109,21 +109,36 @@
         const App = () => {
             const [view, setView] = useState('login'); 
             const [user, setUser] = useState(null); 
+            const [trainersList, setTrainersList] = useState([]);
+            const [impersonatedTrainer, setImpersonatedTrainer] = useState(null);
+
+            const activeTrainer = impersonatedTrainer || user;
+
+            useEffect(() => {
+                if (user?.role === 'SuperAdmin') {
+                    fetch('/api/trainers')
+                        .then(res => res.json())
+                        .then(data => setTrainersList(data))
+                        .catch(err => console.error("Error loading switcher trainers:", err));
+                } else {
+                    setImpersonatedTrainer(null);
+                }
+            }, [user]);
 
             const renderContent = () => {
                 switch(view) {
-                    case 'dashboard': return <AdminDashboard onNav={setView} user={user} />;
-                    case 'live_session': return <LiveSession onClose={() => setView('dashboard')} user={user} />;
-                    case 'roster': return <RosterView />;
-                    case 'library': return <LibraryView user={user} />;
-                    case 'analytics': return <AnalyticsView />;
+                    case 'dashboard': return <AdminDashboard onNav={setView} user={activeTrainer} />;
+                    case 'live_session': return <LiveSession onClose={() => setView('dashboard')} user={activeTrainer} />;
+                    case 'roster': return <RosterView user={activeTrainer} />;
+                    case 'library': return <LibraryView user={activeTrainer} />;
+                    case 'analytics': return <AnalyticsView user={activeTrainer} />;
                     case 'access_mgmt': return <AccessMgmtView />;
-                    default: return <AdminDashboard onNav={setView} user={user} />;
+                    default: return <AdminDashboard onNav={setView} user={activeTrainer} />;
                 }
             };
 
             const downloadTemplate = () => {
-                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role\nSF-1001,Rahul Singh,Delhi South,North Zone,Delhi Division,Two-Wheeler,PL Exe\nSF-1002,Neha Sharma,Mumbai Bandra,West Zone,Mumbai Division,Two-Wheeler,PL Exe";
+                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name\nSF-1001,Rahul Singh,Delhi South,North Zone,Delhi Division,Two-Wheeler,PL Exe,Splendor V2\nSF-1002,Neha Sharma,Mumbai Bandra,West Zone,Mumbai Division,Two-Wheeler,PL Exe,Activa 6G";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -182,7 +197,7 @@
             }
 
             return (
-                <div className="flex h-screen overflow-hidden">
+                <div className="flex h-screen overflow-hidden animate-fade-in">
                     <div className="w-64 bg-white border-r border-socrates-border flex flex-col z-10 hidden md:flex shadow-sm">
                         <div className="p-6 border-b border-socrates-border">
                             <div className="flex items-center gap-3">
@@ -207,17 +222,41 @@
                                 <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-sm font-bold text-socrates-primary border border-blue-200">{user?.name?.substring(0,2)}</div>
                                 <div>
                                     <div className="font-semibold text-sm text-socrates-dark">{user?.name}</div>
-                                    <div className="text-xs text-slate-500 font-medium cursor-pointer hover:text-socrates-primary transition-colors" onClick={() => {setUser(null); setView('login');}}>Log Out</div>
+                                    <div className="text-xs text-slate-500 font-medium cursor-pointer hover:text-socrates-primary transition-colors" onClick={() => {setUser(null); setImpersonatedTrainer(null); setView('login');}}>Log Out</div>
                                 </div>
                             </div>
                         </div>
                     </div>
                     
-                    <div className="flex-1 flex flex-col overflow-y-auto">
+                    <div className="flex-1 flex flex-col overflow-y-auto bg-slate-50/50">
                         <div className="bg-white border-b border-socrates-border px-8 py-5 flex justify-between items-center sticky top-0 z-10 shadow-sm">
-                            <h1 className="text-xl font-bold text-socrates-dark capitalize tracking-tight">{view.replace('_', ' ')}</h1>
+                            <div className="flex items-center gap-4">
+                                <h1 className="text-xl font-bold text-socrates-dark capitalize tracking-tight">{view.replace('_', ' ')}</h1>
+                                {user?.role === 'SuperAdmin' && (
+                                    <div className="flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-1.5 text-xs shadow-inner">
+                                        <i className="fas fa-user-shield text-purple-600"></i>
+                                        <span className="font-bold text-purple-800">View Console As:</span>
+                                        <select 
+                                            value={impersonatedTrainer ? impersonatedTrainer.id : ''}
+                                            onChange={(e) => {
+                                                const selectedId = e.target.value;
+                                                if (!selectedId) {
+                                                    setImpersonatedTrainer(null);
+                                                } else {
+                                                    const matched = trainersList.find(t => t.id === selectedId);
+                                                    setImpersonatedTrainer(matched || null);
+                                                }
+                                            }}
+                                            className="bg-white border border-purple-200 text-purple-900 rounded px-2.5 py-0.5 font-bold outline-none cursor-pointer focus:border-purple-500"
+                                        >
+                                            <option value="">Super Admin (All Overview)</option>
+                                            {trainersList.map(t => <option key={t.id} value={t.id}>{t.name} ({t.id})</option>)}
+                                        </select>
+                                    </div>
+                                )}
+                            </div>
                             <div className="flex items-center gap-3">
-                                {view === 'roster' && <button onClick={downloadTemplate} className="btn-outline text-xs flex items-center shadow-sm"><i className="fas fa-download mr-2 text-socrates-primary"></i> Download Template</button>}
+                                {view === 'roster' && <button onClick={downloadTemplate} className="btn-outline text-xs flex items-center shadow-sm hover:border-socrates-primary"><i className="fas fa-download mr-2 text-socrates-primary"></i> Download Template</button>}
                                 <button className="btn-primary flex items-center shadow-md" onClick={() => setView('live_session')}><i className="fas fa-play mr-2"></i> Start Session</button>
                             </div>
                         </div>
@@ -267,7 +306,8 @@
             };
 
             const loadStats = () => {
-                fetch('/api/dashboard/stats')
+                const trId = user?.id || 'ADMIN';
+                fetch(`/api/dashboard/stats?trainer_id=${encodeURIComponent(trId)}`)
                     .then(res => res.json())
                     .then(data => setStats(data))
                     .catch(err => console.error("Dashboard fetch stats error:", err));
@@ -539,7 +579,7 @@
             );
         };
 
-        const RosterView = () => {
+        const RosterView = ({user}) => {
             const [emps, setEmps] = useState([]);
             const [errorMsg, setErrorMsg] = useState('');
             const [errorDetails, setErrorDetails] = useState([]);
@@ -554,23 +594,38 @@
             const [division, setDivision] = useState('');
             const [bu, setBu] = useState('Two-Wheeler');
             const [role, setRole] = useState('PL Exe');
+            const [productName, setProductName] = useState('');
+            const [changeDetail, setChangeDetail] = useState('');
 
             // Dynamic auditing filters
             const [selZone, setSelZone] = useState('');
             const [selDiv, setSelDiv] = useState('');
             const [selBranch, setSelBranch] = useState('');
-            const [filterOptions, setFilterOptions] = useState({ zones: [], divisions: [], branches: [] });
+            const [filterOptions, setFilterOptions] = useState({ zones: [], divisions: [], branches: [], divisions_meta: [], branches_meta: [] });
 
             // Search & counters state
             const [searchQuery, setSearchQuery] = useState('');
             const [totalCount, setTotalCount] = useState(0);
             const [filteredCount, setFilteredCount] = useState(0);
 
+            // Edit form fields & modal
+            const [showEditModal, setShowEditModal] = useState(false);
+            const [editEmpCode, setEditEmpCode] = useState('');
+            const [editEmpName, setEditEmpName] = useState('');
+            const [editBranchName, setEditBranchName] = useState('');
+            const [editZone, setEditZone] = useState('AMD_BU');
+            const [editDivision, setEditDivision] = useState('');
+            const [editBu, setEditBu] = useState('Two-Wheeler');
+            const [editRole, setEditRole] = useState('PL Exe');
+            const [editProductName, setEditProductName] = useState('');
+            const [editStatus, setEditStatus] = useState('ACTIVE');
+            const [editChangeDetail, setEditChangeDetail] = useState('');
+
             const loadFilterOptions = () => {
                 fetch('/api/roster/filters')
                     .then(res => res.json())
                     .then(data => setFilterOptions(data))
-                    .catch(err => console.error("Error loading roster filters:", err));
+                    .catch(err => console.error("Error loading roster roster filters:", err));
             };
 
             const loadEmps = (zoneVal = selZone, divVal = selDiv, branchVal = selBranch, searchVal = searchQuery) => {
@@ -608,9 +663,15 @@
                 if (type === 'zone') {
                     newZone = val;
                     setSelZone(val);
+                    setSelDiv('');
+                    setSelBranch('');
+                    newDiv = '';
+                    newBranch = '';
                 } else if (type === 'division') {
                     newDiv = val;
                     setSelDiv(val);
+                    setSelBranch('');
+                    newBranch = '';
                 } else if (type === 'branch') {
                     newBranch = val;
                     setSelBranch(val);
@@ -628,6 +689,35 @@
                 loadEmps(); 
                 loadFilterOptions();
             }, []);
+
+            // Adaptive Default Filters based on Trainer Scopes
+            useEffect(() => {
+                if (user && user.role === 'Trainer') {
+                    const zonesScope = user.zones && user.zones !== 'ALL' ? user.zones.split(',') : [];
+                    const divsScope = user.divisions && user.divisions !== 'ALL' ? user.divisions.split(',') : [];
+                    const branchesScope = user.branches && user.branches !== 'ALL' ? user.branches.split(',') : [];
+                    
+                    let defZone = '';
+                    let defDiv = '';
+                    let defBranch = '';
+                    
+                    if (zonesScope.length > 0) defZone = zonesScope[0].trim();
+                    if (divsScope.length > 0) defDiv = divsScope[0].trim();
+                    if (branchesScope.length > 0) defBranch = branchesScope[0].trim();
+                    
+                    setSelZone(defZone);
+                    setSelDiv(defDiv);
+                    setSelBranch(defBranch);
+                    
+                    loadEmps(defZone, defDiv, defBranch, searchQuery);
+                } else if (user && user.role === 'SuperAdmin') {
+                    // reset defaults
+                    setSelZone('');
+                    setSelDiv('');
+                    setSelBranch('');
+                    loadEmps('', '', '', searchQuery);
+                }
+            }, [user]);
 
             const handleUpload = (e) => {
                 const file = e.target.files[0];
@@ -673,7 +763,9 @@
                     zone: zone,
                     division: division.trim(),
                     business_unit: bu,
-                    role: role.trim()
+                    role: role.trim(),
+                    product_name: productName.trim(),
+                    change_detail: changeDetail.trim()
                 };
 
                 fetch('/api/roster/manual', {
@@ -693,6 +785,8 @@
                         setDivision('');
                         setRole('PL Exe');
                         setZone('AMD_BU');
+                        setProductName('');
+                        setChangeDetail('');
                         loadEmps();
                         loadFilterOptions();
                     } else {
@@ -702,6 +796,84 @@
                 })
                 .catch(err => {
                     setErrorMsg("Failed to add employee manually.");
+                });
+            };
+
+            const handleStartEdit = (emp) => {
+                setEditEmpCode(emp.emp_code);
+                setEditEmpName(emp.emp_name);
+                setEditBranchName(emp.branch_name || '');
+                setEditZone(emp.zone || 'AMD_BU');
+                setEditDivision(emp.division || '');
+                setEditBu(emp.business_unit || 'Two-Wheeler');
+                setEditRole(emp.role || 'PL Exe');
+                setEditProductName(emp.product_name || '');
+                setEditStatus(emp.status || 'ACTIVE');
+                setEditChangeDetail(emp.change_detail || '');
+                setShowEditModal(true);
+            };
+
+            const handleEditSubmit = (e) => {
+                e.preventDefault();
+                setErrorMsg('');
+                setErrorDetails([]);
+                setSuccessMsg('');
+
+                const payload = {
+                    emp_name: editEmpName.trim().toUpperCase(),
+                    branch_name: editBranchName.trim().toUpperCase(),
+                    zone: editZone,
+                    division: editDivision.trim().toUpperCase(),
+                    business_unit: editBu,
+                    role: editRole.trim().toUpperCase(),
+                    product_name: editProductName.trim().toUpperCase(),
+                    status: editStatus,
+                    change_detail: editChangeDetail.trim().toUpperCase()
+                };
+
+                fetch(`/api/roster/${editEmpCode}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setSuccessMsg(data.message);
+                        setShowEditModal(false);
+                        loadEmps();
+                        loadFilterOptions();
+                    } else {
+                        setErrorMsg(data.message);
+                    }
+                })
+                .catch(err => {
+                    setErrorMsg("Failed to update employee details.");
+                });
+            };
+
+            const handleDeleteEmp = (code) => {
+                const reason = prompt(`Are you sure you want to delete Employee Code '${code}'?\nPlease enter a reason / detail for deletion (e.g. Resigned, Transferred, Shifted BU):`);
+                if (reason === null) return;
+                
+                setErrorMsg('');
+                setSuccessMsg('');
+
+                fetch(`/api/roster/${code}?reason=${encodeURIComponent(reason.trim() || 'NO REASON SPECIFIED')}`, {
+                    method: 'DELETE'
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setSuccessMsg(data.message);
+                        loadEmps();
+                        loadFilterOptions();
+                    } else {
+                        setErrorMsg(data.message);
+                    }
+                })
+                .catch(err => {
+                    setErrorMsg("Failed to delete employee.");
                 });
             };
 
@@ -772,10 +944,110 @@
                                                 </select>
                                             </div>
                                         </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Product Name</label>
+                                            <input type="text" value={productName} onChange={e => setProductName(e.target.value.toUpperCase())} placeholder="e.g. SPLENDOR V2" className="input-field uppercase" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Addition Details / Remarks</label>
+                                            <input type="text" value={changeDetail} onChange={e => setChangeDetail(e.target.value.toUpperCase())} placeholder="e.g. NEW HIRE, JOINED ON 2026-05-25" className="input-field uppercase" />
+                                        </div>
                                     </div>
                                     <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
                                         <button type="button" onClick={() => setShowManualModal(false)} className="btn-outline">Cancel</button>
                                         <button type="submit" className="btn-primary shadow-md">Add Executive</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Edit Executive Modal */}
+                    {showEditModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all">
+                                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-socrates-dark">Edit Executive Details</h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">Modify region, branch, and role details for {editEmpCode}.</p>
+                                    </div>
+                                    <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
+                                </div>
+                                <form onSubmit={handleEditSubmit}>
+                                    <div className="p-6 space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">Employee Code (Read Only)</label>
+                                            <input type="text" value={editEmpCode} disabled className="input-field bg-slate-50 font-bold cursor-not-allowed border-slate-200 text-slate-400" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Employee Name (Required)</label>
+                                            <input type="text" value={editEmpName} onChange={e => setEditEmpName(e.target.value.toUpperCase())} required placeholder="e.g. RAJESH KUMAR" className="input-field uppercase" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Role / Designation</label>
+                                            <select value={editRole} onChange={e => setEditRole(e.target.value)} className="input-field bg-white">
+                                                <option value="PL Exe">PL Exe</option>
+                                                <option value="SPH / SBH">SPH / SBH</option>
+                                                <option value="CSE">CSE</option>
+                                                <option value="BTL">BTL</option>
+                                                <option value="DBH / DPH">DBH / DPH</option>
+                                                <option value="BH / BPH">BH / BPH</option>
+                                                <option value="CPU Team">CPU Team</option>
+                                                <option value="DTL">DTL</option>
+                                            </select>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
+                                                <input type="text" value={editBranchName} onChange={e => setEditBranchName(e.target.value.toUpperCase())} placeholder="e.g. AHMEDABAD" className="input-field uppercase" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
+                                                <input type="text" value={editDivision} onChange={e => setEditDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
+                                                <select value={editZone} onChange={e => setEditZone(e.target.value)} className="input-field bg-white">
+                                                    <option value="AMD_BU">AMD_BU</option>
+                                                    <option value="CH_BU">CH_BU</option>
+                                                    <option value="DEL_BU">DEL_BU</option>
+                                                    <option value="KOL_BU">KOL_BU</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
+                                                <select value={editBu} onChange={e => setEditBu(e.target.value)} className="input-field bg-white">
+                                                    <option>Two-Wheeler</option>
+                                                    <option>Personal Loan</option>
+                                                    <option>Gold Loan</option>
+                                                    <option>Commercial Vehicle</option>
+                                                    <option>Retail</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Product Name</label>
+                                                <input type="text" value={editProductName} onChange={e => setEditProductName(e.target.value.toUpperCase())} placeholder="e.g. SPLENDOR V2" className="input-field uppercase" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Status</label>
+                                                <select value={editStatus} onChange={e => setEditStatus(e.target.value)} className="input-field bg-white font-bold text-slate-800">
+                                                    <option value="ACTIVE">ACTIVE</option>
+                                                    <option value="DELETED">DELETED</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Change Details / Remarks</label>
+                                            <input type="text" value={editChangeDetail} onChange={e => setEditChangeDetail(e.target.value.toUpperCase())} placeholder="e.g. Resigned, Transferred, Joined on X" className="input-field uppercase" />
+                                        </div>
+                                    </div>
+                                    <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                                        <button type="button" onClick={() => setShowEditModal(false)} className="btn-outline">Cancel</button>
+                                        <button type="submit" className="btn-primary shadow-md">Save Changes</button>
                                     </div>
                                 </form>
                             </div>
@@ -842,14 +1114,18 @@
                                 <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Division</label>
                                 <select value={selDiv} onChange={e => handleFilterChange('division', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
                                     <option value="">All Divisions</option>
-                                    {filterOptions.divisions && filterOptions.divisions.map((d, idx) => <option key={idx} value={d.name}>{d.name} ({d.zone})</option>)}
+                                    {filterOptions.divisions_meta && filterOptions.divisions_meta
+                                        .filter(d => !selZone || d.zone === selZone)
+                                        .map((d, idx) => <option key={idx} value={d.name}>{d.name} ({d.zone})</option>)}
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Branch</label>
                                 <select value={selBranch} onChange={e => handleFilterChange('branch', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
                                     <option value="">All Branches</option>
-                                    {filterOptions.branches && filterOptions.branches.map((br, idx) => <option key={idx} value={br.name}>{br.name} ({br.division})</option>)}
+                                    {filterOptions.branches_meta && filterOptions.branches_meta
+                                        .filter(br => !selDiv || br.division === selDiv)
+                                        .map((br, idx) => <option key={idx} value={br.name}>{br.name} ({br.division})</option>)}
                                 </select>
                             </div>
                             <div className="flex items-end justify-start md:justify-end h-full pt-4 md:pt-0">
@@ -866,7 +1142,7 @@
                                 <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                                     <i className="fas fa-search text-xs"></i>
                                 </span>
-                                <input type="text" value={searchQuery} onChange={e => handleSearch(e.target.value)} placeholder="Search by Employee Code or Name..." className="input-field pl-9 py-1.5 text-xs bg-slate-50/50 hover:bg-slate-50 focus:bg-white" />
+                                <input type="text" value={searchQuery} onChange={e => handleSearch(e.target.value)} placeholder="Search by Employee Code, Name, or Product..." className="input-field pl-9 py-1.5 text-xs bg-slate-50/50 hover:bg-slate-50 focus:bg-white" />
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-[10px] font-extrabold bg-slate-100 text-slate-600 px-2.5 py-1.5 rounded-lg border border-slate-200 uppercase tracking-widest flex items-center gap-1.5 shadow-sm">
@@ -887,25 +1163,41 @@
                                         <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Branch</th>
                                         <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Zone</th>
                                         <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Business Unit</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Product Name</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Status & Details</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px] text-right">Actions</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 bg-white">
                                     {emps.length === 0 ? (
                                         <tr>
-                                            <td colSpan="6" className="px-6 py-12 text-center text-slate-400 font-medium">
+                                            <td colSpan="9" className="px-6 py-12 text-center text-slate-400 font-medium">
                                                 <i className="fas fa-users text-4xl text-slate-200 mb-3 block"></i>
                                                 No employees registered yet. Upload a CSV roster to begin.
                                             </td>
                                         </tr>
                                     ) : (
                                         emps.map((e, i) => (
-                                            <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                            <tr key={i} className={`hover:bg-slate-50 transition-colors ${e.status === 'DELETED' ? 'bg-slate-50/50 opacity-70' : ''}`}>
                                                 <td className="px-6 py-4 font-semibold text-socrates-primary">{e.emp_code}</td>
                                                 <td className="px-6 py-4 font-medium text-socrates-dark">{e.emp_name}</td>
                                                 <td className="px-6 py-4 font-medium text-slate-700">{e.role || 'N/A'}</td>
                                                 <td className="px-6 py-4 text-slate-600">{e.branch_name}</td>
                                                 <td className="px-6 py-4 text-slate-600">{e.zone}</td>
                                                 <td className="px-6 py-4 text-slate-600">{e.business_unit}</td>
+                                                <td className="px-6 py-4 text-slate-600 font-semibold text-xs text-socrates-primary">{e.product_name || 'N/A'}</td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-widest ${e.status === 'ACTIVE' || !e.status ? 'bg-emerald-100 text-emerald-700 shadow-sm' : 'bg-rose-100 text-rose-700 shadow-sm'}`}>{e.status || 'ACTIVE'}</span>
+                                                    <div className="text-[10px] text-slate-500 mt-1 italic max-w-[150px] truncate" title={e.change_detail}>{e.change_detail || 'ADDED MANUALLY'}</div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
+                                                    <button onClick={() => handleStartEdit(e)} className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 bg-blue-50/50 hover:bg-blue-100/50 border border-blue-100 rounded px-2.5 py-1 transition-all">
+                                                        <i className="fas fa-edit text-[10px]"></i> Edit
+                                                    </button>
+                                                    <button onClick={() => handleDeleteEmp(e.emp_code)} className="text-xs text-red-600 hover:text-red-800 font-bold flex items-center gap-1 bg-red-50/50 hover:bg-red-100/50 border border-red-100 rounded px-2.5 py-1 transition-all">
+                                                        <i className="fas fa-trash-alt text-[10px]"></i> Delete
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))
                                     )}
@@ -1329,8 +1621,27 @@
             const [trainers, setTrainers] = useState([]);
             const [tid, setTid] = useState('');
             const [name, setName] = useState('');
-            const [zone, setZone] = useState('AMD_BU');
             const [password, setPassword] = useState('password123');
+            const [zone, setZone] = useState('ALL');
+
+            // Multi-select scope states for trainer creation
+            const [selBUs, setSelBUs] = useState(['ALL']);
+            const [selZones, setSelZones] = useState(['ALL']);
+            const [selDivisions, setSelDivisions] = useState(['ALL']);
+            const [selBranches, setSelBranches] = useState(['ALL']);
+
+            // Dynamic option lists loaded from metadata API
+            const [metaOptions, setMetaOptions] = useState({ business_units: [], zones: [], divisions: [], branches: [] });
+
+            // Edit Modal States
+            const [showEditModal, setShowEditModal] = useState(false);
+            const [editTid, setEditTid] = useState('');
+            const [editName, setEditName] = useState('');
+            const [editPassword, setEditPassword] = useState('');
+            const [editBUs, setEditBUs] = useState([]);
+            const [editZones, setEditZones] = useState([]);
+            const [editDivisions, setEditDivisions] = useState([]);
+            const [editBranches, setEditBranches] = useState([]);
 
             const loadTrainers = () => {
                 fetch('/api/trainers')
@@ -1342,7 +1653,17 @@
                     });
             };
 
-            useEffect(() => { loadTrainers(); }, []);
+            const loadMetadata = () => {
+                fetch('/api/metadata')
+                    .then(res => res.json())
+                    .then(data => setMetaOptions(data))
+                    .catch(err => console.error("Error fetching dynamic scopes metadata:", err));
+            };
+
+            useEffect(() => { 
+                loadTrainers(); 
+                loadMetadata();
+            }, []);
 
             const handleToggle = (id, currentStatus) => {
                 const newStatus = currentStatus === 'Active' ? 'Revoked' : 'Active';
@@ -1390,7 +1711,17 @@
 
             const handleCreate = () => {
                 if(!tid || !name || !password) return alert("Please enter Trainer ID, Name, and Password");
-                const payload = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, password: password.trim() };
+                
+                const payload = { 
+                    id: tid.toUpperCase().trim(), 
+                    name: name.trim(), 
+                    zone: selZones[0] || 'ALL', 
+                    password: password.trim(),
+                    zones: selZones.join(','),
+                    divisions: selDivisions.join(','),
+                    branches: selBranches.join(','),
+                    business_units: selBUs.join(',')
+                };
                 
                 fetch('/api/trainers', {
                     method: 'POST',
@@ -1404,6 +1735,10 @@
                         setTid(''); 
                         setName('');
                         setPassword('password123');
+                        setSelBUs(['ALL']);
+                        setSelZones(['ALL']);
+                        setSelDivisions(['ALL']);
+                        setSelBranches(['ALL']);
                         loadTrainers();
                     } else {
                         alert("Failed to create trainer: " + data.message);
@@ -1411,11 +1746,90 @@
                 })
                 .catch(err => {
                     console.error("Trainer creation failed, offline fallback:", err);
-                    const newTrainer = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, status: 'Active', password: password.trim() };
+                    const newTrainer = { id: tid.toUpperCase().trim(), name: name.trim(), zone: selZones[0] || 'ALL', status: 'Active', password: password.trim() };
                     db.set('s_trainers', [...trainers, newTrainer]);
                     setTid(''); setName(''); setPassword('password123');
                     loadTrainers();
                 });
+            };
+
+            const handleStartEdit = (tr) => {
+                setEditTid(tr.id);
+                setEditName(tr.name);
+                setEditPassword(tr.password || 'password123');
+                setEditBUs(tr.business_units ? tr.business_units.split(',').map(x => x.trim()) : ['ALL']);
+                setEditZones(tr.zones ? tr.zones.split(',').map(x => x.trim()) : ['ALL']);
+                setEditDivisions(tr.divisions ? tr.divisions.split(',').map(x => x.trim()) : ['ALL']);
+                setEditBranches(tr.branches ? tr.branches.split(',').map(x => x.trim()) : ['ALL']);
+                setShowEditModal(true);
+            };
+
+            const handleEditSubmit = (e) => {
+                e.preventDefault();
+                if (!editName || !editPassword) return alert("Please fill in Trainer Name and Password");
+                
+                const payload = {
+                    name: editName.trim(),
+                    password: editPassword.trim(),
+                    zone: editZones[0] || 'ALL',
+                    zones: editZones.join(','),
+                    divisions: editDivisions.join(','),
+                    branches: editBranches.join(','),
+                    business_units: editBUs.join(',')
+                };
+                
+                fetch(`/api/trainers/${editTid}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('Trainer scopes updated successfully!');
+                        setShowEditModal(false);
+                        loadTrainers();
+                    } else {
+                        alert('Failed to update trainer: ' + data.message);
+                    }
+                })
+                .catch(err => console.error("Edit trainer error:", err));
+            };
+
+            const handleBulkUploadTrainers = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                fetch('/api/trainers/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(data.message);
+                        loadTrainers();
+                    } else {
+                        alert("Bulk Upload failed:\n" + data.message + (data.details ? "\n" + data.details.join('\n') : ''));
+                    }
+                })
+                .catch(err => {
+                    console.error("Bulk upload trainers failed:", err);
+                    alert("System error uploading trainers CSV.");
+                });
+            };
+
+            const downloadTrainerTemplate = () => {
+                const csvData = "Trainer ID,Trainer Name,Password,Business Units,Zones,Divisions,Branches\nTR-1002,AMIT SHARMA,pass123,Two-Wheeler,AMD_BU,GUJARAT DIVISION,AHMEDABAD\nTR-1003,PRIYA GUPTA,pass456,ALL,ALL,ALL,ALL";
+                const blob = new Blob([csvData], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Socrates_Trainers_Template.csv';
+                a.click();
             };
 
             const handleResetDatabase = () => {
@@ -1441,13 +1855,109 @@
                 });
             };
 
+            const renderCheckboxGroup = (title, options, selected, setSelected) => {
+                const isAllSelected = selected.includes('ALL');
+                
+                const toggleOption = (opt) => {
+                    if (opt === 'ALL') {
+                        if (isAllSelected) {
+                            setSelected([]);
+                        } else {
+                            setSelected(['ALL']);
+                        }
+                    } else {
+                        let updated = selected.filter(x => x !== 'ALL');
+                        if (updated.includes(opt)) {
+                            updated = updated.filter(x => x !== opt);
+                        } else {
+                            updated.push(opt);
+                        }
+                        setSelected(updated);
+                    }
+                };
+
+                return (
+                    <div className="space-y-1">
+                        <div className="flex justify-between items-center">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{title}</label>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={() => setSelected(['ALL'])} className="text-[9px] text-socrates-primary font-bold hover:underline">Select All</button>
+                                <button type="button" onClick={() => setSelected([])} className="text-[9px] text-red-500 font-bold hover:underline">Clear</button>
+                            </div>
+                        </div>
+                        <div className="bg-white border border-slate-200 rounded-lg p-2.5 max-h-32 overflow-y-auto space-y-1.5 shadow-inner">
+                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                                <input type="checkbox" checked={isAllSelected} onChange={() => toggleOption('ALL')} className="rounded border-slate-350 text-socrates-primary focus:ring-blue-100" />
+                                <span className={isAllSelected ? "text-socrates-primary font-bold" : ""}>ALL (Full Access)</span>
+                            </label>
+                            {options.map(opt => (
+                                <label key={opt} className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                                    <input type="checkbox" checked={selected.includes(opt) || isAllSelected} disabled={isAllSelected} onChange={() => toggleOption(opt)} className="rounded border-slate-350 text-socrates-primary focus:ring-blue-100 disabled:opacity-50" />
+                                    <span>{opt}</span>
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                );
+            };
+
             return (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in">
+                    {/* Edit Trainer Modal */}
+                    {showEditModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all">
+                                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-socrates-dark">Edit Trainer Scopes</h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">Modify permissions and scopes for Trainer: {editTid}</p>
+                                    </div>
+                                    <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
+                                </div>
+                                <form onSubmit={handleEditSubmit}>
+                                    <div className="p-6 space-y-4 max-h-[500px] overflow-y-auto">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wide">Trainer ID (Read Only)</label>
+                                            <input type="text" value={editTid} disabled className="input-field bg-slate-50 font-bold cursor-not-allowed border-slate-200 text-slate-400" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Trainer Name</label>
+                                            <input type="text" value={editName} onChange={e => setEditName(e.target.value)} required className="input-field" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Password</label>
+                                            <input type="text" value={editPassword} onChange={e => setEditPassword(e.target.value)} required className="input-field font-mono" />
+                                        </div>
+                                        
+                                        {/* Multi-select check lists in edit form */}
+                                        {renderCheckboxGroup("Business Units Access", metaOptions.business_units, editBUs, setEditBUs)}
+                                        {renderCheckboxGroup("Zones Access", metaOptions.zones, editZones, setEditZones)}
+                                        {renderCheckboxGroup("Divisions Access", metaOptions.divisions, editDivisions, setEditDivisions)}
+                                        {renderCheckboxGroup("Branches Access", metaOptions.branches, editBranches, setEditBranches)}
+                                    </div>
+                                    <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 font-semibold">
+                                        <button type="button" onClick={() => setShowEditModal(false)} className="btn-outline">Cancel</button>
+                                        <button type="submit" className="btn-primary shadow-md">Save Permissions</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="lg:col-span-2 card overflow-hidden">
-                        <div className="px-6 py-5 border-b border-socrates-border bg-white flex justify-between items-center">
+                        <div className="px-6 py-5 border-b border-socrates-border bg-white flex flex-wrap justify-between items-center gap-4">
                             <div>
                                 <h3 className="font-bold text-socrates-dark text-lg">Trainer Accounts</h3>
                                 <p className="text-xs text-slate-500">Manage who has access to conduct live training sessions.</p>
+                            </div>
+                            <div className="flex gap-3">
+                                <button onClick={downloadTrainerTemplate} className="btn-outline text-xs flex items-center shadow-sm hover:border-socrates-primary">
+                                    <i className="fas fa-download mr-2 text-socrates-primary"></i> Download Template
+                                </button>
+                                <div className="relative overflow-hidden inline-block">
+                                    <button className="btn-primary text-xs flex items-center shadow-md"><i className="fas fa-cloud-upload-alt mr-2"></i> Bulk Upload CSV</button>
+                                    <input type="file" accept=".csv" onChange={handleBulkUploadTrainers} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                </div>
                             </div>
                         </div>
                         <div className="overflow-x-auto">
@@ -1455,34 +1965,89 @@
                                 <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                                     <tr>
                                         <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Trainer ID / Name</th>
-                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Region</th>
+                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Assigned Rights Scopes</th>
                                         <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Status</th>
                                         <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px] text-right">Actions</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {trainers.map(tr => (
-                                        <tr key={tr.id} className="hover:bg-slate-50 transition-colors">
-                                            <td className="px-6 py-4"><div className="font-bold text-socrates-dark">{tr.id}</div><div className="text-slate-500 text-xs mt-0.5">{tr.name}</div></td>
-                                            <td className="px-6 py-4 text-slate-600 font-medium">{tr.zone}</td>
-                                            <td className="px-6 py-4"><span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-widest ${tr.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tr.status}</span></td>
-                                            <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                                                <button onClick={()=>handleToggle(tr.id, tr.status)} className={`text-xs border px-3 py-1.5 rounded transition-colors font-semibold ${tr.status === 'Active' ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-emerald-600 border-emerald-200 hover:bg-emerald-50'}`}>
-                                                    {tr.status === 'Active' ? 'Revoke Access' : 'Re-activate'}
-                                                </button>
-                                                <button onClick={()=>handleDelete(tr.id)} className="text-xs border border-red-200 text-red-600 bg-red-50/50 hover:bg-red-100 px-3 py-1.5 rounded transition-colors font-semibold flex items-center gap-1">
-                                                    <i className="fas fa-trash-alt text-[10px]"></i> Delete
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                    {trainers.map(tr => {
+                                        const isAllBUs = !tr.business_units || tr.business_units === 'ALL';
+                                        const isAllZones = !tr.zones || tr.zones === 'ALL';
+                                        const isAllDivs = !tr.divisions || tr.divisions === 'ALL';
+                                        const isAllBranches = !tr.branches || tr.branches === 'ALL';
+                                        
+                                        return (
+                                            <tr key={tr.id} className="hover:bg-slate-50/50 transition-colors">
+                                                <td className="px-6 py-4">
+                                                    <div className="font-bold text-socrates-dark">{tr.id}</div>
+                                                    <div className="text-slate-500 text-xs mt-0.5 font-semibold">{tr.name}</div>
+                                                </td>
+                                                <td className="px-6 py-4 space-y-1.5 py-3">
+                                                    <div className="flex flex-wrap gap-1 items-center">
+                                                        <span className="text-[9px] font-bold uppercase text-slate-400 mr-1.5 w-6">BU:</span>
+                                                        {isAllBUs ? (
+                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 tracking-wider">ALL BUS</span>
+                                                        ) : (
+                                                            tr.business_units.split(',').map((bu, idx) => (
+                                                                <span key={idx} className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{bu}</span>
+                                                            ))
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1 items-center">
+                                                        <span className="text-[9px] font-bold uppercase text-slate-400 mr-1.5 w-6">ZONE:</span>
+                                                        {isAllZones ? (
+                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 tracking-wider">ALL ZONES</span>
+                                                        ) : (
+                                                            tr.zones.split(',').map((z, idx) => (
+                                                                <span key={idx} className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-100">{z}</span>
+                                                            ))
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1 items-center">
+                                                        <span className="text-[9px] font-bold uppercase text-slate-400 mr-1.5 w-6">DIV:</span>
+                                                        {isAllDivs ? (
+                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 tracking-wider">ALL DIVISIONS</span>
+                                                        ) : (
+                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-150">{tr.divisions.split(',').length} DIVS SELECTED</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1 items-center">
+                                                        <span className="text-[9px] font-bold uppercase text-slate-400 mr-1.5 w-6">BR:</span>
+                                                        {isAllBranches ? (
+                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 tracking-wider">ALL BRANCHES</span>
+                                                        ) : (
+                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">{tr.branches.split(',').length} BRANCHES SELECTED</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleToggle(tr.id, tr.status)}>
+                                                        {/* iOS Toggle Design */}
+                                                        <div className={`w-9 h-5 rounded-full p-0.5 transition-all duration-300 relative ${tr.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                                                            <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-all duration-300 transform ${tr.status === 'Active' ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                        </div>
+                                                        <span className={`text-[10px] font-extrabold uppercase tracking-widest ${tr.status === 'Active' ? 'text-emerald-700' : 'text-slate-500'}`}>{tr.status}</span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right flex items-center justify-end gap-1.5 h-full py-6">
+                                                    <button onClick={() => handleStartEdit(tr)} className="text-xs border border-blue-150 text-blue-600 bg-blue-50/50 hover:bg-blue-100 px-2.5 py-1.5 rounded font-bold flex items-center gap-1 transition-all shadow-sm">
+                                                        <i className="fas fa-edit text-[10px]"></i> Scope Rights
+                                                    </button>
+                                                    <button onClick={()=>handleDelete(tr.id)} className="text-xs border border-red-200 text-red-600 bg-red-50/50 hover:bg-red-100 px-2.5 py-1.5 rounded font-bold flex items-center gap-1 transition-all shadow-sm">
+                                                        <i className="fas fa-trash-alt text-[10px]"></i> Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
                     </div>
 
                     <div className="space-y-6">
-                        <div className="card p-6 h-fit bg-slate-50 border-socrates-primary border-t-4">
+                        <div className="card p-6 h-fit bg-slate-50 border-socrates-primary border-t-4 shadow-sm">
                             <div className="flex items-center gap-3 mb-6">
                                 <div className="w-10 h-10 bg-white text-socrates-primary rounded-lg flex items-center justify-center shadow-sm border border-slate-200"><i className="fas fa-user-plus text-xl"></i></div>
                                 <h3 className="font-bold text-lg text-socrates-dark tracking-tight">Create Trainer ID</h3>
@@ -1490,7 +2055,7 @@
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Trainer ID</label>
-                                    <input type="text" value={tid} onChange={(e)=>setTid(e.target.value)} className="input-field bg-white" placeholder="Trainer ID (e.g. TR-1005)" />
+                                    <input type="text" value={tid} onChange={(e)=>setTid(e.target.value)} className="input-field bg-white uppercase font-bold" placeholder="Trainer ID (e.g. TR-1005)" />
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Full Name</label>
@@ -1500,16 +2065,14 @@
                                     <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Password</label>
                                     <input type="text" value={password} onChange={(e)=>setPassword(e.target.value)} className="input-field bg-white font-mono" placeholder="Password" />
                                 </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Region</label>
-                                    <select value={zone} onChange={(e)=>setZone(e.target.value)} className="input-field bg-white">
-                                        <option value="AMD_BU">AMD_BU</option>
-                                        <option value="CH_BU">CH_BU</option>
-                                        <option value="DEL_BU">DEL_BU</option>
-                                        <option value="KOL_BU">KOL_BU</option>
-                                    </select>
-                                </div>
-                                <button onClick={handleCreate} className="w-full btn-primary mt-4 shadow-md"><i className="fas fa-plus mr-2"></i> Create Credentials</button>
+                                
+                                {/* Dynamic Multi-select checklists in Creation Panel */}
+                                {renderCheckboxGroup("Business Units Access", metaOptions.business_units, selBUs, setSelBUs)}
+                                {renderCheckboxGroup("Zones Access", metaOptions.zones, selZones, setSelZones)}
+                                {renderCheckboxGroup("Divisions Access", metaOptions.divisions, selDivisions, setSelDivisions)}
+                                {renderCheckboxGroup("Branches Access", metaOptions.branches, selBranches, setSelBranches)}
+
+                                <button onClick={handleCreate} className="w-full btn-primary mt-6 shadow-md font-bold py-2.5"><i className="fas fa-plus mr-2"></i> Onboard Trainer</button>
                             </div>
                         </div>
 

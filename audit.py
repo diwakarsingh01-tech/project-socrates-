@@ -443,5 +443,224 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         cursor.execute("DELETE FROM employees WHERE emp_code IN ('SF-FILT-1', 'SF-FILT-2')")
         self.conn.commit()
 
+    def test_single_employee_edit_and_delete(self):
+        """Audit 12: Verify individual employee PUT (edit) and DELETE APIs work correctly"""
+        # Step 1: Insert seed employee
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, zone, division, branch_name, business_unit, role) VALUES ('SF-CRUD-TEST', 'ORIGINAL NAME', 'North', 'Delhi Div', 'HQ', 'Two-Wheeler', 'Sales Rep')")
+        self.conn.commit()
+
+        # Step 2: Edit employee via PUT API
+        edit_payload = {
+            'emp_name': 'UPDATED NAME',
+            'branch_name': 'HQ',
+            'zone': 'North',
+            'division': 'Delhi Div',
+            'business_unit': 'Two-Wheeler',
+            'role': 'PL Exe'
+        }
+        res_put = self.client.put('/api/roster/SF-CRUD-TEST', json=edit_payload)
+        self.assertEqual(res_put.status_code, 200)
+        data_put = json.loads(res_put.data)
+        self.assertEqual(data_put['status'], 'success')
+
+        # Verify details were updated in SQLite
+        cursor.execute("SELECT emp_name, role FROM employees WHERE emp_code='SF-CRUD-TEST'")
+        row = cursor.fetchone()
+        self.assertEqual(row[0], 'UPDATED NAME')
+        self.assertEqual(row[1], 'PL EXE')
+
+        # Step 3: Delete employee via DELETE API
+        res_del = self.client.delete('/api/roster/SF-CRUD-TEST?hard=true')
+        self.assertEqual(res_del.status_code, 200)
+        data_del = json.loads(res_del.data)
+        self.assertEqual(data_del['status'], 'success')
+
+        # Verify deletion in SQLite
+        cursor.execute("SELECT COUNT(*) FROM employees WHERE emp_code='SF-CRUD-TEST'")
+        self.assertEqual(cursor.fetchone()[0], 0)
+
+    def test_employee_product_name_and_soft_delete(self):
+        """Audit 13: Verify employee product name integration, PUT update, and soft-delete with custom reasons"""
+        # Step 1: Clean up any old record
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM employees WHERE emp_code='SF-TEST-SOFT-DEL';")
+        self.conn.commit()
+
+        # Step 2: Add employee manually with product_name and custom change_detail
+        payload = {
+            'emp_code': 'SF-TEST-SOFT-DEL',
+            'emp_name': 'SOFT DEL TEST',
+            'branch_name': 'HQ',
+            'zone': 'NORTH',
+            'division': 'DELHI',
+            'business_unit': 'RETAIL',
+            'role': 'SALES REP',
+            'product_name': 'GOLD LOAN',
+            'change_detail': 'TEST SEED'
+        }
+        res_post = self.client.post('/api/roster/manual', json=payload)
+        self.assertEqual(res_post.status_code, 200)
+        
+        # Verify db record
+        cursor.execute("SELECT product_name, status, change_detail FROM employees WHERE emp_code='SF-TEST-SOFT-DEL'")
+        row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row['product_name'], 'GOLD LOAN')
+        self.assertEqual(row['status'], 'ACTIVE')
+        self.assertEqual(row['change_detail'], 'TEST SEED')
+
+        # Step 3: Edit product name and status via PUT
+        put_payload = {
+            'emp_name': 'SOFT DEL TEST UPDATED',
+            'branch_name': 'HQ',
+            'zone': 'NORTH',
+            'division': 'DELHI',
+            'business_unit': 'RETAIL',
+            'role': 'SALES REP',
+            'product_name': 'TWO-WHEELER LOAN',
+            'status': 'ACTIVE',
+            'change_detail': 'EDITED TEST SEED'
+        }
+        res_put = self.client.put('/api/roster/SF-TEST-SOFT-DEL', json=put_payload)
+        self.assertEqual(res_put.status_code, 200)
+        
+        # Verify db updated
+        cursor.execute("SELECT emp_name, product_name, change_detail FROM employees WHERE emp_code='SF-TEST-SOFT-DEL'")
+        row = cursor.fetchone()
+        self.assertEqual(row['emp_name'], 'SOFT DEL TEST UPDATED')
+        self.assertEqual(row['product_name'], 'TWO-WHEELER LOAN')
+        self.assertEqual(row['change_detail'], 'EDITED TEST SEED')
+
+        # Step 4: Soft delete employee with custom reason in query param
+        res_del = self.client.delete('/api/roster/SF-TEST-SOFT-DEL?reason=Left+Company')
+        self.assertEqual(res_del.status_code, 200)
+        data_del = json.loads(res_del.data)
+        self.assertEqual(data_del['status'], 'success')
+
+        # Verify soft delete status in db
+        cursor.execute("SELECT status, change_detail FROM employees WHERE emp_code='SF-TEST-SOFT-DEL'")
+        row = cursor.fetchone()
+        self.assertEqual(row['status'], 'DELETED')
+        self.assertTrue(row['change_detail'].startswith("DELETED ON "))
+        self.assertIn("LEFT COMPANY", row['change_detail'])
+
+        # Step 5: Hard delete employee to clean up database
+        res_hard_del = self.client.delete('/api/roster/SF-TEST-SOFT-DEL?hard=true')
+        self.assertEqual(res_hard_del.status_code, 200)
+        
+        # Verify permanent deletion in SQLite
+        cursor.execute("SELECT COUNT(*) FROM employees WHERE emp_code='SF-TEST-SOFT-DEL'")
+        self.assertEqual(cursor.fetchone()[0], 0)
+
+    def test_trainer_multi_select_and_bulk_upload(self):
+        """Audit 14: Verify trainer bulk upload from CSV, scope extraction, multi-select scope updates, metadata APIs, and scoped dashboard queries"""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM trainers WHERE trainer_id IN ('TR-CSV-1', 'TR-CSV-2');")
+        self.conn.commit()
+
+        # Step 1: Upload a CSV with invalid headers
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Trainer ID', 'Trainer Name', 'Password']) # Missing BUs, Zones, Divisions, Branches
+            writer.writerow(['TR-CSV-1', 'Trainer CSV 1', 'pwd123'])
+            temp_path = f.name
+            
+        with open(temp_path, 'rb') as f:
+            res = self.client.post('/api/trainers/upload', data={'file': (f, 'invalid_trainers.csv')})
+            data = json.loads(res.data)
+            self.assertEqual(res.status_code, 400)
+            self.assertEqual(data['status'], 'error')
+            self.assertIn("Missing column headers", data['message'])
+        os.remove(temp_path)
+
+        # Step 2: Upload a valid CSV containing multiple trainers with multi-select rights
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Trainer ID', 'Trainer Name', 'Password', 'Business Units', 'Zones', 'Divisions', 'Branches'])
+            writer.writerow(['TR-CSV-1', 'Trainer CSV 1', 'pwd123', 'Two-Wheeler,Retail', 'North,South', 'Delhi Div,Mumbai Div', 'HQ,MUMBAI'])
+            writer.writerow(['TR-CSV-2', 'Trainer CSV 2', 'pwd456', 'ALL', 'ALL', 'ALL', 'ALL'])
+            temp_path = f.name
+            
+        with open(temp_path, 'rb') as f:
+            res = self.client.post('/api/trainers/upload', data={'file': (f, 'valid_trainers.csv')})
+            data = json.loads(res.data)
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(data['status'], 'success')
+        os.remove(temp_path)
+
+        # Verify db records
+        cursor.execute("SELECT * FROM trainers WHERE trainer_id='TR-CSV-1'")
+        t1 = cursor.fetchone()
+        self.assertIsNotNone(t1)
+        self.assertEqual(t1['business_units'], 'TWO-WHEELER,RETAIL')
+        self.assertEqual(t1['zones'], 'NORTH,SOUTH')
+        self.assertEqual(t1['divisions'], 'DELHI DIV,MUMBAI DIV')
+        self.assertEqual(t1['branches'], 'HQ,MUMBAI')
+
+        cursor.execute("SELECT * FROM trainers WHERE trainer_id='TR-CSV-2'")
+        t2 = cursor.fetchone()
+        self.assertIsNotNone(t2)
+        self.assertEqual(t2['business_units'], 'ALL')
+        self.assertEqual(t2['zones'], 'ALL')
+        self.assertEqual(t2['divisions'], 'ALL')
+        self.assertEqual(t2['branches'], 'ALL')
+
+        # Step 3: Test upload duplicacy error on re-upload
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Trainer ID', 'Trainer Name', 'Password', 'Business Units', 'Zones', 'Divisions', 'Branches'])
+            writer.writerow(['TR-CSV-1', 'Trainer CSV 1', 'pwd123', 'Two-Wheeler,Retail', 'North,South', 'Delhi Div,Mumbai Div', 'HQ,MUMBAI'])
+            temp_path = f.name
+            
+        with open(temp_path, 'rb') as f:
+            res = self.client.post('/api/trainers/upload', data={'file': (f, 'dup_trainers.csv')})
+            data = json.loads(res.data)
+            self.assertEqual(res.status_code, 400)
+            self.assertEqual(data['status'], 'error')
+            self.assertEqual(data['message'], "This is the duplicacy. You remove that.")
+            self.assertTrue(len(data['details']) > 0)
+        os.remove(temp_path)
+
+        # Step 4: Verify metadata route structure
+        res_meta = self.client.get('/api/metadata')
+        self.assertEqual(res_meta.status_code, 200)
+        meta = json.loads(res_meta.data)
+        self.assertIn('business_units', meta)
+        self.assertIn('zones', meta)
+        self.assertIn('divisions', meta)
+        self.assertIn('branches', meta)
+
+        # Step 5: Verify PUT trainer updating rights on the go
+        put_payload = {
+            'name': 'Trainer CSV 1 Updated',
+            'password': 'newpwd123',
+            'business_units': 'GOLD LOAN',
+            'zones': 'EAST',
+            'divisions': 'KOLKATA DIV',
+            'branches': 'KOLKATA OFFICE'
+        }
+        res_put = self.client.put('/api/trainers/TR-CSV-1', json=put_payload)
+        self.assertEqual(res_put.status_code, 200)
+        
+        cursor.execute("SELECT * FROM trainers WHERE trainer_id='TR-CSV-1'")
+        t1_up = cursor.fetchone()
+        self.assertEqual(t1_up['name'], 'Trainer CSV 1 Updated')
+        self.assertEqual(t1_up['business_units'], 'GOLD LOAN')
+        self.assertEqual(t1_up['zones'], 'EAST')
+        self.assertEqual(t1_up['divisions'], 'KOLKATA DIV')
+        self.assertEqual(t1_up['branches'], 'KOLKATA OFFICE')
+
+        # Step 6: Verify dashboard stats query filtering with trainer_id scope works
+        res_stats = self.client.get('/api/dashboard/stats?trainer_id=TR-CSV-1')
+        self.assertEqual(res_stats.status_code, 200)
+        stats = json.loads(res_stats.data)
+        self.assertIn('execs_trained', stats)
+        self.assertIn('avg_growth_delta', stats)
+
+        # Clean up database
+        cursor.execute("DELETE FROM trainers WHERE trainer_id IN ('TR-CSV-1', 'TR-CSV-2');")
+        self.conn.commit()
+
 if __name__ == '__main__':
     unittest.main()
