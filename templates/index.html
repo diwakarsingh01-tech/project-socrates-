@@ -86,6 +86,8 @@
             const [activeOptions, setActiveOptions] = useState([]);
             const [activeCorrectIndex, setActiveCorrectIndex] = useState(null);
             const [activeAssignmentDay, setActiveAssignmentDay] = useState('zero day');
+            const [activeTranslations, setActiveTranslations] = useState({});
+            const [activeLanguage, setActiveLanguage] = useState('en'); // 'en', 'easy', 'hindi', 'hinglish'
             
             // Student scores
             const [preTestScore, setPreTestScore] = useState(null);
@@ -109,10 +111,25 @@
                     if (data.assignment_day) {
                         setActiveAssignmentDay(data.assignment_day);
                     }
+                    if (data.translations) {
+                        setActiveTranslations(data.translations);
+                    } else {
+                        setActiveTranslations({});
+                    }
+                    if (data.forceLanguage) {
+                        setActiveLanguage(data.forceLanguage);
+                    }
+                });
+
+                socket.on('force_language', (data) => {
+                    if (data.language) {
+                        setActiveLanguage(data.language);
+                    }
                 });
 
                 return () => {
                     socket.off('change_view');
+                    socket.off('force_language');
                 };
             }, []);
 
@@ -129,6 +146,9 @@
                                 options={activeOptions}
                                 correctIndex={activeCorrectIndex}
                                 assignmentDay={activeAssignmentDay}
+                                translations={activeTranslations}
+                                activeLanguage={activeLanguage}
+                                setActiveLanguage={setActiveLanguage}
                                 onScoreSubmit={(score) => setPreTestScore(score)}
                             />
                         );
@@ -143,6 +163,9 @@
                                 options={activeOptions}
                                 correctIndex={activeCorrectIndex}
                                 assignmentDay={activeAssignmentDay}
+                                translations={activeTranslations}
+                                activeLanguage={activeLanguage}
+                                setActiveLanguage={setActiveLanguage}
                                 onScoreSubmit={(score) => setPostTestScore(score)}
                             />
                         );
@@ -388,7 +411,7 @@
             );
         };
 
-        const Quiz = ({type, empId, pin, question, options, correctIndex, assignmentDay, onScoreSubmit}) => {
+        const Quiz = ({type, empId, pin, question, options, correctIndex, assignmentDay, translations, activeLanguage, setActiveLanguage, onScoreSubmit}) => {
             const [selected, setSelected] = useState(null);
             const [submitted, setSubmitted] = useState(false);
             const [scoreInfo, setScoreInfo] = useState(null);
@@ -402,8 +425,14 @@
             const [comments, setComments] = useState('');
             const [submittingFeedback, setSubmittingFeedback] = useState(false);
             
-            const qText = question || (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].question : fallbackQuestions['zero day'].question);
-            const qOpts = (options && options.length > 0) ? options : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].options : fallbackQuestions['zero day'].options);
+            const qText = (translations && translations[activeLanguage] && translations[activeLanguage].question)
+                ? translations[activeLanguage].question
+                : (question || (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].question : fallbackQuestions['zero day'].question));
+                
+            const qOpts = (translations && translations[activeLanguage] && translations[activeLanguage].options && translations[activeLanguage].options.length > 0)
+                ? translations[activeLanguage].options
+                : ((options && options.length > 0) ? options : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].options : fallbackQuestions['zero day'].options));
+                
             const qCorrect = correctIndex !== null ? correctIndex : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].correctIndex : fallbackQuestions['zero day'].correctIndex);
             
             useEffect(() => {
@@ -495,6 +524,35 @@
                             <span className="font-bold text-sm text-socrates-dark uppercase tracking-wide">{type}</span>
                         </div>
                         <span className="text-xs font-semibold text-slate-500 bg-white px-2 py-1 border border-slate-200 rounded">{assignmentDay}</span>
+                    </div>
+                    
+                    {/* Trainee Language Pill Selector */}
+                    <div className="px-6 py-2.5 bg-slate-100/50 border-b border-slate-100 flex items-center gap-3">
+                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest"><i className="fas fa-language text-slate-500"></i> Lang:</span>
+                        <div className="flex gap-1.5 overflow-x-auto py-0.5">
+                            {[
+                                { id: 'en', label: 'English' },
+                                { id: 'hindi', label: 'Hindi' },
+                                { id: 'hinglish', label: 'Hinglish' },
+                                { id: 'easy', label: 'Easy (Kid)' }
+                            ].map((lang) => {
+                                const isSelected = activeLanguage === lang.id;
+                                return (
+                                    <button
+                                        key={lang.id}
+                                        type="button"
+                                        onClick={() => setActiveLanguage(lang.id)}
+                                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                                            isSelected 
+                                                ? 'bg-blue-600 border-blue-600 text-white shadow-sm' 
+                                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        {lang.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                     
                     <div className="p-6 flex-1 flex flex-col justify-between">

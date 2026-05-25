@@ -559,7 +559,22 @@
                                             <div key={idx} className="p-3.5 rounded-xl border border-purple-100 bg-purple-50/10 hover:bg-purple-50/30 transition-all">
                                                 <div className="flex items-center justify-between mb-1">
                                                     <span className="text-xs font-bold text-socrates-dark truncate pr-2 max-w-[150px]">{mod.title}</span>
-                                                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100/50 px-2 py-0.5 rounded-full">{mod.approved_count}/{mod.questions_count} Qs</span>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {/* Glowing trainer-only difficulty badge */}
+                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border shadow-[0_0_6px_rgba(var(--badge-glow))] ${
+                                                            mod.difficulty === 'Easy' 
+                                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                                                : mod.difficulty === 'Hard' 
+                                                                    ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                                                                    : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                        }`}
+                                                        style={{
+                                                            '--badge-glow': mod.difficulty === 'Easy' ? '16,185,129,0.15' : mod.difficulty === 'Hard' ? '244,63,94,0.15' : '59,130,246,0.15'
+                                                        }}>
+                                                            {mod.difficulty || 'Medium'}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-purple-700 bg-purple-100/50 px-2 py-0.5 rounded-full">{mod.approved_count}/{mod.questions_count} Qs</span>
+                                                    </div>
                                                 </div>
                                                 <div className="text-[9px] text-slate-400 font-bold mb-2 uppercase tracking-wide">
                                                     Maker: {mod.creator_name ? `${mod.creator_name} (${mod.created_by})` : (mod.created_by === 'ADMIN' ? 'Super Admin (ADMIN)' : mod.created_by)}
@@ -1227,6 +1242,8 @@
             const [selectedFile, setSelectedFile] = useState(null);
             const [trainers, setTrainers] = useState([]);
             const [assignedAuditor, setAssignedAuditor] = useState('');
+            const [difficulty, setDifficulty] = useState('Medium');
+            const [reviewDifficulty, setReviewDifficulty] = useState('Medium');
             
             // Auditor review states
             const [reviewModuleId, setReviewModuleId] = useState(null);
@@ -1276,6 +1293,7 @@
                 formData.append('title', title);
                 formData.append('count', qCount);
                 formData.append('trainer_id', user?.id || 'ADMIN');
+                formData.append('difficulty', difficulty);
                 if (selectedFile) {
                     formData.append('file', selectedFile);
                 }
@@ -1290,6 +1308,7 @@
                         // Open the Auditor panel with generated draft questions
                         setReviewModuleId(null);
                         setReviewTitle(data.title);
+                        setReviewDifficulty(data.difficulty || 'Medium');
                         // Map each question to have default approved=0 for auditor to audit
                         const mappedQs = data.questions.map(q => ({
                             question_text: q.question,
@@ -1298,7 +1317,8 @@
                             option_c: q.options[2],
                             option_d: q.options[3],
                             correct_index: q.correctIndex,
-                            approved: 0
+                            approved: 0,
+                            translations: q.translations
                         }));
                         setReviewQuestions(mappedQs);
                         setStatus('review');
@@ -1319,6 +1339,7 @@
             const handleResumeAudit = (mod) => {
                 setReviewModuleId(mod.id);
                 setReviewTitle(mod.title);
+                setReviewDifficulty(mod.difficulty || 'Medium');
                 // Map from database questions structure back to auditor draft
                 const mappedQs = mod.questions.map(q => ({
                     id: q.id,
@@ -1328,7 +1349,8 @@
                     option_c: q.option_c,
                     option_d: q.option_d,
                     correct_index: q.correct_index,
-                    approved: q.approved
+                    approved: q.approved,
+                    translations: q.translations
                 }));
                 setReviewQuestions(mappedQs);
                 setStatus('review');
@@ -1359,11 +1381,13 @@
                     trainer_id: user?.id || 'ADMIN',
                     audited_by: assignedAuditor || 'Awaiting Audit',
                     module_id: reviewModuleId,
+                    difficulty: reviewDifficulty,
                     questions: reviewQuestions.map(q => ({
                         question: q.question_text,
                         options: [q.option_a, q.option_b, q.option_c, q.option_d],
                         correctIndex: q.correct_index,
-                        approved: q.approved
+                        approved: q.approved,
+                        translations: q.translations
                     }))
                 };
                 
@@ -1481,6 +1505,21 @@
                                 
                                 <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-between items-center rounded-b-2xl">
                                     <button onClick={() => setStatus('idle')} className="btn-outline">Cancel</button>
+                                    
+                                    {/* Socratic Difficulty selector in auditor console */}
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Difficulty:</label>
+                                        <select 
+                                            value={reviewDifficulty} 
+                                            onChange={(e) => setReviewDifficulty(e.target.value)} 
+                                            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 focus:outline-none focus:border-socrates-primary shadow-sm"
+                                        >
+                                            <option value="Easy">Easy (Low Complexity)</option>
+                                            <option value="Medium">Medium (Standard Policy)</option>
+                                            <option value="Hard">Hard (Exceptions/Deviations)</option>
+                                        </select>
+                                    </div>
+
                                     <div className="flex gap-3">
                                         <button 
                                             onClick={() => commitModuleToDb(false)} 
@@ -1517,7 +1556,7 @@
                             </div>
                         ) : (
                             <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Module Title</label>
                                         <input type="text" value={title} onChange={(e)=>setTitle(e.target.value)} className="input-field" placeholder="e.g. KYC Updates" />
@@ -1533,6 +1572,18 @@
                                             {trainers.map(t => (
                                                 <option key={t.id} value={t.name}>{t.name} ({t.id})</option>
                                             ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Difficulty Level</label>
+                                        <select 
+                                            value={difficulty} 
+                                            onChange={(e) => setDifficulty(e.target.value)} 
+                                            className="input-field bg-white py-3 text-sm font-semibold"
+                                        >
+                                            <option value="Easy">Easy (Low Complexity)</option>
+                                            <option value="Medium">Medium (Standard Policy)</option>
+                                            <option value="Hard">Hard (Exceptions/Deviations)</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1614,6 +1665,20 @@
                                                     }`}>
                                                         <i className={`fas ${isReady ? 'fa-user-check' : 'fa-user-shield'} text-[9px]`}></i>
                                                         {isReady ? `Audited by: ${mod.audited_by || 'Super Admin'}` : `Auditor: ${mod.audited_by || 'Awaiting Audit'}`}
+                                                    </span>
+                                                    {/* Glowing trainer-only difficulty badge */}
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border shadow-[0_0_8px_rgba(var(--badge-glow))] ${
+                                                        mod.difficulty === 'Easy' 
+                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                                            : mod.difficulty === 'Hard' 
+                                                                ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                                                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                    }`}
+                                                    style={{
+                                                        '--badge-glow': mod.difficulty === 'Easy' ? '16,185,129,0.15' : mod.difficulty === 'Hard' ? '244,63,94,0.15' : '59,130,246,0.15'
+                                                    }}>
+                                                        <i className="fas fa-signal text-[9px]"></i>
+                                                        {mod.difficulty || 'Medium'}
                                                     </span>
                                                 </div>
                                             </div>
@@ -3444,6 +3509,7 @@
             const [assignmentDay, setAssignmentDay] = useState('zero day');
             const [activeModule, setActiveModule] = useState(null);
             const [activeQIdx, setActiveQIdx] = useState(0);
+            const [selectedLanguageOverride, setSelectedLanguageOverride] = useState('en'); // 'en', 'easy', 'hindi', 'hinglish'
             
             // Gamification & Leaderboard States
             const [activeTab, setActiveTab] = useState('chart'); // chart or leaderboard
@@ -3504,13 +3570,22 @@
                 };
             }, []);
 
+            const broadcastLanguageOverride = (lang) => {
+                setSelectedLanguageOverride(lang);
+                socket.emit('trainer_broadcast', {
+                    pin: sessionId,
+                    forceLanguage: lang
+                });
+            };
+
             const getActiveQuestionData = () => {
                 if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
-                    const q = activeModule.questions[activeQIdx] || activeModule.questions[0];
+                    const q = activeModule.questions[activeQIdx];
                     return {
                         question: q.question_text,
                         options: [q.option_a, q.option_b, q.option_c, q.option_d],
                         correctIndex: q.correct_index,
+                        translations: q.translations,
                         isDynamic: true,
                         totalQs: activeModule.questions.length
                     };
@@ -3543,13 +3618,15 @@
                     qData = {
                         question: q.question_text,
                         options: [q.option_a, q.option_b, q.option_c, q.option_d],
-                        correctIndex: q.correct_index
+                        correctIndex: q.correct_index,
+                        translations: q.translations
                     };
                 } else {
                     qData = {
                         question: currentQ.question,
                         options: currentQ.options,
-                        correctIndex: currentQ.correctIndex
+                        correctIndex: currentQ.correctIndex,
+                        translations: currentQ.translations
                     };
                 }
                 
@@ -3559,7 +3636,9 @@
                     assignment_day: activeModule.title,
                     question: qData.question,
                     options: qData.options,
-                    correctIndex: qData.correctIndex
+                    correctIndex: qData.correctIndex,
+                    translations: qData.translations,
+                    forceLanguage: selectedLanguageOverride
                 });
             };
 
@@ -3578,7 +3657,8 @@
                 const nextQ = {
                     question: q.question_text,
                     options: [q.option_a, q.option_b, q.option_c, q.option_d],
-                    correctIndex: q.correct_index
+                    correctIndex: q.correct_index,
+                    translations: q.translations
                 };
                 
                 socket.emit('trainer_broadcast', {
@@ -3587,7 +3667,9 @@
                     assignment_day: activeModule.title,
                     question: nextQ.question,
                     options: nextQ.options,
-                    correctIndex: nextQ.correctIndex
+                    correctIndex: nextQ.correctIndex,
+                    translations: nextQ.translations,
+                    forceLanguage: selectedLanguageOverride
                 });
             };
 
@@ -4010,7 +4092,39 @@
                                         </p>
                                     </div>
                                 )}
- 
+
+                                {activeModule && (
+                                    <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm animate-fade-in">
+                                        <label className="block text-[10px] font-extrabold text-slate-500 mb-2.5 uppercase tracking-widest flex items-center gap-1">
+                                            <i className="fas fa-language text-blue-600"></i> Force Student Language
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-1.5">
+                                            {[
+                                                { id: 'en', label: 'English' },
+                                                { id: 'hindi', label: 'Hindi' },
+                                                { id: 'hinglish', label: 'Hinglish' },
+                                                { id: 'easy', label: 'Easy (Kid)' }
+                                            ].map(lang => {
+                                                const isActive = selectedLanguageOverride === lang.id;
+                                                return (
+                                                    <button
+                                                        key={lang.id}
+                                                        type="button"
+                                                        onClick={() => broadcastLanguageOverride(lang.id)}
+                                                        className={`py-2 px-1 rounded-lg text-[10px] font-bold border transition-all flex flex-col items-center justify-center ${
+                                                            isActive
+                                                                ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
+                                                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                                        }`}
+                                                    >
+                                                        <span>{lang.label}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                                
                                 <div className="space-y-3">
                                     <button 
                                         disabled={!activeModule} 

@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import sqlite3
 import os
+import json
 import datetime
 from werkzeug.utils import secure_filename
 import csv
@@ -89,7 +90,8 @@ def init_db():
         questions_count INTEGER,
         created_at TEXT,
         status TEXT DEFAULT 'Pending Audit',
-        created_by TEXT DEFAULT 'ADMIN'
+        created_by TEXT DEFAULT 'ADMIN',
+        difficulty TEXT DEFAULT 'Medium'
     )''')
     
     # Run migration to add status, created_by, and audited_by columns in modules if db was created in older version
@@ -101,6 +103,8 @@ def init_db():
         cursor.execute("ALTER TABLE modules ADD COLUMN created_by TEXT DEFAULT 'ADMIN'")
     if 'audited_by' not in mod_cols:
         cursor.execute("ALTER TABLE modules ADD COLUMN audited_by TEXT DEFAULT 'Awaiting Audit'")
+    if 'difficulty' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN difficulty TEXT DEFAULT 'Medium'")
         
     # Questions (Maker-Checker details)
     cursor.execute('''
@@ -114,8 +118,15 @@ def init_db():
         option_d TEXT,
         correct_index INTEGER,
         approved INTEGER DEFAULT 0,
+        translations TEXT,
         FOREIGN KEY(module_id) REFERENCES modules(id) ON DELETE CASCADE
     )''')
+    
+    # Run migration to add translations column in questions if db was created in older version
+    cursor.execute("PRAGMA table_info(questions)")
+    q_cols = [row[1] for row in cursor.fetchall()]
+    if 'translations' not in q_cols:
+        cursor.execute("ALTER TABLE questions ADD COLUMN translations TEXT")
     
     # Training Sessions (For Tracking Productivity)
     cursor.execute('''
@@ -719,7 +730,17 @@ def handle_modules():
         for m in modules:
             m_dict = dict(m)
             q_rows = conn.execute("SELECT * FROM questions WHERE module_id=?", (m['id'],)).fetchall()
-            m_dict['questions'] = [dict(q) for q in q_rows]
+            
+            q_list = []
+            for q in q_rows:
+                q_dict = dict(q)
+                try:
+                    q_dict['translations'] = json.loads(q_dict.get('translations') or '{}')
+                except Exception:
+                    q_dict['translations'] = {}
+                q_list.append(q_dict)
+                
+            m_dict['questions'] = q_list
             res_list.append(m_dict)
             
         conn.close()
@@ -734,8 +755,8 @@ def handle_modules():
             # Query trainer's name
             active_tr = conn.execute("SELECT name FROM trainers WHERE trainer_id=?", (trainer_id,)).fetchone()
             audited_by = active_tr['name'] if active_tr else 'Super Admin'
-        conn.execute("INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by) VALUES (?, ?, ?, ?, ?, ?)",
-                     (data['title'], 15, now, 'Ready', trainer_id, audited_by))
+        conn.execute("INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                     (data['title'], 15, now, 'Ready', trainer_id, audited_by, data.get('difficulty', 'Medium')))
         conn.commit()
         conn.close()
         return jsonify({"status": "success"})
@@ -752,6 +773,7 @@ def delete_module(module_id):
 def generate_heuristic_questions(text_content, count, title="Module"):
     import re
     import random
+    import json
     
     # Clean text content
     paragraphs = [p.strip() for p in text_content.split('\n') if len(p.strip()) > 30]
@@ -791,11 +813,33 @@ def generate_heuristic_questions(text_content, count, title="Module"):
             choices = list(set(choices))[:4]
             random.shuffle(choices)
             
+            easy_q = masked_s
+            easy_q = easy_q.replace("Loan-to-Value", "pocket money limit").replace("LTV", "piggy bank limit").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules").replace("threshold", "limit")
+            
+            translations = {
+                "easy": {
+                    "question": f"Let's play a game! Under the rule: \"{easy_q}\" What is the correct percentage?",
+                    "options": choices,
+                    "correctIndex": choices.index(correct_val)
+                },
+                "hindi": {
+                    "question": f"पॉलिसी डॉक्युमेंट के अनुसार: \"{masked_s}\" यहाँ सही प्रतिशत क्या होना चाहिए?",
+                    "options": choices,
+                    "correctIndex": choices.index(correct_val)
+                },
+                "hinglish": {
+                    "question": f"Policy guidelines ke according: \"{masked_s}\" Correct percentage kya hona chahiye?",
+                    "options": choices,
+                    "correctIndex": choices.index(correct_val)
+                }
+            }
+            
             questions.append({
                 "question": f"According to the policy document: \"{masked_s}\" What is the correct percentage?",
                 "options": choices,
                 "correctIndex": choices.index(correct_val),
-                "approved": 0
+                "approved": 0,
+                "translations": translations
             })
             
     # Heuristic 2: Extract sentences with numbers/amounts (e.g. 3 Days, 60 Months, ₹2 Lakhs)
@@ -820,11 +864,33 @@ def generate_heuristic_questions(text_content, count, title="Module"):
             choices = list(set(choices))[:4]
             random.shuffle(choices)
             
+            easy_q = masked_s
+            easy_q = easy_q.replace("Loan-to-Value", "pocket money limit").replace("LTV", "piggy bank limit").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules").replace("threshold", "limit")
+            
+            translations = {
+                "easy": {
+                    "question": f"Based on the toy piggy bank rules: \"{easy_q}\" What is the correct number?",
+                    "options": choices,
+                    "correctIndex": choices.index(correct_val)
+                },
+                "hindi": {
+                    "question": f"गाइडलाइंस के अनुसार: \"{masked_s}\" यहाँ सही सीमा क्या होनी चाहिए?",
+                    "options": choices,
+                    "correctIndex": choices.index(correct_val)
+                },
+                "hinglish": {
+                    "question": f"Policy guidelines ke according: \"{masked_s}\" Correct threshold kya hona chahiye?",
+                    "options": choices,
+                    "correctIndex": choices.index(correct_val)
+                }
+            }
+            
             questions.append({
                 "question": f"Based on the uploaded guidelines: \"{masked_s}\" What is the correct threshold?",
                 "options": choices,
                 "correctIndex": choices.index(correct_val),
-                "approved": 0
+                "approved": 0,
+                "translations": translations
             })
             
     # Heuristic 3: Reading comprehension split with dynamic sentence-based distractors from other parts of the document
@@ -850,11 +916,36 @@ def generate_heuristic_questions(text_content, count, title="Module"):
                 choices = [target_sentence, doc_distractors[0], doc_distractors[1], doc_distractors[2]]
                 random.shuffle(choices)
                 
+                easy_intro = intro_p.replace("Loan-to-Value", "pocket money").replace("LTV", "piggy bank").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules").replace("threshold", "limit")
+                easy_target = target_sentence.replace("Loan-to-Value", "pocket money").replace("LTV", "piggy bank").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules")
+                easy_distractors = [d.replace("Loan-to-Value", "pocket money").replace("LTV", "piggy bank").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules") for d in doc_distractors]
+                easy_choices = [easy_target, easy_distractors[0], easy_distractors[1], easy_distractors[2]]
+                random.shuffle(easy_choices)
+                
+                translations = {
+                    "easy": {
+                        "question": f"Given the section: \"{easy_intro}\" Which of the following is correct?",
+                        "options": easy_choices,
+                        "correctIndex": easy_choices.index(easy_target)
+                    },
+                    "hindi": {
+                        "question": f"दिए गए पैराग्राफ: \"{intro_p}\" के अनुसार कौन सा कथन सही है?",
+                        "options": choices,
+                        "correctIndex": choices.index(target_sentence)
+                    },
+                    "hinglish": {
+                        "question": f"Given paragraph: \"{intro_p}\" ke according, correct statement select karein:",
+                        "options": choices,
+                        "correctIndex": choices.index(target_sentence)
+                    }
+                }
+                
                 questions.append({
                     "question": f"Given the section: \"{intro_p}\" Which of the following is the most accurate statement according to the uploaded policy?",
                     "options": choices,
                     "correctIndex": choices.index(target_sentence),
-                    "approved": 0
+                    "approved": 0,
+                    "translations": translations
                 })
 
     # Heuristic 4: Fill-in-the-blank keyword-masking using actual document terms to ensure 100% subject-matching
@@ -881,32 +972,86 @@ def generate_heuristic_questions(text_content, count, title="Module"):
                 choices = list(set(choices))[:4]
                 random.shuffle(choices)
                 
+                easy_masked = masked_s.replace("Loan-to-Value", "pocket money").replace("LTV", "piggy bank").replace("tenure", "months to pay").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules")
+                
+                translations = {
+                    "easy": {
+                        "question": f"Fill in the blank! \"{easy_masked}\" What is the correct simple word?",
+                        "options": choices,
+                        "correctIndex": choices.index(target_word)
+                    },
+                    "hindi": {
+                        "question": f"रिक्त स्थान भरें! \"{masked_s}\" यहाँ सही शब्द क्या होगा?",
+                        "options": choices,
+                        "correctIndex": choices.index(target_word)
+                    },
+                    "hinglish": {
+                        "question": f"Blank space fill karein! \"{masked_s}\" What is the correct term?",
+                        "options": choices,
+                        "correctIndex": choices.index(target_word)
+                    }
+                }
+                
                 questions.append({
                     "question": f"Based strictly on the {title} documentation: \"{masked_s}\" What is the correct term to fill the blank?",
                     "options": choices,
                     "correctIndex": choices.index(target_word),
-                    "approved": 0
+                    "approved": 0,
+                    "translations": translations
                 })
                 continue
                 
         # Pure safety fallback if the document is extremely short (less than 1 sentence)
         q_idx = len(questions)
+        
+        choices = [
+            f"Perform comprehensive daily reconciliations according to {title} standard guidelines.",
+            f"Review operational files only at the end of each fiscal quarter.",
+            f"Disburse files first and perform manual verification post-facto.",
+            "Audits are conducted purely on a voluntary basis."
+        ]
+        random.shuffle(choices)
+        
+        translations = {
+            "easy": {
+                "question": f"How do we play by the game rules of {title}?",
+                "options": [
+                    f"Check our piggy banks daily according to {title} rules.",
+                    "Only clean our toys at the end of the month.",
+                    "Eat candies first and wash hands later.",
+                    "We do not need to follow any rules."
+                ],
+                "correctIndex": 0
+            },
+            "hindi": {
+                "question": f"{title} गाइडलाइंस के अनुसार ऑडिट की मुख्य प्रक्रिया क्या है?",
+                "options": [
+                    f"{title} मानकों के अनुसार दैनिक मिलान करें।",
+                    "केवल वित्तीय तिमाही के अंत में फाइलों की समीक्षा करें।",
+                    "पहले फाइलें स्वीकृत करें और सत्यापन बाद में करें।",
+                    "ऑडिट पूरी तरह से स्वैच्छिक है।"
+                ],
+                "correctIndex": 0
+            },
+            "hinglish": {
+                "question": f"{title} guidelines ke according audit ka main procedure kya hai?",
+                "options": [
+                    f"{title} standard ke according daily reconciliation karein.",
+                    "Sirf quarter end par files review karein.",
+                    "Pehle file disburse karein fir check karein.",
+                    "Audits purely voluntary base par hote hain."
+                ],
+                "correctIndex": 0
+            }
+        }
+        
         questions.append({
             "question": f"[{title} Q{q_idx + 1}] Under the uploaded reference guidelines, what is the primary procedure for compliance audits?",
-            "options": [
-                f"Perform comprehensive daily reconciliations according to {title} standard guidelines.",
-                f"Review operational files only at the end of each fiscal quarter.",
-                f"Disburse files first and perform manual verification post-facto.",
-                "Audits are conducted purely on a voluntary basis."
-            ],
-            "correctIndex": 0,
-            "approved": 0
+            "options": choices,
+            "correctIndex": choices.index(f"Perform comprehensive daily reconciliations according to {title} standard guidelines."),
+            "approved": 0,
+            "translations": translations
         })
-        opts = questions[-1]["options"]
-        correct_opt = opts[0]
-        random.shuffle(opts)
-        questions[-1]["options"] = opts
-        questions[-1]["correctIndex"] = opts.index(correct_opt)
             
     return questions[:count]
 
@@ -915,6 +1060,7 @@ def generate_module():
     count = int(request.form.get('count', 15))
     title = request.form.get('title', 'Product Refresher Policy').strip()
     trainer_id = request.form.get('trainer_id', 'ADMIN').strip()
+    difficulty = request.form.get('difficulty', 'Medium').strip()
     
     text_content = ""
     
@@ -945,6 +1091,15 @@ def generate_module():
     if not text_content:
         text_content = "Default Two-Wheeler Policy Document"
         
+    # Pre-compiled difficulty instructions
+    difficulty_instructions = ""
+    if difficulty == 'Easy':
+        difficulty_instructions = "DIFFICULTY LEVEL: EASY. Focus on straightforward, direct questions testing foundational concepts, basic rules, definitions, and simple criteria. Avoid double negatives, complex combinations, or corner cases."
+    elif difficulty == 'Hard':
+        difficulty_instructions = "DIFFICULTY LEVEL: HARD. Focus on highly complex, Socratic scenario-based questions that test advanced deviational corner cases, risk management assessments, double constraints, and deep policy exemptions."
+    else:
+        difficulty_instructions = "DIFFICULTY LEVEL: MEDIUM. Focus on standard analytical Socratic questions, typical customer case scenarios, standard numeric thresholds, and day-to-day policy rules."
+        
     # 2. Try to call Gemini API
     gemini_success = False
     generated_questions = []
@@ -962,9 +1117,16 @@ def generate_module():
             You are a senior Socratic Trainer with 20 years of experience.
             CRITICAL INSTRUCTION: You MUST only generate questions directly and strictly based on the provided policy content document. DO NOT assume, hallucinate, or import any external knowledge, other bank/lending policies, or generic rules. If the subject of the document is different (e.g. KYC, credit approval, compliance), ONLY base your questions on that specific subject. Every numeric limit, threshold, rule, or exception in your questions MUST be directly traceable to the provided text below.
             
+            {difficulty_instructions}
+            
             Perform deep research on this policy content and generate exactly {count} multiple-choice Socratic assessment questions.
             Each question must have exactly 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
             Ensure the questions are challenging, dialogue-oriented, and directly based on the key rules, constraints, numeric thresholds, and exceptions inside the text.
+            
+            For EACH question, you must also provide the translation or simplified adaptation of the question and its 4 options in these specific styles:
+            - "easy": Extremely simple English so that a 5-year-old child can easily understand (e.g. replacing complex banking terms like LTV ratio, CIBIL, interest with playful analogies like buying a toy, loan piggy-banks, or candy rules using simple nouns and verbs).
+            - "hindi": Translated to conversational, clear Hindi (in Devanagari script).
+            - "hinglish": Translated to conversational Hinglish (Hindi written in Latin script, e.g. "KYC document update karne ki maximum time-limit kya hai?").
             
             Format your response STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks.
             Example format:
@@ -972,7 +1134,24 @@ def generate_module():
               {{
                 "question": "What is the maximum loan ratio allowed under the new policy?",
                 "options": ["75%", "85%", "90%", "100%"],
-                "correctIndex": 1
+                "correctIndex": 1,
+                "translations": {{
+                  "easy": {{
+                    "question": "If you want to buy a big toy, what is the most candy money we can lend you from our piggy bank?",
+                    "options": ["75 pennies out of 100", "85 pennies out of 100", "90 pennies out of 100", "All the pennies"],
+                    "correctIndex": 1
+                  }},
+                  "hindi": {{
+                    "question": "नई पॉलिसी के तहत अधिकतम लोन रेशियो (LTV) कितना है?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }},
+                  "hinglish": {{
+                    "question": "New policy ke under maximum loan ratio kitna allowed hai?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }}
+                }}
               }}
             ]
             
@@ -990,7 +1169,7 @@ def generate_module():
             # --- PASS 2: Double Validation & Self-Correction ---
             if len(generated_questions) > 0:
                 double_validation_prompt = f"""
-                You are a Socratic Policy Auditor. Your task is to perform a two-step validation (Double Validation) on these Socratic questions against the source policy document.
+                You are a Socratic Policy Auditor. Your task is to perform a two-step validation (Double Validation) on these Socratic questions and their multilingual translations against the source policy document.
                 
                 Here is the source policy document:
                 \"\"\"
@@ -1001,8 +1180,8 @@ def generate_module():
                 {json.dumps(generated_questions, indent=2)}
                 
                 For EACH question in the array:
-                1. **Validation Step 1 (Factual Accuracy & Depth)**: Cross-reference the question and options with the source document. Make sure the Socratic question is factually accurate, deep, and does not misrepresent any policy details. Correct any errors in options or text.
-                2. **Validation Step 2 (Correct Index Audit)**: Audit the `correctIndex` (0 to 3) twice. Verify that the option at the `correctIndex` is mathematically and factually the only correct answer based strictly on the document. If it is wrong or misaligned, update the `correctIndex` to the correct option, or rewrite the option.
+                1. **Validation Step 1 (Factual Accuracy & Depth)**: Cross-reference the question, options, and translations with the source document. Make sure the Socratic question and all its translations are factually accurate, deep, and do not misrepresent any details. Correct any errors.
+                2. **Validation Step 2 (Correct Index Audit)**: Verify that the option at the `correctIndex` is mathematically and factually the only correct answer. Ensure that in all translations (easy, hindi, hinglish), the option at `correctIndex` corresponds exactly to the correct answer.
                 
                 Return the finalized, audited, and double-corrected questions array STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks. Follow the exact same format as input.
                 """
@@ -1030,6 +1209,7 @@ def generate_module():
     return jsonify({
         "status": "success",
         "title": title,
+        "difficulty": difficulty,
         "count": len(generated_questions),
         "questions": generated_questions
     })
@@ -1040,6 +1220,7 @@ def save_module():
     title = data.get('title', 'AI Generated Module').strip()
     trainer_id = data.get('trainer_id', 'ADMIN').strip()
     audited_by = data.get('audited_by')
+    difficulty = data.get('difficulty', 'Medium').strip()
     questions = data.get('questions', [])
     module_id = data.get('module_id') # If editing an existing draft
     
@@ -1072,24 +1253,25 @@ def save_module():
             
             # Update existing module
             cursor.execute(
-                "UPDATE modules SET title=?, questions_count=?, status=?, audited_by=? WHERE id=?",
-                (title, len(questions), status, audited_by, module_id)
+                "UPDATE modules SET title=?, questions_count=?, status=?, audited_by=?, difficulty=? WHERE id=?",
+                (title, len(questions), status, audited_by, difficulty, module_id)
             )
             # Delete old questions to replace them with the newly audited ones
             cursor.execute("DELETE FROM questions WHERE module_id=?", (module_id,))
         else:
             # Create new module
             cursor.execute(
-                "INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by) VALUES (?, ?, ?, ?, ?, ?)",
-                (title, len(questions), now, status, trainer_id, audited_by)
+                "INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (title, len(questions), now, status, trainer_id, audited_by, difficulty)
             )
             module_id = cursor.lastrowid
             
         for q in questions:
             opts = q.get('options', ["Option A", "Option B", "Option C", "Option D"])
+            trans_json = json.dumps(q.get('translations', {}))
             cursor.execute(
-                "INSERT INTO questions (module_id, question_text, option_a, option_b, option_c, option_d, correct_index, approved) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (module_id, q.get('question_text', q.get('question')), opts[0], opts[1], opts[2], opts[3], q.get('correctIndex', q.get('correct_index', 0)), q.get('approved', 0))
+                "INSERT INTO questions (module_id, question_text, option_a, option_b, option_c, option_d, correct_index, approved, translations) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (module_id, q.get('question_text', q.get('question')), opts[0], opts[1], opts[2], opts[3], q.get('correctIndex', q.get('correct_index', 0)), q.get('approved', 0), trans_json)
             )
             
         conn.commit()
@@ -1747,7 +1929,7 @@ def get_dashboard_stats():
         
         # 4. Pending Audits (Maker-Checker drafts awaiting trainer sign-off)
         pending_audits_rows = conn.execute('''
-            SELECT m.id, m.title, m.questions_count, m.created_by, t.name AS creator_name,
+            SELECT m.id, m.title, m.questions_count, m.created_by, m.difficulty, t.name AS creator_name,
                    (SELECT COUNT(*) FROM questions q WHERE q.module_id = m.id AND q.approved = 1) AS approved_count
             FROM modules m
             LEFT JOIN trainers t ON m.created_by = t.trainer_id
