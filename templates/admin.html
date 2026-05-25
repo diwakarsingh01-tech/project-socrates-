@@ -2274,6 +2274,20 @@
                 if (startDate || endDate) filtersUsed.push(`Period: ${startDate || 'Start'} to ${endDate || 'End'}`);
                 const scopeStr = filtersUsed.length > 0 ? filtersUsed.join(" | ") : "All Organization Branches";
 
+                // Extract summary metrics
+                const summaryMetrics = analytics.summary_metrics || {};
+                const branchesCount = summaryMetrics.branches_count || 0;
+                const employeesCount = summaryMetrics.employees_count || 0;
+                const roleWiseMap = summaryMetrics.role_wise || {};
+
+                // Format role-wise trained penetration list
+                let roleWiseStr = "";
+                if (Object.keys(roleWiseMap).length > 0) {
+                    roleWiseStr = Object.entries(roleWiseMap).map(([role, count]) => `   • ${role}: ${count} trained`).join("\n");
+                } else {
+                    roleWiseStr = "   • No role-specific metrics recorded in this selection.";
+                }
+
                 // Format critical pain areas
                 let painAreasStr = "";
                 if (analytics.critical_pain_areas && analytics.critical_pain_areas.length > 0) {
@@ -2298,38 +2312,60 @@
                     trainerPerfStr = "   • No trainer logs recorded in current period.";
                 }
 
-                // Socrates AI Prescriptive Recommendations
+                // Socratic AI Custom Diagnostic Recommendations
                 let aiRecs = [];
+                const activeScopeDesc = selectedBU ? `Business Unit ${selectedBU}` : selectedProduct ? `Product Line ${selectedProduct}` : selectedBranch ? `Branch ${selectedBranch}` : selectedDiv ? `Division ${selectedDiv}` : selectedZone ? `Zone ${selectedZone}` : 'Global Organization';
+                
                 if (parseFloat(belowPct) > 20) {
-                    aiRecs.push(`🚨 HIGH-ALERT: Over ${belowPct}% of employees scored below 60%. Highly recommend pushing an automated AI Socratic refresher campaign immediately.`);
+                    aiRecs.push(`🚨 HIGH-ALERT [${activeScopeDesc}]: An elevated risk threshold is active. ${belowPct}% of employees scored below 60%. Highly recommend pushing an automated AI Socratic refresher campaign immediately to stabilize compliance.`);
                 } else if (parseFloat(belowPct) > 0) {
-                    aiRecs.push(`⚠️ ATTENTION: ${belowPct}% of employees need refresher training. Monitor progress for the ${belowCount} identified underperforming employees.`);
+                    aiRecs.push(`⚠️ SPECIAL ATTENTION [${activeScopeDesc}]: Minor knowledge regressions detected. ${belowPct}% of employees need refresher training. Monitor progress for the ${belowCount} identified underperforming employees.`);
+                } else {
+                    aiRecs.push(`✓ EXCELLENT PERFORMANCE [${activeScopeDesc}]: 100% Policy safety achieved. Zero candidates flagged below the 60% compliance threshold. Maintain existing training cadence.`);
                 }
+                
                 if (analytics.critical_pain_areas && analytics.critical_pain_areas.length > 0) {
-                    aiRecs.push(`📍 TARGETED ACTION: Focus specialized, on-ground training sessions in flagged branches: ${analytics.critical_pain_areas.map(p => p.branch_name).slice(0, 3).join(", ")}.`);
+                    const topPainBranches = analytics.critical_pain_areas.map(p => p.branch_name).slice(0, 3).join(", ");
+                    aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement on the following top flagged branches: ${topPainBranches}.`);
                 }
-                if (aiRecs.length === 0) {
-                    aiRecs.push(`✓ EXCELLENT: All performance benchmarks successfully achieved. Maintain current training cadence.`);
+                
+                if (branchesCount > 5) {
+                    aiRecs.push(`🌐 SCALE METRIC: Socratic penetration is strong across ${branchesCount} branches. Recommend cross-branch performance peer reviews.`);
+                } else if (branchesCount > 0 && branchesCount <= 2) {
+                    aiRecs.push(`🔍 MICRO-GROUP INSIGHT: High density training focus observed on a select group of ${branchesCount} branch(es). Recommend expanding the Socratic cohort size to capture standard deviation gains.`);
                 }
+
+                // Role-wise prescriptive recommendations
+                const rolesTrained = Object.keys(roleWiseMap);
+                if (rolesTrained.length > 0) {
+                    const dominantRole = Object.entries(roleWiseMap).reduce((a, b) => a[1] > b[1] ? a : b)[0];
+                    aiRecs.push(`👥 ROLE DISTRIBUTION INSIGHT: Dominant training participation observed in '${dominantRole}' roles. Recommend focused Socratic outreach to ensure parallel alignment in all other active roles: ${rolesTrained.filter(r => r !== dominantRole).join(", ") || 'None pending'}.`);
+                }
+
                 const aiRecsStr = aiRecs.map((r, i) => `${i + 1}. ${r}`).join("\n");
 
                 const emailBody = `Subject: REPORT: Socrates AI Socratic Training Performance & Action Plan\n\n` +
 `Dear Leadership Team,\n\n` +
-`Please find below the comprehensive, highly analytical training performance and policy compliance report compiled from our Socrates AI Socratic Training Platform.\n\n` +
+`Please find below the comprehensive, highly analytical training performance and policy compliance report compiled dynamically from our Socrates AI Socratic Training Platform.\n\n` +
 `========================================= \n` +
 `1. EXECUTIVE SUMMARY & TRAINING SCOPE \n` +
 `=========================================\n` +
 `• Scope of Review: ${scopeStr}\n` +
-`• Total Evaluated Executives: ${totalParticipants}\n` +
+`• Total Branches Visited (Trained): ${branchesCount}\n` +
+`• Total Trained Employees: ${employeesCount}\n` +
 `• Overall Policy Mastery Growth (Learning Delta): +${overallGrowth}% \n\n` +
 `=========================================\n` +
-`2. KEY PERFORMANCE TRAINEE BUCKETS \n` +
+`2. ROLE-WISE TRAINING PENETRATION \n` +
+`=========================================\n` +
+`${roleWiseStr}\n\n` +
+`=========================================\n` +
+`3. KEY PERFORMANCE TRAINEE BUCKETS \n` +
 `=========================================\n` +
 `• 🟢 Above 80% (High Policy Mastery) : ${highCount} employees (${highPct}%) -> Certified Safe & Compliant\n` +
 `• 🟡 60% to 80% (Monitoring Phase)    : ${midCount} employees (${midPct}%) -> Scheduled for periodic tracking\n` +
 `• 🔴 Below 60% (Refresher Candidates) : ${belowCount} employees (${belowPct}%) -> Tagged for mandatory refresher retraining\n\n` +
 `=========================================\n` +
-`3. SOCRATIC TEMPORAL LEARNING PROGRESSION\n` +
+`4. SOCRATIC TEMPORAL LEARNING PROGRESSION\n` +
 `=========================================\n` +
 `• ZERO DAY (Tenure & LTV Ratios)  :\n` +
 `   - Pre-Test Score: ${temporal['ZERO DAY']?.pre || 0}% | Post-Test Score: ${temporal['ZERO DAY']?.post || 0}% | Growth: +${((temporal['ZERO DAY']?.post || 0) - (temporal['ZERO DAY']?.pre || 0)).toFixed(1)}%\n` +
@@ -2338,27 +2374,27 @@
 `• TWENTY DAYS (Self-Employed Docs)  :\n` +
 `   - Pre-Test Score: ${temporal['TWENTY DAYS']?.pre || 0}% | Post-Test Score: ${temporal['TWENTY DAYS']?.post || 0}% | Growth: +${((temporal['TWENTY DAYS']?.post || 0) - (temporal['TWENTY DAYS']?.pre || 0)).toFixed(1)}%\n\n` +
 `=========================================\n` +
-`4. CRITICAL REGIONAL PAIN AREAS FLAGGED\n` +
+`5. CRITICAL REGIONAL PAIN AREAS FLAGGED\n` +
 `=========================================\n` +
 `${painAreasStr}\n\n` +
 `=========================================\n` +
-`5. TOP POLICY KNOWLEDGE GAPS IDENTIFIED\n` +
+`6. TOP POLICY KNOWLEDGE GAPS IDENTIFIED\n` +
 `=========================================\n` +
 `${topicGapsStr}\n\n` +
 `=========================================\n` +
-`6. TRAINER QUALITY COMPARATIVE MATRIX\n` +
+`7. TRAINER QUALITY COMPARATIVE MATRIX\n` +
 `=========================================\n` +
 `${trainerPerfStr}\n\n` +
 `=========================================\n` +
-`7. SOCRATES AI PRESCRIPTIVE RECOMMENDATIONS\n` +
+`8. SOCRATES AI PRESCRIPTIVE DIAGNOSTIC RECOMMENDATIONS\n` +
 `=========================================\n` +
 `${aiRecsStr}\n\n` +
-`This report has been compiled dynamically based on real-time Socratic learning indicators. Please let us know if you require any specific drill-downs or custom analytical exports.\n\n` +
+`This report has been compiled dynamically based on active filters and real-time Socratic learning indicators. Please let us know if you require any specific drill-downs or custom analytical exports.\n\n` +
 `Best regards,\n` +
 `Socrates AI Training Platform Manager`;
 
                 navigator.clipboard.writeText(emailBody);
-                alert("✨ Premium Analytical Leadership Email Report successfully compiled and copied to clipboard! You can now paste (Ctrl+V/Cmd+V) directly into your email body to share with leadership.");
+                alert("✨ Premium Dynamic Socratic AI Leadership Email Report successfully compiled and copied to clipboard! You can now paste (Ctrl+V/Cmd+V) directly into your email body to share with leadership.");
             };
 
             // Cascading lists filters

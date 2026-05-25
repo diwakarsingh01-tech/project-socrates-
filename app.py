@@ -1215,6 +1215,30 @@ def get_analytics():
                 "failure_rate": round(100 - g["avg_post"], 1)
             })
             
+        # E.5 Summary metrics (branches count, employees count, and role-wise trained people count)
+        metrics_query = f"""
+            SELECT COUNT(DISTINCT e.branch_name) as branches_count,
+                   COUNT(DISTINCT e.emp_code) as employees_count
+            FROM assessment_results ar
+            JOIN employees e ON ar.emp_code = e.emp_code
+            {where_str}
+        """
+        metrics_res = conn.execute(metrics_query, query_params).fetchone()
+        branches_count = metrics_res['branches_count'] if (metrics_res and metrics_res['branches_count'] is not None) else 0
+        employees_count = metrics_res['employees_count'] if (metrics_res and metrics_res['employees_count'] is not None) else 0
+
+        role_query = f"""
+            SELECT COALESCE(NULLIF(e.role, ''), 'General Staff') as role_name,
+                   COUNT(DISTINCT e.emp_code) as count
+            FROM assessment_results ar
+            JOIN employees e ON ar.emp_code = e.emp_code
+            {where_str}
+            GROUP BY e.role
+            ORDER BY count DESC
+        """
+        role_results = conn.execute(role_query, query_params).fetchall()
+        role_wise = {r['role_name']: r['count'] for r in role_results}
+
         # F. Query lists of active filters to populate dynamic cascading dropdowns
         distinct_zones = conn.execute("SELECT DISTINCT zone FROM employees WHERE zone IS NOT NULL AND zone != ''").fetchall()
         distinct_divs = conn.execute("SELECT DISTINCT division, zone FROM employees WHERE division IS NOT NULL AND division != ''").fetchall()
@@ -1265,6 +1289,11 @@ def get_analytics():
         },
         "critical_pain_areas": pain_areas,
         "topic_knowledge_gaps": topic_gaps,
+        "summary_metrics": {
+            "branches_count": branches_count,
+            "employees_count": employees_count,
+            "role_wise": role_wise
+        },
         "filter_options": {
             "zones": [z[0] for z in distinct_zones],
             "divisions": [{"name": d[0], "zone": d[1]} for d in distinct_divs],
