@@ -207,26 +207,42 @@ def upload_roster():
         rows = []
         headers = []
         try:
-            with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
-                reader = csv.reader(csvfile)
-                headers = [h.strip() for h in next(reader)]
+            try:
+                with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
+                    reader = csv.reader(csvfile)
+                    headers = [h.strip() for h in next(reader)]
+                    for row_idx, r in enumerate(reader, start=2):
+                        if not r or len(r) < len(headers):
+                            continue
+                        rows.append((row_idx, r))
+            except (UnicodeDecodeError, ValueError):
+                rows = []
+                with open(filepath, 'r', encoding='latin-1') as csvfile:
+                    reader = csv.reader(csvfile)
+                    headers = [h.strip() for h in next(reader)]
+                    for row_idx, r in enumerate(reader, start=2):
+                        if not r or len(r) < len(headers):
+                            continue
+                        rows.append((row_idx, r))
+            
+            # Check for header format
+            missing_headers = [req for req in REQUIRED_HEADERS if req not in headers]
+            if missing_headers:
+                return jsonify({
+                    "status": "error", 
+                    "message": f"Invalid CSV format. Missing column headers: {', '.join(missing_headers)}"
+                }), 400
                 
-                # Check for header format
-                missing_headers = [req for req in REQUIRED_HEADERS if req not in headers]
-                if missing_headers:
-                    return jsonify({
-                        "status": "error", 
-                        "message": f"Invalid CSV format. Missing column headers: {', '.join(missing_headers)}"
-                    }), 400
-                
-                # Map columns by index
-                hdr_indices = {h: headers.index(h) for h in REQUIRED_HEADERS}
-                
-                for row_idx, r in enumerate(reader, start=2):
-                    if not r or len(r) < len(headers):
-                        continue
-                    row_data = {h: r[hdr_indices[h]].strip().upper() for h in REQUIRED_HEADERS}
-                    rows.append((row_idx, row_data))
+            # Map columns by index
+            hdr_indices = {h: headers.index(h) for h in REQUIRED_HEADERS}
+            
+            # Form final row data
+            final_rows = []
+            for row_idx, r in rows:
+                row_data = {h: r[hdr_indices[h]].strip().upper() for h in REQUIRED_HEADERS}
+                final_rows.append((row_idx, row_data))
+            rows = final_rows
+
         except Exception as e:
             return jsonify({"status": "error", "message": f"Failed to parse CSV: {str(e)}"}), 400
             
