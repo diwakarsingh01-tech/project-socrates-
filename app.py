@@ -165,11 +165,25 @@ def handle_trainers():
     
     elif request.method == 'POST':
         data = request.json
-        conn.execute("INSERT INTO trainers (trainer_id, name, zone, password) VALUES (?, ?, ?, ?)",
-                     (data['id'], data['name'], data['zone'], data['password']))
-        conn.commit()
+        try:
+            conn.execute("INSERT INTO trainers (trainer_id, name, zone, password) VALUES (?, ?, ?, ?)",
+                         (data['id'].upper().strip(), data['name'], data['zone'], data['password']))
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.close()
+            return jsonify({"status": "error", "message": "Trainer ID already exists. Please choose a different ID or delete the existing account first."}), 400
         conn.close()
         return jsonify({"status": "success"})
+
+@app.route('/api/trainers/<trainer_id>', methods=['DELETE'])
+def delete_trainer(trainer_id):
+    if trainer_id.upper() == 'ADMIN':
+        return jsonify({"status": "error", "message": "Super Admin cannot be deleted"}), 400
+    conn = get_db_connection()
+    conn.execute("DELETE FROM trainers WHERE trainer_id=?", (trainer_id.upper().strip(),))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success"})
 
 @app.route('/api/trainers/<trainer_id>/status', methods=['PUT'])
 def update_trainer_status(trainer_id):

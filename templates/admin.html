@@ -1240,6 +1240,27 @@
                 });
             };
 
+            const handleDelete = (id) => {
+                if(!confirm(`Are you sure you want to permanently delete Trainer '${id}'?`)) return;
+                fetch(`/api/trainers/${id}`, {
+                    method: 'DELETE'
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        loadTrainers();
+                    } else {
+                        alert("Failed to delete trainer: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("Trainer deletion failed, offline fallback:", err);
+                    const updated = trainers.filter(t => t.id !== id);
+                    db.set('s_trainers', updated);
+                    loadTrainers();
+                });
+            };
+
             const handleCreate = () => {
                 if(!tid || !name || !password) return alert("Please enter Trainer ID, Name, and Password");
                 const payload = { id: tid.toUpperCase().trim(), name: name.trim(), zone: zone, password: password.trim() };
@@ -1295,9 +1316,12 @@
                                             <td className="px-6 py-4"><div className="font-bold text-socrates-dark">{tr.id}</div><div className="text-slate-500 text-xs mt-0.5">{tr.name}</div></td>
                                             <td className="px-6 py-4 text-slate-600 font-medium">{tr.zone}</td>
                                             <td className="px-6 py-4"><span className={`text-[10px] font-bold px-2 py-1 rounded uppercase tracking-widest ${tr.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>{tr.status}</span></td>
-                                            <td className="px-6 py-4 text-right">
+                                            <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
                                                 <button onClick={()=>handleToggle(tr.id, tr.status)} className={`text-xs border px-3 py-1.5 rounded transition-colors font-semibold ${tr.status === 'Active' ? 'text-red-600 border-red-200 hover:bg-red-50' : 'text-emerald-600 border-emerald-200 hover:bg-emerald-50'}`}>
                                                     {tr.status === 'Active' ? 'Revoke Access' : 'Re-activate'}
+                                                </button>
+                                                <button onClick={()=>handleDelete(tr.id)} className="text-xs border border-red-200 text-red-600 bg-red-50/50 hover:bg-red-100 px-3 py-1.5 rounded transition-colors font-semibold flex items-center gap-1">
+                                                    <i className="fas fa-trash-alt text-[10px]"></i> Delete
                                                 </button>
                                             </td>
                                         </tr>
