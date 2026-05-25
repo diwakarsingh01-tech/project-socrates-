@@ -361,5 +361,32 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         cursor.execute("DELETE FROM trainers WHERE trainer_id='TR-AUDIT-TEST';")
         self.conn.commit()
 
+    def test_database_reset_and_data_purge(self):
+        """Audit 9: Verify database reset deletes all demo data while preserving ADMIN Super Admin"""
+        # Step 1: Insert dummy test records into SQLite
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name) VALUES ('SF-RESET-DUMMY', 'Reset Trainee')")
+        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, password, role) VALUES ('TR-RESET-DUMMY', 'Reset Trainer', 'pwd', 'Trainer')")
+        self.conn.commit()
+        
+        # Step 2: Trigger reset API
+        res = self.client.post('/api/admin/reset-database')
+        self.assertEqual(res.status_code, 200)
+        data = json.loads(res.data)
+        self.assertEqual(data['status'], 'success')
+        
+        # Step 3: Verify data has been wiped
+        cursor.execute("SELECT COUNT(*) FROM employees WHERE emp_code='SF-RESET-DUMMY'")
+        self.assertEqual(cursor.fetchone()[0], 0)
+        
+        cursor.execute("SELECT COUNT(*) FROM trainers WHERE trainer_id='TR-RESET-DUMMY'")
+        self.assertEqual(cursor.fetchone()[0], 0)
+        
+        # Step 4: Verify Super Admin is still preserved
+        cursor.execute("SELECT password FROM trainers WHERE trainer_id='ADMIN'")
+        row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], 'admin123')
+
 if __name__ == '__main__':
     unittest.main()

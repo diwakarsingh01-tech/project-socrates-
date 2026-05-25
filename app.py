@@ -194,6 +194,32 @@ def update_trainer_status(trainer_id):
     conn.close()
     return jsonify({"status": "success"})
 
+@app.route('/api/admin/reset-database', methods=['POST'])
+def reset_database():
+    conn = get_db_connection()
+    try:
+        # Clear tables
+        conn.execute("DELETE FROM assessment_results")
+        conn.execute("DELETE FROM training_sessions")
+        conn.execute("DELETE FROM questions")
+        conn.execute("DELETE FROM modules")
+        conn.execute("DELETE FROM employees")
+        conn.execute("DELETE FROM trainers WHERE role != 'SuperAdmin' AND trainer_id != 'ADMIN'")
+        
+        # Ensure Super Admin remains
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM trainers WHERE trainer_id='ADMIN'")
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin')")
+        
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    conn.close()
+    return jsonify({"status": "success", "message": "Database reset successfully"})
+
 # 3. ROSTER MANAGEMENT
 @app.route('/api/roster', methods=['GET'])
 def get_roster():

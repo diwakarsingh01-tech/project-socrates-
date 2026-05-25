@@ -1291,6 +1291,29 @@
                 });
             };
 
+            const handleResetDatabase = () => {
+                const pin = prompt("WARNING: This will permanently delete all modules, employee rosters, session histories, and trainer accounts (except Super Admin). Please type 'RESET' to confirm:");
+                if (pin !== 'RESET') return;
+                
+                fetch('/api/admin/reset-database', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('System database has been successfully cleared to pristine state!');
+                        loadTrainers();
+                    } else {
+                        alert("Failed to reset database: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("Reset database failed:", err);
+                    alert("Error: Failed to connect to server to reset database.");
+                });
+            };
+
             return (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     <div className="lg:col-span-2 card overflow-hidden">
@@ -1331,34 +1354,54 @@
                         </div>
                     </div>
 
-                    <div className="card p-6 h-fit bg-slate-50 border-socrates-primary border-t-4">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="w-10 h-10 bg-white text-socrates-primary rounded-lg flex items-center justify-center shadow-sm border border-slate-200"><i className="fas fa-user-plus text-xl"></i></div>
-                            <h3 className="font-bold text-lg text-socrates-dark tracking-tight">Create Trainer ID</h3>
+                    <div className="space-y-6">
+                        <div className="card p-6 h-fit bg-slate-50 border-socrates-primary border-t-4">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="w-10 h-10 bg-white text-socrates-primary rounded-lg flex items-center justify-center shadow-sm border border-slate-200"><i className="fas fa-user-plus text-xl"></i></div>
+                                <h3 className="font-bold text-lg text-socrates-dark tracking-tight">Create Trainer ID</h3>
+                            </div>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Trainer ID</label>
+                                    <input type="text" value={tid} onChange={(e)=>setTid(e.target.value)} className="input-field bg-white" placeholder="Trainer ID (e.g. TR-1005)" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Full Name</label>
+                                    <input type="text" value={name} onChange={(e)=>setName(e.target.value)} className="input-field bg-white" placeholder="Full Name" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Password</label>
+                                    <input type="text" value={password} onChange={(e)=>setPassword(e.target.value)} className="input-field bg-white font-mono" placeholder="Password" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Region</label>
+                                    <select value={zone} onChange={(e)=>setZone(e.target.value)} className="input-field bg-white">
+                                        <option value="AMD_BU">AMD_BU</option>
+                                        <option value="CH_BU">CH_BU</option>
+                                        <option value="DEL_BU">DEL_BU</option>
+                                        <option value="KOL_BU">KOL_BU</option>
+                                    </select>
+                                </div>
+                                <button onClick={handleCreate} className="w-full btn-primary mt-4 shadow-md"><i className="fas fa-plus mr-2"></i> Create Credentials</button>
+                            </div>
                         </div>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Trainer ID</label>
-                                <input type="text" value={tid} onChange={(e)=>setTid(e.target.value)} className="input-field bg-white" placeholder="Trainer ID (e.g. TR-1005)" />
+
+                        <div className="card p-6 h-fit bg-red-50/50 border-red-500 border-t-4 shadow-sm">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 bg-white text-red-600 rounded-lg flex items-center justify-center shadow-sm border border-red-100">
+                                    <i className="fas fa-exclamation-triangle text-lg"></i>
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-base text-red-900 tracking-tight">System Reset</h3>
+                                    <p className="text-[10px] text-red-700/80 uppercase tracking-widest font-bold">Dangerous Area</p>
+                                </div>
                             </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Full Name</label>
-                                <input type="text" value={name} onChange={(e)=>setName(e.target.value)} className="input-field bg-white" placeholder="Full Name" />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Password</label>
-                                <input type="text" value={password} onChange={(e)=>setPassword(e.target.value)} className="input-field bg-white font-mono" placeholder="Password" />
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Region</label>
-                                <select value={zone} onChange={(e)=>setZone(e.target.value)} className="input-field bg-white">
-                                    <option value="AMD_BU">AMD_BU</option>
-                                    <option value="CH_BU">CH_BU</option>
-                                    <option value="DEL_BU">DEL_BU</option>
-                                    <option value="KOL_BU">KOL_BU</option>
-                                </select>
-                            </div>
-                            <button onClick={handleCreate} className="w-full btn-primary mt-4 shadow-md"><i className="fas fa-plus mr-2"></i> Create Credentials</button>
+                            <p className="text-xs text-red-700 mb-4 leading-relaxed">
+                                Wipes all training modules, uploaded employee rosters, assessments, and trainer logs. The default Super Admin credential will be preserved.
+                            </p>
+                            <button onClick={handleResetDatabase} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded text-xs transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg">
+                                <i className="fas fa-trash-alt"></i> Clean All Demo Data
+                            </button>
                         </div>
                     </div>
                 </div>
