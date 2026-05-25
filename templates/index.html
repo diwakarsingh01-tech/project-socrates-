@@ -186,7 +186,9 @@
                         </div>
                         <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
                             <div className="w-2 h-2 rounded-full bg-socrates-accent"></div>
-                            <span className="text-xs text-socrates-text font-semibold">{empId}</span>
+                            <span className="text-xs text-socrates-text font-semibold">
+                                {empDetails?.emp_name ? `${empDetails.emp_name} (${empId})` : empId}
+                            </span>
                         </div>
                     </div>
                     
@@ -203,6 +205,14 @@
             const [searchResults, setSearchResults] = useState([]);
             const [selectedEmp, setSelectedEmp] = useState(null);
             const [showDropdown, setShowDropdown] = useState(false);
+
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                const urlPin = params.get('pin');
+                if (urlPin) {
+                    setPin(urlPin);
+                }
+            }, []);
 
             useEffect(() => {
                 const term = searchQuery.trim();
@@ -383,6 +393,15 @@
             const [submitted, setSubmitted] = useState(false);
             const [scoreInfo, setScoreInfo] = useState(null);
             
+            // Socratic Session Feedback States
+            const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+            const [rating, setRating] = useState(0);
+            const [hoverRating, setHoverRating] = useState(0);
+            const [understanding, setUnderstanding] = useState('Fully Clear');
+            const [manpowerSaved, setManpowerSaved] = useState('Yes, much faster!');
+            const [comments, setComments] = useState('');
+            const [submittingFeedback, setSubmittingFeedback] = useState(false);
+            
             const qText = question || (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].question : fallbackQuestions['zero day'].question);
             const qOpts = (options && options.length > 0) ? options : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].options : fallbackQuestions['zero day'].options);
             const qCorrect = correctIndex !== null ? correctIndex : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].correctIndex : fallbackQuestions['zero day'].correctIndex);
@@ -400,6 +419,9 @@
                 setSelected(null);
                 setSubmitted(false);
                 setScoreInfo(null);
+                setFeedbackSubmitted(false);
+                setRating(0);
+                setComments('');
             }, [question]);
 
             const submitAnswer = () => {
@@ -414,7 +436,8 @@
                     const payload = {
                         emp_code: empId,
                         module_id: 1, // Default module
-                        assignment_day: assignmentDay
+                        assignment_day: assignmentDay,
+                        session_id: pin
                     };
                     if (type === 'Pre-Test') {
                         payload.pre_test_score = score;
@@ -435,6 +458,31 @@
                         console.error("Score submission error:", err);
                     });
                 }
+            };
+            
+            const submitFeedback = () => {
+                setSubmittingFeedback(true);
+                fetch('/api/feedback/submit', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        emp_code: empId,
+                        session_id: pin,
+                        rating: rating || 5,
+                        understanding: understanding,
+                        manpower_saved: manpowerSaved,
+                        comments: comments
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    setFeedbackSubmitted(true);
+                    setSubmittingFeedback(false);
+                })
+                .catch(err => {
+                    console.error("Feedback error:", err);
+                    setSubmittingFeedback(false);
+                });
             };
             
             return (
@@ -505,10 +553,125 @@
                                             </div>
                                         </div>
                                         
-                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center text-xs font-bold text-slate-600">
-                                            <span>Session Score:</span>
-                                            <span className="font-extrabold font-mono text-sm text-socrates-dark">{scoreInfo.total_score} pts</span>
-                                        </div>
+                                    </div>
+                                )}
+                                
+                                {type === 'Post-Test' && (
+                                    <div className="mt-8 border-t border-slate-200 pt-6 animate-fade-in text-left">
+                                        {feedbackSubmitted ? (
+                                            <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-6 text-center shadow-sm">
+                                                <div className="w-12 h-12 bg-white text-emerald-500 rounded-full flex items-center justify-center text-xl mx-auto shadow-sm mb-3"><i className="fas fa-heart"></i></div>
+                                                <h5 className="font-extrabold text-emerald-800 text-sm">Thank You for the Feedback!</h5>
+                                                <p className="text-slate-500 text-[11px] mt-1 font-medium">Your ratings and concept clarity input have been submitted successfully to the Socratic Analytics Hub.</p>
+                                            </div>
+                                        ) : (
+                                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <i className="fas fa-comment-alt text-socrates-primary"></i>
+                                                    <h5 className="font-extrabold text-socrates-dark text-sm">Socratic Session Feedback</h5>
+                                                </div>
+                                                
+                                                {/* 1. Star Rating */}
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Rate Trainer's Clarity & Dialogue</label>
+                                                    <div className="flex gap-1.5 items-center">
+                                                        {[1, 2, 3, 4, 5].map((star) => (
+                                                            <button
+                                                                key={star}
+                                                                type="button"
+                                                                onClick={() => setRating(star)}
+                                                                onMouseEnter={() => setHoverRating(star)}
+                                                                onMouseLeave={() => setHoverRating(0)}
+                                                                className="text-xl focus:outline-none transition-transform active:scale-95"
+                                                            >
+                                                                <i className={`fas fa-star ${
+                                                                    star <= (hoverRating || rating) ? 'text-amber-400' : 'text-slate-200'
+                                                                }`}></i>
+                                                            </button>
+                                                        ))}
+                                                        {rating > 0 && (
+                                                            <span className="text-[10px] font-bold text-slate-500 ml-2 bg-white px-2 py-0.5 border border-slate-200 rounded">{rating}.0 / 5.0</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* 2. Understanding */}
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">How clear is the policy concept now?</label>
+                                                    <div className="grid grid-cols-3 gap-2">
+                                                        {['Fully Clear', 'Partially Clear', 'Need Help'].map((lvl) => {
+                                                            const isSel = understanding === lvl;
+                                                            return (
+                                                                <button
+                                                                    key={lvl}
+                                                                    type="button"
+                                                                    onClick={() => setUnderstanding(lvl)}
+                                                                    className={`px-3 py-2 rounded-xl text-[10px] font-bold border-2 transition-all ${
+                                                                        isSel 
+                                                                            ? 'border-socrates-primary bg-blue-50 text-socrates-primary' 
+                                                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                                                    }`}
+                                                                >
+                                                                    {lvl === 'Fully Clear' && '🟢 '}
+                                                                    {lvl === 'Partially Clear' && '🟡 '}
+                                                                    {lvl === 'Need Help' && '🔴 '}
+                                                                    {lvl}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                {/* 3. Manpower Saved */}
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Did Socratic Session save your time over standard PPT?</label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {['Yes, much faster!', 'No, PPT is better'].map((opt) => {
+                                                            const isSel = manpowerSaved === opt;
+                                                            return (
+                                                                <button
+                                                                    key={opt}
+                                                                    type="button"
+                                                                    onClick={() => setManpowerSaved(opt)}
+                                                                    className={`px-3 py-2 rounded-xl text-[10px] font-bold border-2 transition-all ${
+                                                                        isSel 
+                                                                            ? 'border-socrates-accent bg-emerald-50 text-emerald-700' 
+                                                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                                                                    }`}
+                                                                >
+                                                                    {opt}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                {/* 4. Comments */}
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Comments for your Socratic Trainer</label>
+                                                    <textarea
+                                                        value={comments}
+                                                        onChange={(e) => setComments(e.target.value)}
+                                                        placeholder="Write your remarks here..."
+                                                        rows="2"
+                                                        className="input-field py-2 text-xs bg-white text-socrates-dark border border-slate-200 focus:border-socrates-primary"
+                                                    ></textarea>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={submitFeedback}
+                                                    disabled={submittingFeedback}
+                                                    className="w-full btn-primary bg-gradient-to-r from-socrates-primary to-blue-600 border-none text-white py-2.5 text-xs font-bold shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                                >
+                                                    {submittingFeedback ? (
+                                                        <i className="fas fa-spinner fa-spin"></i>
+                                                    ) : (
+                                                        <><i className="fas fa-check-circle"></i> Submit Feedback</>
+                                                    )}
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>

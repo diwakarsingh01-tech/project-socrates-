@@ -38,11 +38,12 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         for col in required_emp_columns:
             self.assertIn(col, columns, f"Database Integrity Audit Failed: Table 'employees' missing column '{col}'!")
 
-        # Check modules column layout (status, created_by)
+        # Check modules column layout (status, created_by, audited_by)
         cursor.execute("PRAGMA table_info(modules);")
         mod_columns = [row['name'] for row in cursor.fetchall()]
         self.assertIn('status', mod_columns, "Database Integrity Audit Failed: Table 'modules' missing 'status'!")
         self.assertIn('created_by', mod_columns, "Database Integrity Audit Failed: Table 'modules' missing 'created_by'!")
+        self.assertIn('audited_by', mod_columns, "Database Integrity Audit Failed: Table 'modules' missing 'audited_by'!")
 
         # Check questions column layout
         cursor.execute("PRAGMA table_info(questions);")
@@ -661,6 +662,158 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         # Clean up database
         cursor.execute("DELETE FROM trainers WHERE trainer_id IN ('TR-CSV-1', 'TR-CSV-2');")
         self.conn.commit()
+
+    def test_post_test_score_categorization(self):
+        """Audit 15: Verify trainee post-test score categorization and Socratic refresher campaigns"""
+        cursor = self.conn.cursor()
+        try:
+            # 1. Insert test employees
+            cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, status) VALUES ('TEST-EMP-A', 'Trainee A', 'HQ', 'North', 'Delhi', 'Retail', 'ACTIVE')")
+            cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, status) VALUES ('TEST-EMP-B', 'Trainee B', 'HQ', 'North', 'Delhi', 'Retail', 'ACTIVE')")
+            cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, status) VALUES ('TEST-EMP-C', 'Trainee C', 'HQ', 'North', 'Delhi', 'Retail', 'ACTIVE')")
+            
+            # 2. Insert assessment results in different buckets
+            # A: Below 60%
+            cursor.execute("INSERT OR REPLACE INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, session_id) VALUES ('TEST-EMP-A', 1, 'ZERO DAY', 30.0, 50.0, 'TEST-SESS-999')")
+            # B: 60-80%
+            cursor.execute("INSERT OR REPLACE INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, session_id) VALUES ('TEST-EMP-B', 1, 'ZERO DAY', 40.0, 75.0, 'TEST-SESS-999')")
+            # C: Above 80%
+            cursor.execute("INSERT OR REPLACE INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, session_id) VALUES ('TEST-EMP-C', 1, 'ZERO DAY', 50.0, 95.0, 'TEST-SESS-999')")
+            
+            self.conn.commit()
+
+            # 3. Call /api/analytics
+            res = self.client.get('/api/analytics?zone=North&division=Delhi&branch=HQ')
+            self.assertEqual(res.status_code, 200)
+            analytics = json.loads(res.data)
+            
+            # 4. Assert score distribution buckets
+            self.assertIn('score_distribution', analytics)
+            below = [e['emp_code'] for e in analytics['score_distribution']['below_60']]
+            _60_80 = [e['emp_code'] for e in analytics['score_distribution']['60_80']]
+            above = [e['emp_code'] for e in analytics['score_distribution']['above_80']]
+            
+            self.assertIn('TEST-EMP-A', below)
+            self.assertIn('TEST-EMP-B', _60_80)
+            self.assertIn('TEST-EMP-C', above)
+
+            # 5. Push refresher campaign
+            campaign_res = self.client.post('/api/refresher/campaign', json={'emp_codes': ['TEST-EMP-A']})
+            self.assertEqual(campaign_res.status_code, 200)
+            campaign_data = json.loads(campaign_res.data)
+            self.assertEqual(campaign_data['status'], 'success')
+            
+            # Verify employee's change_detail inside SQLite
+            cursor.execute("SELECT change_detail FROM employees WHERE emp_code='TEST-EMP-A'")
+            emp_a = cursor.fetchone()
+            self.assertIsNotNone(emp_a)
+            self.assertTrue("REFRESHER REQUIRED" in emp_a['change_detail'])
+
+        finally:
+            cursor.execute("DELETE FROM assessment_results WHERE emp_code IN ('TEST-EMP-A', 'TEST-EMP-B', 'TEST-EMP-C')")
+            cursor.execute("DELETE FROM employees WHERE emp_code IN ('TEST-EMP-A', 'TEST-EMP-B', 'TEST-EMP-C')")
+            self.conn.commit()
+
+    def test_trainee_feedback_submission(self):
+        """Audit 16: Verify Socratic trainee feedback submission validation and storage"""
+        cursor = self.conn.cursor()
+        try:
+            # 1. Insert test employee and session
+            cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, status) VALUES ('TEST-EMP-FEED', 'Trainee Feedback', 'HQ', 'North', 'Delhi', 'Retail', 'ACTIVE')")
+            cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role) VALUES ('TEST-TRAIN-F', 'Trainer F', 'All', 'pwd123', 'Trainer')")
+            cursor.execute("INSERT OR REPLACE INTO training_sessions (session_id, date, trainer_id, module_id, branch_name) VALUES ('TEST-SESS-FEED', '2026-05-25', 'TEST-TRAIN-F', 1, 'HQ')")
+            self.conn.commit()
+
+            # 2. Test validation on missing emp_code
+            payload_invalid = {
+                'session_id': 'TEST-SESS-FEED',
+                'module_id': 1,
+                'rating': 5,
+                'understanding': 'Fully Clear',
+                'manpower_saved': 'Yes'
+            }
+            res_invalid = self.client.post('/api/feedback/submit', json=payload_invalid)
+            self.assertEqual(res_invalid.status_code, 400)
+
+            # 3. Test valid submission
+            payload_valid = {
+                'emp_code': 'TEST-EMP-FEED',
+                'session_id': 'TEST-SESS-FEED',
+                'module_id': 1,
+                'rating': 5,
+                'understanding': 'Fully Clear',
+                'manpower_saved': 'Yes - Saved 2 Hours',
+                'comments': 'Excellent interactive presentation'
+            }
+            res_valid = self.client.post('/api/feedback/submit', json=payload_valid)
+            self.assertEqual(res_valid.status_code, 200)
+            data_valid = json.loads(res_valid.data)
+            self.assertEqual(data_valid['status'], 'success')
+
+            # Verify in DB
+            cursor.execute("SELECT * FROM trainee_feedback WHERE emp_code='TEST-EMP-FEED'")
+            feedback = cursor.fetchone()
+            self.assertIsNotNone(feedback)
+            self.assertEqual(feedback['rating'], 5)
+            self.assertEqual(feedback['understanding'], 'Fully Clear')
+            self.assertEqual(feedback['manpower_saved'], 'Yes - Saved 2 Hours')
+            self.assertEqual(feedback['comments'], 'Excellent interactive presentation')
+
+        finally:
+            cursor.execute("DELETE FROM trainee_feedback WHERE emp_code='TEST-EMP-FEED'")
+            cursor.execute("DELETE FROM training_sessions WHERE session_id='TEST-SESS-FEED'")
+            cursor.execute("DELETE FROM trainers WHERE trainer_id='TEST-TRAIN-F'")
+            cursor.execute("DELETE FROM employees WHERE emp_code='TEST-EMP-FEED'")
+            self.conn.commit()
+
+    def test_trainer_quality_comparison(self):
+        """Audit 17: Verify trainer quality metrics calculations and dynamic performance reporting"""
+        cursor = self.conn.cursor()
+        try:
+            # 1. Insert test context (trainer, employees, sessions, pre-post assessments, feedback)
+            cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role) VALUES ('TEST-TQR-1', 'Trainer Socratic', 'All', 'pwd123', 'Trainer')")
+            cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, status) VALUES ('TEST-TQR-EMP1', 'Trainee 1', 'HQ', 'North', 'Delhi', 'Retail', 'ACTIVE')")
+            cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, status) VALUES ('TEST-TQR-EMP2', 'Trainee 2', 'HQ', 'North', 'Delhi', 'Retail', 'ACTIVE')")
+            cursor.execute("INSERT OR REPLACE INTO training_sessions (session_id, date, trainer_id, module_id, branch_name) VALUES ('TEST-TQR-SESS', '2026-05-25', 'TEST-TQR-1', 1, 'HQ')")
+            
+            # Scores showing learning growth
+            cursor.execute("INSERT OR REPLACE INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, session_id) VALUES ('TEST-TQR-EMP1', 1, 'ZERO DAY', 40.0, 90.0, 'TEST-TQR-SESS')")
+            cursor.execute("INSERT OR REPLACE INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, session_id) VALUES ('TEST-TQR-EMP2', 1, 'ZERO DAY', 50.0, 90.0, 'TEST-TQR-SESS')")
+            
+            # Feedback submissions
+            cursor.execute("INSERT OR REPLACE INTO trainee_feedback (emp_code, session_id, module_id, rating, understanding, manpower_saved, comments) VALUES ('TEST-TQR-EMP1', 'TEST-TQR-SESS', 1, 5, 'Fully Clear', 'Yes - Saved Time', 'Brilliant')")
+            cursor.execute("INSERT OR REPLACE INTO trainee_feedback (emp_code, session_id, module_id, rating, understanding, manpower_saved, comments) VALUES ('TEST-TQR-EMP2', 'TEST-TQR-SESS', 1, 4, 'Fully Clear', 'Yes - Saved Time', 'Good')")
+            
+            self.conn.commit()
+
+            # 2. Call trainers performance comparison endpoint
+            res = self.client.get('/api/trainers/performance')
+            self.assertEqual(res.status_code, 200)
+            performers = json.loads(res.data)
+            
+            # Find the trainer we inserted
+            trainer_perf = next((t for t in performers if t['trainer_id'] == 'TEST-TQR-1'), None)
+            self.assertIsNotNone(trainer_perf)
+            
+            # 3. Assert calculations:
+            # Avg rating = (5 + 4) / 2 = 4.5
+            self.assertEqual(trainer_perf['avg_rating'], 4.5)
+            # growth delta = (90 - 45) = 45.0
+            self.assertEqual(trainer_perf['growth_delta'], 45.0)
+            # clarity index = 100% (both Fully Clear)
+            self.assertEqual(trainer_perf['clarity_index'], 100.0)
+            # nps = 100% (both starting with 'Yes')
+            self.assertEqual(trainer_perf['nps'], 100.0)
+            # sessions_count = 1
+            self.assertEqual(trainer_perf['sessions_count'], 1)
+
+        finally:
+            cursor.execute("DELETE FROM trainee_feedback WHERE session_id='TEST-TQR-SESS'")
+            cursor.execute("DELETE FROM assessment_results WHERE session_id='TEST-TQR-SESS'")
+            cursor.execute("DELETE FROM training_sessions WHERE session_id='TEST-TQR-SESS'")
+            cursor.execute("DELETE FROM employees WHERE emp_code IN ('TEST-TQR-EMP1', 'TEST-TQR-EMP2')")
+            cursor.execute("DELETE FROM trainers WHERE trainer_id='TEST-TQR-1'")
+            self.conn.commit()
 
 if __name__ == '__main__':
     unittest.main()

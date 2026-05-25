@@ -92,13 +92,15 @@ def init_db():
         created_by TEXT DEFAULT 'ADMIN'
     )''')
     
-    # Run migration to add status and created_by columns in modules if db was created in older version
+    # Run migration to add status, created_by, and audited_by columns in modules if db was created in older version
     cursor.execute("PRAGMA table_info(modules)")
     mod_cols = [row[1] for row in cursor.fetchall()]
     if 'status' not in mod_cols:
         cursor.execute("ALTER TABLE modules ADD COLUMN status TEXT DEFAULT 'Pending Audit'")
     if 'created_by' not in mod_cols:
         cursor.execute("ALTER TABLE modules ADD COLUMN created_by TEXT DEFAULT 'ADMIN'")
+    if 'audited_by' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN audited_by TEXT DEFAULT 'Awaiting Audit'")
         
     # Questions (Maker-Checker details)
     cursor.execute('''
@@ -135,8 +137,32 @@ def init_db():
         pre_test_score REAL,
         post_test_score REAL,
         completed_at TEXT,
+        session_id TEXT,
         PRIMARY KEY (emp_code, module_id, assignment_day),
         FOREIGN KEY(emp_code) REFERENCES employees(emp_code),
+        FOREIGN KEY(module_id) REFERENCES modules(id)
+    )''')
+    
+    # Run migration to add session_id column in assessment_results if db was created in older version
+    cursor.execute("PRAGMA table_info(assessment_results)")
+    ar_cols = [row[1] for row in cursor.fetchall()]
+    if 'session_id' not in ar_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN session_id TEXT")
+        
+    # Trainee Feedback table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS trainee_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        emp_code TEXT,
+        session_id TEXT,
+        module_id INTEGER,
+        rating INTEGER,
+        understanding TEXT,
+        manpower_saved TEXT,
+        comments TEXT,
+        submitted_at TEXT,
+        FOREIGN KEY(emp_code) REFERENCES employees(emp_code),
+        FOREIGN KEY(session_id) REFERENCES training_sessions(session_id),
         FOREIGN KEY(module_id) REFERENCES modules(id)
     )''')
     
@@ -698,8 +724,13 @@ def handle_modules():
         data = request.json
         now = datetime.datetime.now().strftime("%Y-%m-%d")
         trainer_id = data.get('created_by', 'ADMIN')
-        conn.execute("INSERT INTO modules (title, questions_count, created_at, status, created_by) VALUES (?, ?, ?, ?, ?)",
-                     (data['title'], 15, now, 'Ready', trainer_id))
+        audited_by = data.get('audited_by')
+        if not audited_by:
+            # Query trainer's name
+            active_tr = conn.execute("SELECT name FROM trainers WHERE trainer_id=?", (trainer_id,)).fetchone()
+            audited_by = active_tr['name'] if active_tr else 'Super Admin'
+        conn.execute("INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by) VALUES (?, ?, ?, ?, ?, ?)",
+                     (data['title'], 15, now, 'Ready', trainer_id, audited_by))
         conn.commit()
         conn.close()
         return jsonify({"status": "success"})
@@ -897,6 +928,7 @@ def save_module():
     data = request.json
     title = data.get('title', 'AI Generated Module').strip()
     trainer_id = data.get('trainer_id', 'ADMIN').strip()
+    audited_by = data.get('audited_by')
     questions = data.get('questions', [])
     module_id = data.get('module_id') # If editing an existing draft
     
@@ -911,19 +943,34 @@ def save_module():
         now = datetime.datetime.now().strftime("%Y-%m-%d")
         cursor = conn.cursor()
         
+        # Query active trainer name
+        active_tr = cursor.execute("SELECT name FROM trainers WHERE trainer_id=?", (trainer_id,)).fetchone()
+        active_trainer_name = active_tr['name'] if active_tr else trainer_id
+        
+        if status == 'Ready':
+            if not audited_by or audited_by == 'Awaiting Audit':
+                audited_by = active_trainer_name
+        else:
+            if not audited_by:
+                audited_by = 'Awaiting Audit'
+        
         if module_id:
+            # Preserving original creator name/ID if existing
+            orig = cursor.execute("SELECT created_by FROM modules WHERE id=?", (module_id,)).fetchone()
+            orig_creator = orig['created_by'] if orig else trainer_id
+            
             # Update existing module
             cursor.execute(
-                "UPDATE modules SET title=?, questions_count=?, status=? WHERE id=?",
-                (title, len(questions), status, module_id)
+                "UPDATE modules SET title=?, questions_count=?, status=?, audited_by=? WHERE id=?",
+                (title, len(questions), status, audited_by, module_id)
             )
             # Delete old questions to replace them with the newly audited ones
             cursor.execute("DELETE FROM questions WHERE module_id=?", (module_id,))
         else:
             # Create new module
             cursor.execute(
-                "INSERT INTO modules (title, questions_count, created_at, status, created_by) VALUES (?, ?, ?, ?, ?)",
-                (title, len(questions), now, status, trainer_id)
+                "INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by) VALUES (?, ?, ?, ?, ?, ?)",
+                (title, len(questions), now, status, trainer_id, audited_by)
             )
             module_id = cursor.lastrowid
             
@@ -957,6 +1004,7 @@ def submit_assessment():
     assignment_day = data.get('assignment_day', 'zero day').upper()
     pre_test_score = data.get('pre_test_score')
     post_test_score = data.get('post_test_score')
+    session_id = data.get('session_id')
     
     conn = get_db_connection()
     try:
@@ -965,16 +1013,24 @@ def submit_assessment():
         now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         if row:
             if pre_test_score is not None:
-                conn.execute("UPDATE assessment_results SET pre_test_score=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
-                             (pre_test_score, now_str, emp_code, module_id, assignment_day))
+                if session_id:
+                    conn.execute("UPDATE assessment_results SET pre_test_score=?, completed_at=?, session_id=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
+                                 (pre_test_score, now_str, session_id, emp_code, module_id, assignment_day))
+                else:
+                    conn.execute("UPDATE assessment_results SET pre_test_score=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
+                                 (pre_test_score, now_str, emp_code, module_id, assignment_day))
             if post_test_score is not None:
-                conn.execute("UPDATE assessment_results SET post_test_score=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
-                             (post_test_score, now_str, emp_code, module_id, assignment_day))
+                if session_id:
+                    conn.execute("UPDATE assessment_results SET post_test_score=?, completed_at=?, session_id=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
+                                 (post_test_score, now_str, session_id, emp_code, module_id, assignment_day))
+                else:
+                    conn.execute("UPDATE assessment_results SET post_test_score=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
+                                 (post_test_score, now_str, emp_code, module_id, assignment_day))
         else:
             p_val = pre_test_score if pre_test_score is not None else 0.0
             post_val = post_test_score if post_test_score is not None else 0.0
-            conn.execute("INSERT INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at) VALUES (?, ?, ?, ?, ?, ?)",
-                         (emp_code, module_id, assignment_day, p_val, post_val, now_str))
+            conn.execute("INSERT INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at, session_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (emp_code, module_id, assignment_day, p_val, post_val, now_str, session_id))
         conn.commit()
     except Exception as e:
         conn.close()
@@ -988,6 +1044,10 @@ def get_analytics():
     division_filter = request.args.get('division', '').strip()
     branch_filter = request.args.get('branch', '').strip()
     emp_filter = request.args.get('emp_code', '').strip()
+    bu_filter = request.args.get('business_unit', '').strip()
+    product_filter = request.args.get('product_name', '').strip()
+    start_date_filter = request.args.get('start_date', '').strip()
+    end_date_filter = request.args.get('end_date', '').strip()
     
     # 1. Base query parts
     where_clauses = []
@@ -1005,6 +1065,18 @@ def get_analytics():
     if emp_filter:
         where_clauses.append("e.emp_code = ?")
         query_params.append(emp_filter)
+    if bu_filter:
+        where_clauses.append("e.business_unit = ?")
+        query_params.append(bu_filter)
+    if product_filter:
+        where_clauses.append("e.product_name = ?")
+        query_params.append(product_filter)
+    if start_date_filter:
+        where_clauses.append("ar.completed_at >= ?")
+        query_params.append(start_date_filter + " 00:00")
+    if end_date_filter:
+        where_clauses.append("ar.completed_at <= ?")
+        query_params.append(end_date_filter + " 23:59")
         
     where_str = ""
     if where_clauses:
@@ -1058,11 +1130,98 @@ def get_analytics():
         """
         breakdown_results = conn.execute(breakdown_query, query_params).fetchall()
         
-        # C. Query lists of active filters to populate dynamic cascading dropdowns
+        # C. Query score distribution buckets
+        buckets_query = f"""
+            SELECT e.emp_code, e.emp_name, ar.post_test_score, e.branch_name, e.business_unit
+            FROM assessment_results ar
+            JOIN employees e ON ar.emp_code = e.emp_code
+            {where_str}
+            GROUP BY e.emp_code
+        """
+        buckets_results = conn.execute(buckets_query, query_params).fetchall()
+        
+        below_60 = []
+        _60_80 = []
+        above_80 = []
+        for r in buckets_results:
+            pt = r['post_test_score'] if r['post_test_score'] is not None else 0.0
+            emp_obj = {
+                "emp_code": r['emp_code'],
+                "emp_name": r['emp_name'],
+                "post_test_score": round(pt, 1),
+                "branch_name": r['branch_name'],
+                "business_unit": r['business_unit']
+            }
+            if pt < 60.0:
+                below_60.append(emp_obj)
+            elif pt <= 80.0:
+                _60_80.append(emp_obj)
+            else:
+                above_80.append(emp_obj)
+                
+        # D. Query Critical Pain Areas (branches with post-test average < 60% OR learning delta < 15%)
+        pain_query = f"""
+            SELECT e.branch_name, 
+                   AVG(ar.pre_test_score) as avg_pre,
+                   AVG(ar.post_test_score) as avg_post,
+                   (AVG(ar.post_test_score) - AVG(ar.pre_test_score)) as growth,
+                   COUNT(DISTINCT e.emp_code) as participants
+            FROM assessment_results ar
+            JOIN employees e ON ar.emp_code = e.emp_code
+            {where_str}
+            GROUP BY e.branch_name
+            HAVING avg_post < 60 OR growth < 15
+            ORDER BY avg_post ASC
+        """
+        pain_results = conn.execute(pain_query, query_params).fetchall()
+        pain_areas = []
+        for p in pain_results:
+            pain_areas.append({
+                "branch_name": p["branch_name"],
+                "pre": round(p["avg_pre"], 1),
+                "post": round(p["avg_post"], 1),
+                "growth": round(p["growth"], 1),
+                "count": p["participants"]
+            })
+            
+        # E. Query Topic Knowledge Gaps (milestone average scores organization-wide/filtered)
+        gap_query = f"""
+            SELECT ar.assignment_day, 
+                   AVG(ar.pre_test_score) as avg_pre, 
+                   AVG(ar.post_test_score) as avg_post,
+                   COUNT(DISTINCT e.emp_code) as participants
+            FROM assessment_results ar
+            JOIN employees e ON ar.emp_code = e.emp_code
+            {where_str}
+            GROUP BY ar.assignment_day
+            ORDER BY avg_post ASC
+        """
+        gap_results = conn.execute(gap_query, query_params).fetchall()
+        topic_gaps = []
+        
+        milestone_questions_mapped = {
+            'ZERO DAY': "Standard LTV Ratios & Tenure Rules",
+            'SIX DAYS': "CIBIL Assessment & Credit Approval Limits",
+            'TWENTY DAYS': "Self-Employed Applicant Documentation Requirements"
+        }
+        
+        for g in gap_results:
+            day_upper = g["assignment_day"].upper()
+            topic_gaps.append({
+                "milestone": g["assignment_day"],
+                "topic": milestone_questions_mapped.get(day_upper, "General Policy Refresher"),
+                "avg_pre": round(g["avg_pre"], 1),
+                "avg_post": round(g["avg_post"], 1),
+                "failure_rate": round(100 - g["avg_post"], 1)
+            })
+            
+        # F. Query lists of active filters to populate dynamic cascading dropdowns
         distinct_zones = conn.execute("SELECT DISTINCT zone FROM employees WHERE zone IS NOT NULL AND zone != ''").fetchall()
         distinct_divs = conn.execute("SELECT DISTINCT division, zone FROM employees WHERE division IS NOT NULL AND division != ''").fetchall()
         distinct_branches = conn.execute("SELECT DISTINCT branch_name, division, zone FROM employees WHERE branch_name IS NOT NULL AND branch_name != ''").fetchall()
         distinct_emps = conn.execute("SELECT DISTINCT emp_code, emp_name, branch_name FROM employees WHERE emp_code IS NOT NULL AND emp_code != ''").fetchall()
+        distinct_bus = conn.execute("SELECT DISTINCT business_unit FROM employees WHERE business_unit IS NOT NULL AND business_unit != ''").fetchall()
+        distinct_prods = conn.execute("SELECT DISTINCT product_name FROM employees WHERE product_name IS NOT NULL AND product_name != ''").fetchall()
         
     except Exception as e:
         conn.close()
@@ -1099,15 +1258,127 @@ def get_analytics():
                 "count": b["participants"]
             } for b in breakdown_results
         ],
+        "score_distribution": {
+            "below_60": below_60,
+            "60_80": _60_80,
+            "above_80": above_80
+        },
+        "critical_pain_areas": pain_areas,
+        "topic_knowledge_gaps": topic_gaps,
         "filter_options": {
             "zones": [z[0] for z in distinct_zones],
             "divisions": [{"name": d[0], "zone": d[1]} for d in distinct_divs],
             "branches": [{"name": br[0], "division": br[1], "zone": br[2]} for br in distinct_branches],
-            "executives": [{"code": ec[0], "name": ec[1], "branch": ec[2]} for ec in distinct_emps]
+            "executives": [{"code": ec[0], "name": ec[1], "branch": ec[2]} for ec in distinct_emps],
+            "business_units": [b[0] for b in distinct_bus],
+            "products": [p[0] for p in distinct_prods]
         }
     }
     
     return jsonify(payload_metadata)
+
+@app.route('/api/feedback/submit', methods=['POST'])
+def submit_feedback():
+    data = request.json
+    emp_code = data.get('emp_code', '').strip().upper()
+    session_id = data.get('session_id', '').strip()
+    module_id = data.get('module_id') or 1
+    rating = data.get('rating')
+    understanding = data.get('understanding', '').strip()
+    manpower_saved = data.get('manpower_saved', '').strip()
+    comments = data.get('comments', '').strip()
+    
+    if not emp_code:
+        return jsonify({"status": "error", "message": "Employee Code is required."}), 400
+        
+    conn = get_db_connection()
+    try:
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        conn.execute(
+            "INSERT INTO trainee_feedback (emp_code, session_id, module_id, rating, understanding, manpower_saved, comments, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (emp_code, session_id, module_id, rating, understanding, manpower_saved, comments, now_str)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    conn.close()
+    return jsonify({"status": "success", "message": "Feedback submitted successfully!"})
+
+@app.route('/api/refresher/campaign', methods=['POST'])
+def push_refresher_campaign():
+    data = request.json or {}
+    emp_codes = data.get('emp_codes', [])
+    if not emp_codes:
+        return jsonify({"status": "error", "message": "No employee codes provided"}), 400
+    
+    conn = get_db_connection()
+    try:
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        for emp_code in emp_codes:
+            conn.execute(
+                "UPDATE employees SET change_detail = ? WHERE emp_code = ?",
+                (f"REFRESHER REQUIRED - Flagged on {now_str}", emp_code)
+            )
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    conn.close()
+    return jsonify({"status": "success", "message": f"Successfully pushed refresher campaign to {len(emp_codes)} trainees!"})
+
+@app.route('/api/trainers/performance', methods=['GET'])
+def get_trainers_performance():
+    conn = get_db_connection()
+    try:
+        # Get all trainers
+        trainers = conn.execute("SELECT trainer_id, name FROM trainers WHERE role='Trainer'").fetchall()
+        
+        perf_list = []
+        for t in trainers:
+            tid = t['trainer_id']
+            tname = t['name']
+            
+            # 1. Average Rating & counts
+            feedback = conn.execute("""
+                SELECT AVG(f.rating) as avg_rating,
+                       COUNT(f.id) as total_responses,
+                       SUM(CASE WHEN f.understanding = 'Fully Clear' THEN 1 ELSE 0 END) as fully_clear_count,
+                       SUM(CASE WHEN f.manpower_saved LIKE 'Yes%' THEN 1 ELSE 0 END) as saved_time_count
+                FROM trainee_feedback f
+                JOIN training_sessions s ON f.session_id = s.session_id
+                WHERE s.trainer_id = ?
+            """, (tid,)).fetchone()
+            
+            avg_rating = round(feedback['avg_rating'], 2) if feedback['avg_rating'] else 0.0
+            total_resp = feedback['total_responses'] or 0
+            fully_clear_pct = round((feedback['fully_clear_count'] / total_resp) * 100, 1) if total_resp > 0 else 0.0
+            saved_time_pct = round((feedback['saved_time_count'] / total_resp) * 100, 1) if total_resp > 0 else 0.0
+            
+            # 2. Learning Growth delta driven by trainer (joining session results)
+            growth = conn.execute("""
+                SELECT AVG(ar.post_test_score) - AVG(ar.pre_test_score) as avg_growth
+                FROM assessment_results ar
+                WHERE ar.session_id IN (SELECT session_id FROM training_sessions WHERE trainer_id = ?)
+            """, (tid,)).fetchone()
+            
+            growth_delta = round(growth['avg_growth'], 1) if growth['avg_growth'] is not None else 0.0
+            
+            perf_list.append({
+                "trainer_id": tid,
+                "name": tname,
+                "avg_rating": avg_rating,
+                "growth_delta": growth_delta,
+                "clarity_index": fully_clear_pct,
+                "nps": saved_time_pct,
+                "sessions_count": conn.execute("SELECT COUNT(*) FROM training_sessions WHERE trainer_id=?", (tid,)).fetchone()[0]
+            })
+            
+        conn.close()
+        return jsonify(perf_list)
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/analytics/export', methods=['GET'])
 def export_analytics():
@@ -1115,6 +1386,10 @@ def export_analytics():
     division_filter = request.args.get('division', '').strip()
     branch_filter = request.args.get('branch', '').strip()
     emp_filter = request.args.get('emp_code', '').strip()
+    bu_filter = request.args.get('business_unit', '').strip()
+    product_filter = request.args.get('product_name', '').strip()
+    start_date_filter = request.args.get('start_date', '').strip()
+    end_date_filter = request.args.get('end_date', '').strip()
     
     where_clauses = []
     query_params = []
@@ -1131,6 +1406,18 @@ def export_analytics():
     if emp_filter:
         where_clauses.append("e.emp_code = ?")
         query_params.append(emp_filter)
+    if bu_filter:
+        where_clauses.append("e.business_unit = ?")
+        query_params.append(bu_filter)
+    if product_filter:
+        where_clauses.append("e.product_name = ?")
+        query_params.append(product_filter)
+    if start_date_filter:
+        where_clauses.append("ar.completed_at >= ?")
+        query_params.append(start_date_filter + " 00:00")
+    if end_date_filter:
+        where_clauses.append("ar.completed_at <= ?")
+        query_params.append(end_date_filter + " 23:59")
         
     where_str = ""
     if where_clauses:
