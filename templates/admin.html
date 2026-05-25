@@ -2251,7 +2251,7 @@
                 
                 const temporal = analytics.temporal || {};
                 const belowCount = analytics.score_distribution?.below_60?.length || 0;
-                const midCount = analytics.score_distribution?.60_80?.length || 0;
+                const midCount = analytics.score_distribution?.['60_80']?.length || 0;
                 const highCount = analytics.score_distribution?.above_80?.length || 0;
                 const totalParticipants = belowCount + midCount + highCount;
                 
