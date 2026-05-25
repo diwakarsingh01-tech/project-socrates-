@@ -561,6 +561,11 @@
             const [selBranch, setSelBranch] = useState('');
             const [filterOptions, setFilterOptions] = useState({ zones: [], divisions: [], branches: [] });
 
+            // Search & counters state
+            const [searchQuery, setSearchQuery] = useState('');
+            const [totalCount, setTotalCount] = useState(0);
+            const [filteredCount, setFilteredCount] = useState(0);
+
             const loadFilterOptions = () => {
                 fetch('/api/roster/filters')
                     .then(res => res.json())
@@ -568,20 +573,30 @@
                     .catch(err => console.error("Error loading roster filters:", err));
             };
 
-            const loadEmps = (zoneVal = selZone, divVal = selDiv, branchVal = selBranch) => {
+            const loadEmps = (zoneVal = selZone, divVal = selDiv, branchVal = selBranch, searchVal = searchQuery) => {
                 let url = '/api/roster?';
                 if (zoneVal) url += `zone=${encodeURIComponent(zoneVal)}&`;
                 if (divVal) url += `division=${encodeURIComponent(divVal)}&`;
                 if (branchVal) url += `branch=${encodeURIComponent(branchVal)}&`;
+                if (searchVal) url += `q=${encodeURIComponent(searchVal)}&`;
                 
                 fetch(url)
                     .then(res => res.json())
                     .then(data => {
                         setEmps(data);
+                        setFilteredCount(data.length);
+                        if (!zoneVal && !divVal && !branchVal && !searchVal) {
+                            setTotalCount(data.length);
+                        }
                     })
                     .catch(err => {
                         console.log("Using offline fallback", err);
-                        setEmps(db.get('s_roster') || []);
+                        const fallbackData = db.get('s_roster') || [];
+                        setEmps(fallbackData);
+                        setFilteredCount(fallbackData.length);
+                        if (!zoneVal && !divVal && !branchVal && !searchVal) {
+                            setTotalCount(fallbackData.length);
+                        }
                     });
             };
 
@@ -601,7 +616,12 @@
                     setSelBranch(val);
                 }
                 
-                loadEmps(newZone, newDiv, newBranch);
+                loadEmps(newZone, newDiv, newBranch, searchQuery);
+            };
+
+            const handleSearch = (val) => {
+                setSearchQuery(val);
+                loadEmps(selZone, selDiv, selBranch, val);
             };
 
             useEffect(() => { 
@@ -833,11 +853,28 @@
                                 </select>
                             </div>
                             <div className="flex items-end justify-start md:justify-end h-full pt-4 md:pt-0">
-                                {(selZone || selDiv || selBranch) && (
-                                    <button onClick={() => { setSelZone(''); setSelDiv(''); setSelBranch(''); loadEmps('', '', ''); }} className="text-xs text-red-600 hover:text-white hover:bg-red-600 font-bold flex items-center justify-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-4 py-2 transition-all shadow-sm">
+                                {(selZone || selDiv || selBranch || searchQuery) && (
+                                    <button onClick={() => { setSelZone(''); setSelDiv(''); setSelBranch(''); setSearchQuery(''); loadEmps('', '', '', ''); }} className="text-xs text-red-600 hover:text-white hover:bg-red-600 font-bold flex items-center justify-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-4 py-2 transition-all shadow-sm">
                                         <i className="fas fa-times-circle"></i> Clear Filters
                                     </button>
                                 )}
+                            </div>
+                        </div>
+                        {/* Search & Audit Counters Bar */}
+                        <div className="bg-white border-b border-slate-100 px-6 py-3.5 flex flex-wrap justify-between items-center gap-4">
+                            <div className="relative w-full max-w-sm">
+                                <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                                    <i className="fas fa-search text-xs"></i>
+                                </span>
+                                <input type="text" value={searchQuery} onChange={e => handleSearch(e.target.value)} placeholder="Search by Employee Code or Name..." className="input-field pl-9 py-1.5 text-xs bg-slate-50/50 hover:bg-slate-50 focus:bg-white" />
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-extrabold bg-slate-100 text-slate-600 px-2.5 py-1.5 rounded-lg border border-slate-200 uppercase tracking-widest flex items-center gap-1.5 shadow-sm">
+                                    <i className="fas fa-users text-slate-400"></i> Total Roster: {totalCount}
+                                </span>
+                                <span className="text-[10px] font-extrabold bg-blue-50 text-socrates-primary px-2.5 py-1.5 rounded-lg border border-blue-150 uppercase tracking-widest flex items-center gap-1.5 shadow-sm">
+                                    <i className="fas fa-filter text-socrates-primary"></i> Filtered: {filteredCount}
+                                </span>
                             </div>
                         </div>
                         <div className="overflow-x-auto">

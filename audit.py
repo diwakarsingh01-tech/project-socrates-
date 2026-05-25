@@ -432,6 +432,13 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         self.assertEqual(len(employees), 1)
         self.assertEqual(employees[0]['emp_code'], 'SF-FILT-1')
 
+        # Step 4: Verify search queries work
+        res_search = self.client.get('/api/roster?q=NAME%20B')
+        self.assertEqual(res_search.status_code, 200)
+        employees_search = json.loads(res_search.data)
+        self.assertEqual(len(employees_search), 1)
+        self.assertEqual(employees_search[0]['emp_code'], 'SF-FILT-2')
+
         # Clean up employees
         cursor.execute("DELETE FROM employees WHERE emp_code IN ('SF-FILT-1', 'SF-FILT-2')")
         self.conn.commit()

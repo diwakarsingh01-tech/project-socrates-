@@ -226,6 +226,7 @@ def get_roster():
     zone = request.args.get('zone', '').strip()
     branch = request.args.get('branch', '').strip()
     division = request.args.get('division', '').strip()
+    search = request.args.get('q', '').strip()
     
     query = "SELECT * FROM employees WHERE 1=1"
     params = []
@@ -238,6 +239,10 @@ def get_roster():
     if division:
         query += " AND division = ?"
         params.append(division)
+    if search:
+        query += " AND (emp_code LIKE ? OR emp_name LIKE ?)"
+        params.append(f"%{search}%")
+        params.append(f"%{search}%")
         
     query += " ORDER BY emp_code ASC"
     
@@ -496,9 +501,9 @@ def generate_module():
             
             prompt = f"""
             You are a senior Socratic Trainer with 20 years of experience.
-            Analyze this policy content and generate exactly {count} multiple-choice Socratic assessment questions.
+            Perform deep research on this policy content and generate exactly {count} multiple-choice Socratic assessment questions.
             Each question must have exactly 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
-            Ensure the questions are challenging, dialogue-oriented, and directly based on the key rules inside the text.
+            Ensure the questions are challenging, dialogue-oriented, and directly based on the key rules, constraints, numeric thresholds, and exceptions inside the text.
             
             Format your response STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks.
             Example format:
@@ -520,6 +525,37 @@ def generate_module():
                 res_text = res_text.split("json")[-1].split("```")[0].strip()
                 
             generated_questions = json.loads(res_text)
+            
+            # --- PASS 2: Double Validation & Self-Correction ---
+            if len(generated_questions) > 0:
+                double_validation_prompt = f"""
+                You are a Socratic Policy Auditor. Your task is to perform a two-step validation (Double Validation) on these Socratic questions against the source policy document.
+                
+                Here is the source policy document:
+                \"\"\"
+                {text_content}
+                \"\"\"
+                
+                Here are the Socratic questions that were generated:
+                {json.dumps(generated_questions, indent=2)}
+                
+                For EACH question in the array:
+                1. **Validation Step 1 (Factual Accuracy & Depth)**: Cross-reference the question and options with the source document. Make sure the Socratic question is factually accurate, deep, and does not misrepresent any policy details. Correct any errors in options or text.
+                2. **Validation Step 2 (Correct Index Audit)**: Audit the `correctIndex` (0 to 3) twice. Verify that the option at the `correctIndex` is mathematically and factually the only correct answer based strictly on the document. If it is wrong or misaligned, update the `correctIndex` to the correct option, or rewrite the option.
+                
+                Return the finalized, audited, and double-corrected questions array STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks. Follow the exact same format as input.
+                """
+                
+                audit_response = model.generate_content(double_validation_prompt)
+                audit_res_text = audit_response.text.strip()
+                if audit_res_text.startswith("```"):
+                    audit_res_text = audit_res_text.split("json")[-1].split("```")[0].strip()
+                
+                audited_questions = json.loads(audit_res_text)
+                if len(audited_questions) > 0:
+                    generated_questions = audited_questions
+                    print("AI Double-Validation completed successfully!")
+            
             if len(generated_questions) > 0:
                 gemini_success = True
         except Exception as e:
