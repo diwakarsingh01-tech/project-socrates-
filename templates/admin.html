@@ -3505,20 +3505,22 @@
                         totalQs: activeModule.questions.length
                     };
                 }
-                const qs = milestoneQuestions[assignmentDay] || [];
-                const q = qs[activeQIdx] || qs[0] || { question: "N/A", options: ["N/A", "N/A", "N/A", "N/A"], correctIndex: 0 };
                 return {
-                    question: q.question,
-                    options: q.options,
-                    correctIndex: q.correctIndex,
+                    question: "No training module is active. Please select one from the library first.",
+                    options: ["N/A", "N/A", "N/A", "N/A"],
+                    correctIndex: -1,
                     isDynamic: false,
-                    totalQs: qs.length
+                    totalQs: 0
                 };
             };
 
             const currentQ = getActiveQuestionData();
 
             const pushView = (viewName) => {
+                if (!activeModule) {
+                    alert("⚠️ No training module is currently active! Please select a module from the Module Library dashboard before starting.");
+                    return;
+                }
                 setStage(viewName);
                 
                 let qData;
@@ -3527,22 +3529,12 @@
                     setActiveQIdx(0);
                     setActiveTab('chart');
                     
-                    // Fetch the 0-th question directly to avoid stale state in Socket emit
-                    if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
-                        const q = activeModule.questions[0];
-                        qData = {
-                            question: q.question_text,
-                            options: [q.option_a, q.option_b, q.option_c, q.option_d],
-                            correctIndex: q.correct_index
-                        };
-                    } else {
-                        const q = milestoneQuestions[assignmentDay][0];
-                        qData = {
-                            question: q.question,
-                            options: q.options,
-                            correctIndex: q.correctIndex
-                        };
-                    }
+                    const q = activeModule.questions[0];
+                    qData = {
+                        question: q.question_text,
+                        options: [q.option_a, q.option_b, q.option_c, q.option_d],
+                        correctIndex: q.correct_index
+                    };
                 } else {
                     qData = {
                         question: currentQ.question,
@@ -3554,7 +3546,7 @@
                 socket.emit('trainer_broadcast', {
                     pin: sessionId,
                     view: viewName,
-                    assignment_day: assignmentDay,
+                    assignment_day: activeModule.title,
                     question: qData.question,
                     options: qData.options,
                     correctIndex: qData.correctIndex
@@ -3563,42 +3555,26 @@
 
             const navigateToQuestion = (newIdx) => {
                 if (newIdx < 0) return;
+                if (!activeModule || !activeModule.questions || activeModule.questions.length === 0) return;
                 
-                let total = 0;
-                if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
-                    total = activeModule.questions.length;
-                } else {
-                    total = (milestoneQuestions[assignmentDay] || []).length;
-                }
-                
+                const total = activeModule.questions.length;
                 if (newIdx >= total) return;
                 
                 setActiveQIdx(newIdx);
                 setVotes({0:0, 1:0, 2:0, 3:0});
                 setActiveTab('chart');
                 
-                // Fetch the question data directly using newIdx to avoid stale state in Socket emit
-                let nextQ;
-                if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
-                    const q = activeModule.questions[newIdx];
-                    nextQ = {
-                        question: q.question_text,
-                        options: [q.option_a, q.option_b, q.option_c, q.option_d],
-                        correctIndex: q.correct_index
-                    };
-                } else {
-                    const q = milestoneQuestions[assignmentDay][newIdx];
-                    nextQ = {
-                        question: q.question,
-                        options: q.options,
-                        correctIndex: q.correctIndex
-                    };
-                }
+                const q = activeModule.questions[newIdx];
+                const nextQ = {
+                    question: q.question_text,
+                    options: [q.option_a, q.option_b, q.option_c, q.option_d],
+                    correctIndex: q.correct_index
+                };
                 
                 socket.emit('trainer_broadcast', {
                     pin: sessionId,
                     view: stage,
-                    assignment_day: assignmentDay,
+                    assignment_day: activeModule.title,
                     question: nextQ.question,
                     options: nextQ.options,
                     correctIndex: nextQ.correctIndex
@@ -3809,9 +3785,14 @@
                                             </div>
                                         </div>
 
-                                        {activeModule && (
+                                        {activeModule ? (
                                             <div className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-100 px-3 py-1.5 rounded-xl mb-4">
                                                 Active Quiz: <strong>{activeModule.title}</strong> ({activeModule.questions ? activeModule.questions.length : 0} Qs)
+                                            </div>
+                                        ) : (
+                                            <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-100 px-3 py-3 rounded-xl mb-4 flex flex-col gap-1.5 items-center text-center animate-pulse">
+                                                <span>⚠️ No training module is currently active!</span>
+                                                <span className="text-[10px] text-rose-600 font-semibold normal-case">Please close this live session, select a module from the Module Library, and click "Launch Live Session" to begin.</span>
                                             </div>
                                         )}
                                         <div className="text-xs text-slate-500 font-semibold flex items-center justify-center gap-2">
@@ -4011,67 +3992,43 @@
                                         </select>
                                     </div>
                                 ) : (
-                                    <div className="animate-fade-in">
-                                        <div className="mb-4 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                            <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest flex items-center gap-1">
-                                                <i className="fas fa-calendar-day text-socrates-primary"></i> Choose Milestone
-                                            </label>
-                                            <select 
-                                                value={assignmentDay} 
-                                                onChange={(e) => {
-                                                    setAssignmentDay(e.target.value);
-                                                    setActiveQIdx(0);
-                                                    setVotes({0:0, 1:0, 2:0, 3:0});
-                                                    setActiveTab('chart');
-                                                    
-                                                    // If already in a quiz stage, auto-broadcast the 0-th question of new milestone immediately
-                                                    if (stage === 'pretest' || stage === 'posttest') {
-                                                        setTimeout(() => {
-                                                            navigateToQuestion(0);
-                                                        }, 50);
-                                                    }
-                                                }} 
-                                                className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-socrates-primary"
-                                            >
-                                                <option value="zero day">zero day</option>
-                                                <option value="six days">six days</option>
-                                                <option value="twenty days">twenty days</option>
-                                            </select>
-                                        </div>
-                                        <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                                            <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest flex items-center gap-1">
-                                                <i className="fas fa-list-ol text-socrates-primary"></i> Active Question Index
-                                            </label>
-                                            <select 
-                                                value={activeQIdx} 
-                                                onChange={(e) => {
-                                                    setActiveQIdx(parseInt(e.target.value));
-                                                    setVotes({0:0, 1:0, 2:0, 3:0});
-                                                    setActiveTab('chart');
-                                                    
-                                                    // If already in a quiz stage, auto-broadcast the selected question immediately
-                                                    if (stage === 'pretest' || stage === 'posttest') {
-                                                        navigateToQuestion(parseInt(e.target.value));
-                                                    }
-                                                }} 
-                                                className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-socrates-primary"
-                                            >
-                                                {(milestoneQuestions[assignmentDay] || []).map((q, idx) => (
-                                                    <option key={idx} value={idx}>
-                                                        Q{idx + 1}: {q.question.length > 25 ? `${q.question.substring(0, 25)}...` : q.question}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
+                                    <div className="animate-fade-in text-center p-4 bg-slate-50 border border-slate-200 rounded-xl mb-6 shadow-sm">
+                                        <i className="fas fa-exclamation-circle text-rose-500 text-lg mb-2"></i>
+                                        <div className="text-[10px] font-extrabold text-slate-700 mb-1 uppercase tracking-wider">No Module Active</div>
+                                        <p className="text-[9px] text-slate-400 font-semibold leading-relaxed">
+                                            Please select a module from the library first. Fallback milestone questions have been disabled.
+                                        </p>
                                     </div>
                                 )}
  
                                 <div className="space-y-3">
-                                    <button onClick={() => pushView('pretest')} className={`w-full py-3 shadow-sm ${stage==='pretest'?'btn-primary':'btn-outline'}`}>1. Push Pre-Test</button>
-                                    <button onClick={() => pushView('training')} className={`w-full py-3 shadow-sm ${stage==='training'?'btn-primary':'btn-outline'}`}>2. Training Lock Screen</button>
-                                    <button onClick={() => pushView('posttest')} className={`w-full py-3 shadow-sm ${stage==='posttest'?'btn-primary':'btn-outline'}`}>3. Push Post-Test</button>
+                                    <button 
+                                        disabled={!activeModule} 
+                                        onClick={() => pushView('pretest')} 
+                                        className={`w-full py-3 shadow-sm ${stage==='pretest'?'btn-primary':'btn-outline'} disabled:opacity-40`}
+                                    >
+                                        1. Push Pre-Test
+                                    </button>
+                                    <button 
+                                        disabled={!activeModule} 
+                                        onClick={() => pushView('training')} 
+                                        className={`w-full py-3 shadow-sm ${stage==='training'?'btn-primary':'btn-outline'} disabled:opacity-40`}
+                                    >
+                                        2. Training Lock Screen
+                                    </button>
+                                    <button 
+                                        disabled={!activeModule} 
+                                        onClick={() => pushView('posttest')} 
+                                        className={`w-full py-3 shadow-sm ${stage==='posttest'?'btn-primary':'btn-outline'} disabled:opacity-40`}
+                                    >
+                                        3. Push Post-Test
+                                    </button>
                                     <div className="pt-2 border-t border-slate-200 mt-2">
-                                        <button onClick={triggerFinalPodium} className="w-full btn-primary bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 py-3 shadow-md flex items-center justify-center gap-1.5 hover:from-amber-600 hover:to-amber-700">
+                                        <button 
+                                            disabled={!activeModule} 
+                                            onClick={triggerFinalPodium} 
+                                            className="w-full btn-primary bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 py-3 shadow-md flex items-center justify-center gap-1.5 hover:from-amber-600 hover:to-amber-700 disabled:opacity-40"
+                                        >
                                             <i className="fas fa-crown"></i> 4. Show Final Podium
                                         </button>
                                     </div>
