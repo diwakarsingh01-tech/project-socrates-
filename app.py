@@ -201,7 +201,7 @@ def admin_login():
         conn.execute("UPDATE trainers SET last_login=? WHERE trainer_id=?", (now, trainer_id))
         conn.commit()
         conn.close()
-        return jsonify({"status": "success", "role": user['role'], "name": user['name']})
+        return jsonify({"status": "success", "role": user['role'], "name": user['name'], "trainer_id": trainer_id})
     conn.close()
     return jsonify({"status": "error", "message": "Invalid Credentials or Account Revoked"}), 401
 
@@ -764,8 +764,16 @@ def generate_heuristic_questions(text_content, count, title="Module"):
                 
     questions = []
     
+    # Pre-compiled list of all unique reasonably long words in the document for distractor word generation
+    all_doc_words = []
+    for s in sentences:
+        all_doc_words.extend(re.findall(r'\b[a-zA-Z]{6,12}\b', s))
+    all_doc_words = list(set([w.capitalize() for w in all_doc_words]))
+    
     # Heuristic 1: Extract sentences with percentages (e.g. 85%, 90%)
     for s in sentences:
+        if len(questions) >= count:
+            break
         pct_match = re.search(r'(\d+)\s*%', s)
         if pct_match:
             correct_val = pct_match.group(0)
@@ -819,7 +827,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
                 "approved": 0
             })
             
-    # Heuristic 3: Reading comprehension split
+    # Heuristic 3: Reading comprehension split with dynamic sentence-based distractors from other parts of the document
     for p in paragraphs:
         if len(questions) >= count:
             break
@@ -828,32 +836,67 @@ def generate_heuristic_questions(text_content, count, title="Module"):
             target_sentence = p_sentences[-1]
             intro_p = " ".join(p_sentences[:-1])
             if len(intro_p) > 60 and len(intro_p) < 250:
+                # Compile dynamic distractors from other document sentences to preserve subject alignment
+                doc_distractors = [s for s in sentences if s != target_sentence and len(s) > 40 and target_sentence not in s]
+                if len(doc_distractors) < 3:
+                    doc_distractors = [
+                        f"Observe standard operational protocols defined in the {title} guidelines.",
+                        f"Review the secondary sections of the official {title} reference manual.",
+                        f"Verify compliance exceptions directly with the supervisors under {title}."
+                    ]
+                else:
+                    doc_distractors = random.sample(doc_distractors, 3)
+                    
+                choices = [target_sentence, doc_distractors[0], doc_distractors[1], doc_distractors[2]]
+                random.shuffle(choices)
+                
                 questions.append({
-                    "question": f"Given the section: \"{intro_p}\" Which of the following is correct regarding policy enforcement?",
-                    "options": [
-                        target_sentence,
-                        "Address verification is bypassed for high-profile customers.",
-                        "All credit policy rules are subject to verbal approval only.",
-                        "No formal documentation is required for secondary applicants."
-                    ],
-                    "correctIndex": 0,
+                    "question": f"Given the section: \"{intro_p}\" Which of the following is the most accurate statement according to the uploaded policy?",
+                    "options": choices,
+                    "correctIndex": choices.index(target_sentence),
                     "approved": 0
                 })
-                opts = questions[-1]["options"]
-                correct_opt = opts[0]
-                random.shuffle(opts)
-                questions[-1]["options"] = opts
-                questions[-1]["correctIndex"] = opts.index(correct_opt)
 
-    # Fallback if we still need more questions
+    # Heuristic 4: Fill-in-the-blank keyword-masking using actual document terms to ensure 100% subject-matching
     while len(questions) < count:
+        if len(sentences) > len(questions):
+            candidate_sentence = sentences[len(questions) % len(sentences)]
+            # Find candidate words to mask
+            words = [w for w in re.findall(r'\b[a-zA-Z]{6,12}\b', candidate_sentence)]
+            if words:
+                target_word = random.choice(words)
+                masked_s = candidate_sentence.replace(target_word, "_____")
+                
+                # Dynamic distractors from other unique words in the document
+                other_words = [w for w in all_doc_words if w.lower() != target_word.lower()]
+                if len(other_words) < 3:
+                    distractor_words = ["Standard", "Procedure", "Compliance", "Operation"]
+                else:
+                    distractor_words = random.sample(other_words, 3)
+                    
+                choices = [target_word, distractor_words[0], distractor_words[1], distractor_words[2]]
+                choices = list(set(choices))
+                while len(choices) < 4:
+                    choices.append(f"Option-{len(choices)}")
+                choices = list(set(choices))[:4]
+                random.shuffle(choices)
+                
+                questions.append({
+                    "question": f"Based strictly on the {title} documentation: \"{masked_s}\" What is the correct term to fill the blank?",
+                    "options": choices,
+                    "correctIndex": choices.index(target_word),
+                    "approved": 0
+                })
+                continue
+                
+        # Pure safety fallback if the document is extremely short (less than 1 sentence)
         q_idx = len(questions)
         questions.append({
-            "question": f"[{title} Q{q_idx + 1}] Under the uploaded guidelines, what is the primary standard procedure for compliance audits?",
+            "question": f"[{title} Q{q_idx + 1}] Under the uploaded reference guidelines, what is the primary procedure for compliance audits?",
             "options": [
-                "Perform comprehensive daily reconciliations against standard guidelines.",
-                "Review files only at the end of each fiscal quarter.",
-                "Disburse loans first and perform verification post-facto.",
+                f"Perform comprehensive daily reconciliations according to {title} standard guidelines.",
+                f"Review operational files only at the end of each fiscal quarter.",
+                f"Disburse files first and perform manual verification post-facto.",
                 "Audits are conducted purely on a voluntary basis."
             ],
             "correctIndex": 0,
@@ -1704,9 +1747,10 @@ def get_dashboard_stats():
         
         # 4. Pending Audits (Maker-Checker drafts awaiting trainer sign-off)
         pending_audits_rows = conn.execute('''
-            SELECT m.id, m.title, m.questions_count,
+            SELECT m.id, m.title, m.questions_count, m.created_by, t.name AS creator_name,
                    (SELECT COUNT(*) FROM questions q WHERE q.module_id = m.id AND q.approved = 1) AS approved_count
             FROM modules m
+            LEFT JOIN trainers t ON m.created_by = t.trainer_id
             WHERE m.status = 'Pending Audit'
             ORDER BY m.id DESC LIMIT 5
         ''').fetchall()
