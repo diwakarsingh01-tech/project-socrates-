@@ -445,6 +445,13 @@
                                                     </td>
                                                 </tr>
                                             ))}
+                                            {(!stats.recent_sessions || stats.recent_sessions.length === 0) && (
+                                                <tr>
+                                                    <td colSpan="6" className="text-center text-xs text-slate-400 py-10 italic">
+                                                        No recent sessions conducted yet.
+                                                    </td>
+                                                </tr>
+                                            )}
                                         </tbody>
                                     </table>
                                 </div>
@@ -482,6 +489,11 @@
                                             </div>
                                         );
                                     })}
+                                    {(!stats.top_branches || stats.top_branches.length === 0) && (
+                                        <p className="text-center text-xs text-slate-400 py-8 italic">
+                                            No branch logs recorded yet.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
 
@@ -514,6 +526,11 @@
                                             </div>
                                         );
                                     })}
+                                    {(!stats.pending_audits || stats.pending_audits.length === 0) && (
+                                        <p className="text-center text-xs text-slate-400 py-8 italic">
+                                            No modules awaiting audit.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                         </div>

@@ -935,43 +935,16 @@ def get_dashboard_stats():
     conn.close()
     
     # 5. Core Fallback configurations for zero-records
-    sessions = sessions_res if sessions_res > 0 else 12
-    branches = branches_res if branches_res > 0 else 4
-    execs = execs_res if execs_res > 0 else 340
-    growth = round(growth_res, 1) if growth_res is not None else 42.0
+    sessions = sessions_res
+    branches = branches_res
+    execs = execs_res
+    growth = round(growth_res, 1) if growth_res is not None else 0.0
     
     # Map raw lists
     recent_sessions = [dict(r) for r in recent_sessions_rows]
     top_branches = [dict(r) for r in top_branches_rows]
     pending_audits = [dict(r) for r in pending_audits_rows]
     
-    # Fallback dataset: Recent Sessions
-    if len(recent_sessions) == 0:
-        recent_sessions = [
-            {"session_id": "SESS-1001", "date": "2026-05-22", "branch_name": "Delhi South", "module_title": "Two-Wheeler Product Policy V2", "trainer_name": "Sanjay Verma", "attendee_count": 45},
-            {"session_id": "SESS-1002", "date": "2026-05-20", "branch_name": "Mumbai Bandra", "module_title": "AML & KYC Compliance 2026", "trainer_name": "Priya Desai", "attendee_count": 60},
-            {"session_id": "SESS-1003", "date": "2026-05-18", "branch_name": "Bangalore Central", "module_title": "Two-Wheeler Product Policy V2", "trainer_name": "Arun Kumar", "attendee_count": 38},
-            {"session_id": "SESS-1004", "date": "2026-05-15", "branch_name": "Ahmedabad", "module_title": "AML & KYC Compliance 2026", "trainer_name": "Sanjay Verma", "attendee_count": 28},
-            {"session_id": "SESS-1005", "date": "2026-05-12", "branch_name": "Lucknow", "module_title": "Two-Wheeler Product Policy V2", "trainer_name": "Priya Desai", "attendee_count": 22}
-        ]
-        
-    # Fallback dataset: Top Branches by Delta
-    if len(top_branches) == 0:
-        top_branches = [
-            {"branch_name": "Bangalore Central", "growth_delta": 54.2, "count": 38},
-            {"branch_name": "Mumbai Bandra", "growth_delta": 48.6, "count": 60},
-            {"branch_name": "Ahmedabad", "growth_delta": 46.5, "count": 28},
-            {"branch_name": "Delhi South", "growth_delta": 41.8, "count": 45},
-            {"branch_name": "Lucknow", "growth_delta": 39.0, "count": 22}
-        ]
-        
-    # Fallback dataset: Pending Audits
-    if len(pending_audits) == 0:
-        pending_audits = [
-            {"id": 9991, "title": "Priority Lending Standards 2026", "questions_count": 15, "approved_count": 8},
-            {"id": 9992, "title": "Customer Onboarding & Fraud Prevention", "questions_count": 15, "approved_count": 12}
-        ]
-        
     return jsonify({
         "sessions_count": sessions,
         "branches_visited": branches,
