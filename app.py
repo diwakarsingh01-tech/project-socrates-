@@ -223,10 +223,42 @@ def reset_database():
 # 3. ROSTER MANAGEMENT
 @app.route('/api/roster', methods=['GET'])
 def get_roster():
+    zone = request.args.get('zone', '').strip()
+    branch = request.args.get('branch', '').strip()
+    division = request.args.get('division', '').strip()
+    
+    query = "SELECT * FROM employees WHERE 1=1"
+    params = []
+    if zone:
+        query += " AND zone = ?"
+        params.append(zone)
+    if branch:
+        query += " AND branch_name = ?"
+        params.append(branch)
+    if division:
+        query += " AND division = ?"
+        params.append(division)
+        
+    query += " ORDER BY emp_code ASC"
+    
     conn = get_db_connection()
-    emps = conn.execute("SELECT * FROM employees LIMIT 100").fetchall()
+    emps = conn.execute(query, params).fetchall()
     conn.close()
     return jsonify([dict(e) for e in emps])
+
+@app.route('/api/roster/filters', methods=['GET'])
+def get_roster_filters():
+    conn = get_db_connection()
+    zones = conn.execute("SELECT DISTINCT zone FROM employees WHERE zone IS NOT NULL AND zone != '' ORDER BY zone").fetchall()
+    divisions = conn.execute("SELECT DISTINCT division FROM employees WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()
+    branches = conn.execute("SELECT DISTINCT branch_name FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
+    conn.close()
+    
+    return jsonify({
+        "zones": [r[0] for r in zones],
+        "divisions": [r[0] for r in divisions],
+        "branches": [r[0] for r in branches]
+    })
 
 @app.route('/api/roster/upload', methods=['POST'])
 def upload_roster():
@@ -383,15 +415,7 @@ def search_roster():
 def handle_modules():
     conn = get_db_connection()
     if request.method == 'GET':
-        trainer_id = request.args.get('trainer_id')
-        if trainer_id:
-            # Private Draft Isolation: Load trainer's own drafts, plus any 'Ready' shared modules
-            modules = conn.execute(
-                "SELECT * FROM modules WHERE created_by = ? OR status = 'Ready' ORDER BY id DESC",
-                (trainer_id,)
-            ).fetchall()
-        else:
-            modules = conn.execute("SELECT * FROM modules ORDER BY id DESC").fetchall()
+        modules = conn.execute("SELECT * FROM modules ORDER BY id DESC").fetchall()
             
         res_list = []
         for m in modules:
@@ -750,9 +774,9 @@ def get_analytics():
     
     # 2. Build temporal response payload with high-fidelity default fallback values
     payload = {
-        'ZERO DAY': {'pre': 40.0, 'post': 65.0, 'count': 0},
-        'SIX DAYS': {'pre': 50.0, 'post': 80.0, 'count': 0},
-        'TWENTY DAYS': {'pre': 60.0, 'post': 90.0, 'count': 0}
+        'ZERO DAY': {'pre': 0.0, 'post': 0.0, 'count': 0},
+        'SIX DAYS': {'pre': 0.0, 'post': 0.0, 'count': 0},
+        'TWENTY DAYS': {'pre': 0.0, 'post': 0.0, 'count': 0}
     }
     
     has_live_data = False

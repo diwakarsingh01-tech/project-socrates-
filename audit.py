@@ -230,12 +230,12 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         found_in_a = any([m['id'] == module_id for m in modules_a])
         self.assertTrue(found_in_a, "Audit Failed: Trainer A cannot see their own pending draft!")
 
-        # Step 3: Verify Private Draft Isolation - Trainer B must NOT see Trainer A's pending draft
+        # Step 3: Verify Global Module Sharing - Trainer B should see Trainer A's pending draft
         res_list_b = self.client.get(f'/api/modules?trainer_id=TRAINER_B')
         self.assertEqual(res_list_b.status_code, 200)
         modules_b = json.loads(res_list_b.data)
         found_in_b = any([m['id'] == module_id for m in modules_b])
-        self.assertFalse(found_in_b, "Audit Failed: Trainer B can see Trainer A's private pending draft!")
+        self.assertTrue(found_in_b, "Trainer B should see Trainer A's pending draft under globally shared modules!")
 
         # Step 4: Complete the audit (Finalize module - all approved)
         final_payload = {
@@ -387,6 +387,54 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         row = cursor.fetchone()
         self.assertIsNotNone(row)
         self.assertEqual(row[0], 'admin123')
+
+    def test_global_module_sharing(self):
+        """Audit 10: Verify that modules are globally shared and visible to all trainers"""
+        # Step 1: Create a test module from TR-TRAINER-A
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO modules (id, title, status, created_by) VALUES (8881, 'Shared Test Module', 'Pending Audit', 'TR-TRAINER-A')")
+        self.conn.commit()
+
+        # Step 2: Fetch modules as TR-TRAINER-B and verify it is visible
+        res = self.client.get('/api/modules?trainer_id=TR-TRAINER-B')
+        self.assertEqual(res.status_code, 200)
+        modules = json.loads(res.data)
+        
+        module_titles = [m['title'] for m in modules]
+        self.assertIn('Shared Test Module', module_titles)
+
+        # Clean up module
+        cursor.execute("DELETE FROM modules WHERE id=8881")
+        self.conn.commit()
+
+    def test_roster_filtering(self):
+        """Audit 11: Verify dynamic roster filters and distinct option queries work correctly"""
+        # Step 1: Insert distinct seed employees
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, zone, division, branch_name) VALUES ('SF-FILT-1', 'NAME A', 'ZONE-X', 'DIV-Y', 'BRANCH-Z')")
+        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, zone, division, branch_name) VALUES ('SF-FILT-2', 'NAME B', 'ZONE-P', 'DIV-Q', 'BRANCH-R')")
+        self.conn.commit()
+
+        # Step 2: Fetch filters and verify distinct lists
+        res_filt = self.client.get('/api/roster/filters')
+        self.assertEqual(res_filt.status_code, 200)
+        filters = json.loads(res_filt.data)
+        
+        self.assertIn('ZONE-X', filters['zones'])
+        self.assertIn('DIV-Q', filters['divisions'])
+        self.assertIn('BRANCH-Z', filters['branches'])
+
+        # Step 3: Fetch filtered roster and verify correct counts
+        res_roster = self.client.get('/api/roster?zone=ZONE-X')
+        self.assertEqual(res_roster.status_code, 200)
+        employees = json.loads(res_roster.data)
+        
+        self.assertEqual(len(employees), 1)
+        self.assertEqual(employees[0]['emp_code'], 'SF-FILT-1')
+
+        # Clean up employees
+        cursor.execute("DELETE FROM employees WHERE emp_code IN ('SF-FILT-1', 'SF-FILT-2')")
+        self.conn.commit()
 
 if __name__ == '__main__':
     unittest.main()
