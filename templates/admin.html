@@ -3827,21 +3827,21 @@
             };
             
             return (
-                <div className="card h-[calc(100vh-140px)] flex flex-col border-2 border-socrates-primary shadow-xl overflow-hidden relative">
+                <div className="card h-[calc(100dvh-120px)] lg:h-[calc(100vh-140px)] flex flex-col border-2 border-socrates-primary shadow-xl overflow-hidden relative animate-fade-in">
                     
                     {/* FULL-SCREEN CONFETTI PODIUM CELEBRATION OVERLAY */}
                     {showPodium && (
-                        <div className="absolute inset-0 bg-slate-900 z-50 flex flex-col justify-between p-10 text-center animate-fade-in overflow-hidden">
+                        <div className="absolute inset-0 bg-slate-900 z-50 flex flex-col justify-between p-4 sm:p-10 text-center animate-fade-in overflow-y-auto no-scrollbar">
                             <Confetti />
                             
-                            <div className="z-10 mt-6 animate-bounce">
+                            <div className="z-10 mt-6 animate-bounce shrink-0">
                                 <span className="text-xs font-bold bg-amber-500/10 border border-amber-500/30 text-amber-400 px-4 py-1.5 rounded-full tracking-widest uppercase"><i className="fas fa-crown mr-1.5"></i> Training Championship</span>
-                                <h2 className="text-4xl font-extrabold text-white mt-4 tracking-tight drop-shadow-md">Socrates Live Podium</h2>
-                                <p className="text-slate-400 text-sm font-medium mt-1">Socratic learning curves finalized. Congratulations, champions!</p>
+                                <h2 className="text-2xl sm:text-4xl font-extrabold text-white mt-4 tracking-tight drop-shadow-md">Socrates Live Podium</h2>
+                                <p className="text-slate-400 text-xs sm:text-sm font-medium mt-1">Socratic learning curves finalized. Congratulations, champions!</p>
                             </div>
                             
                             {/* Horizontal Podium Layout */}
-                            <div className="z-10 flex justify-center items-end gap-6 max-w-3xl mx-auto w-full flex-1 mb-10 min-h-[300px]">
+                            <div className="z-10 flex flex-col sm:flex-row justify-center items-center sm:items-end gap-4 sm:gap-6 max-w-3xl mx-auto w-full flex-1 mb-6 sm:mb-10 min-h-[250px] shrink-0">
                                 
                                 {/* 2nd Place Podium */}
                                 {leaderboard.length > 1 && (
@@ -3849,7 +3849,7 @@
                                         <div className="w-16 h-16 rounded-full bg-slate-700 border-2 border-slate-400 flex items-center justify-center text-xl text-white font-extrabold shadow-lg mb-3">🥈</div>
                                         <div className="font-bold text-base text-slate-200 truncate max-w-[150px]">{leaderboard[1].emp_name}</div>
                                         <div className="text-xs text-slate-400 font-semibold mb-3">{leaderboard[1].emp_code}</div>
-                                        <div className="w-full bg-slate-700 border-t-2 border-slate-400 h-28 rounded-t-xl flex flex-col justify-center items-center shadow-lg transform transition-transform duration-500 hover:scale-105">
+                                        <div className="w-full bg-slate-700 border-t-2 border-slate-400 h-20 sm:h-28 rounded-t-xl flex flex-col justify-center items-center shadow-lg transform transition-transform duration-500 hover:scale-105">
                                             <span className="text-xs text-slate-300 font-bold uppercase tracking-wider">2nd Place</span>
                                             <span className="text-xl font-extrabold text-white mt-1">{leaderboard[1].score} pts</span>
                                         </div>
@@ -3884,7 +3884,7 @@
                                         <div className="w-20 h-20 rounded-full bg-amber-500 border-4 border-amber-300 flex items-center justify-center text-3xl text-white font-extrabold shadow-2xl mb-3 animate-pulse">👑</div>
                                         <div className="font-black text-lg text-white truncate max-w-[180px]">{leaderboard[0].emp_name}</div>
                                         <div className="text-xs text-amber-400 font-bold mb-3">{leaderboard[0].emp_code}</div>
-                                        <div className="w-full bg-gradient-to-t from-amber-600 to-amber-500 border-t-4 border-amber-300 h-40 rounded-t-2xl flex flex-col justify-center items-center shadow-2xl transform transition-transform duration-500 hover:scale-105">
+                                        <div className="w-full bg-gradient-to-t from-amber-600 to-amber-500 border-t-4 border-amber-300 h-28 sm:h-40 rounded-t-2xl flex flex-col justify-center items-center shadow-2xl transform transition-transform duration-500 hover:scale-105">
                                             <span className="text-xs text-amber-100 font-bold uppercase tracking-wider">1st Champion</span>
                                             <span className="text-2xl font-black text-white mt-1 drop-shadow">{leaderboard[0].score} pts</span>
                                         </div>
@@ -3919,7 +3919,7 @@
                                         <div className="w-14 h-14 rounded-full bg-amber-700 border-2 border-amber-600 flex items-center justify-center text-lg text-white font-extrabold shadow-lg mb-3">🥉</div>
                                         <div className="font-bold text-sm text-slate-300 truncate max-w-[140px]">{leaderboard[2].emp_name}</div>
                                         <div className="text-xs text-slate-400 font-semibold mb-3">{leaderboard[2].emp_code}</div>
-                                        <div className="w-full bg-amber-800 border-t-2 border-amber-600 h-20 rounded-t-lg flex flex-col justify-center items-center shadow-lg transform transition-transform duration-500 hover:scale-105">
+                                        <div className="w-full bg-amber-800 border-t-2 border-amber-600 h-16 sm:h-20 rounded-t-lg flex flex-col justify-center items-center shadow-lg transform transition-transform duration-500 hover:scale-105">
                                             <span className="text-[10px] text-amber-200 font-bold uppercase tracking-wider">3rd Place</span>
                                             <span className="text-lg font-extrabold text-white mt-0.5">{leaderboard[2].score} pts</span>
                                         </div>
@@ -3957,26 +3957,26 @@
                         </div>
                     )}
 
-                    <div className="px-8 py-4 border-b border-slate-200 flex justify-between items-center bg-white shadow-sm z-10">
-                        <div className="flex items-center gap-4">
-                            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
-                            <div>
-                                <span className="text-[10px] font-bold text-socrates-primary uppercase tracking-widest">Live Broadcasting</span>
-                                <h2 className="text-lg font-bold text-socrates-dark leading-tight flex items-center gap-2">
-                                    Socrates Live Room 
+                    <div className="px-4 py-3 sm:px-8 sm:py-4 border-b border-slate-200 flex flex-row justify-between items-center bg-white shadow-sm z-10 gap-2">
+                        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                            <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)] shrink-0"></div>
+                            <div className="min-w-0">
+                                <span className="text-[8px] sm:text-[10px] font-bold text-socrates-primary uppercase tracking-widest block">Live Broadcasting</span>
+                                <h2 className="text-xs sm:text-lg font-bold text-socrates-dark leading-tight flex items-center gap-1.5 sm:gap-2 truncate">
+                                    <span className="hidden sm:inline">Socrates</span> Live Room 
                                     {activeModule && (
-                                        <span className="text-xs font-bold bg-purple-50 border border-purple-100 text-purple-700 px-2.5 py-0.5 rounded-full shadow-sm">
-                                            Module: {activeModule.title}
+                                        <span className="text-[9px] sm:text-xs font-bold bg-purple-50 border border-purple-100 text-purple-700 px-1.5 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full shadow-sm truncate max-w-[80px] sm:max-w-none">
+                                            {activeModule.title}
                                         </span>
                                     )}
                                 </h2>
                             </div>
                         </div>
-                        <button onClick={onClose} className="btn-outline bg-white text-xs text-red-600 border-red-200 hover:bg-red-50"><i className="fas fa-power-off mr-2"></i> End Session</button>
+                        <button onClick={onClose} className="btn-outline bg-white text-[10px] sm:text-xs text-red-600 border-red-200 hover:bg-red-50 py-1.5 px-2.5 sm:py-2 sm:px-4 shrink-0 shadow-sm flex items-center gap-1.5"><i className="fas fa-power-off"></i> <span className="hidden sm:inline">End Session</span></button>
                     </div>
                     
-                    <div className="flex-1 flex overflow-hidden">
-                        <div className="flex-1 border-r border-slate-200 flex flex-col items-center justify-center p-12 text-center bg-slate-50 relative overflow-y-auto">
+                    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                        <div className="flex-1 border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col items-center justify-center p-4 sm:p-12 text-center bg-slate-50 relative overflow-y-auto min-h-[350px] lg:min-h-0">
                             
                             {/* waiting stage */}
                             {stage === 'waiting' && (
@@ -4049,32 +4049,34 @@
                                 <div className="w-full max-w-3xl animate-fade-in flex flex-col">
                                     
                                     {/* Active Question Controller Toolbar */}
-                                    <div className="bg-white p-4 rounded-2xl shadow-md border border-slate-100 flex justify-between items-center mb-6 w-full animate-fade-in">
-                                        <div className="flex items-center gap-3">
-                                            <span className="w-8 h-8 rounded-full bg-purple-50 text-purple-700 flex items-center justify-center font-bold text-xs border border-purple-100 shadow-sm">
+                                    <div className="bg-white p-3 sm:p-4 rounded-2xl shadow-md border border-slate-100 flex flex-row justify-between items-center mb-6 w-full animate-fade-in gap-2">
+                                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                                            <span className="w-8 h-8 rounded-full bg-purple-50 text-purple-700 flex items-center justify-center font-bold text-xs border border-purple-100 shadow-sm shrink-0">
                                                 <i className="fas fa-list-ol"></i>
                                             </span>
-                                            <div>
-                                                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Controller</div>
-                                                <div className="text-sm font-extrabold text-socrates-dark">Question {activeQIdx + 1} of {currentQ.totalQs}</div>
+                                            <div className="min-w-0">
+                                                <div className="text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active Controller</div>
+                                                <div className="text-xs sm:text-sm font-extrabold text-socrates-dark truncate">Q {activeQIdx + 1} / {currentQ.totalQs}</div>
                                             </div>
                                         </div>
                                         
-                                        <div className="flex gap-3">
+                                        <div className="flex gap-1.5 sm:gap-3 shrink-0">
                                             <button 
                                                 onClick={() => navigateToQuestion(activeQIdx - 1)}
                                                 disabled={activeQIdx === 0}
-                                                className="btn-outline border-slate-200 text-slate-600 hover:bg-slate-50 px-4 py-2 text-xs font-bold flex items-center gap-1.5 disabled:opacity-40 disabled:hover:bg-transparent"
+                                                className="btn-outline border-slate-200 text-slate-600 hover:bg-slate-50 px-2 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold flex items-center gap-1 disabled:opacity-40 disabled:hover:bg-transparent"
+                                                title="Back Question"
                                             >
-                                                <i className="fas fa-chevron-left"></i> Back Question
+                                                <i className="fas fa-chevron-left"></i> <span className="hidden sm:inline">Back Question</span><span className="sm:hidden">Back</span>
                                             </button>
                                             
                                             <button 
                                                 onClick={() => navigateToQuestion(activeQIdx + 1)}
                                                 disabled={activeQIdx >= currentQ.totalQs - 1}
-                                                className="btn-primary bg-gradient-to-r from-socrates-primary to-blue-600 border-none text-white px-6 py-2 text-xs font-bold flex items-center gap-1.5 shadow-md hover:shadow-lg disabled:opacity-40"
+                                                className="btn-primary bg-gradient-to-r from-socrates-primary to-blue-600 border-none text-white px-3 sm:px-6 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold flex items-center gap-1 shadow-md hover:shadow-lg disabled:opacity-40"
+                                                title="Next Question"
                                             >
-                                                Next Question <i className="fas fa-chevron-right"></i>
+                                                <span className="hidden sm:inline">Next Question</span><span className="sm:hidden">Next</span> <i className="fas fa-chevron-right"></i>
                                             </button>
                                         </div>
                                     </div>
@@ -4104,33 +4106,33 @@
                                     </div>
                                     
                                     {activeTab === 'chart' ? (
-                                        <div className="bg-white p-10 rounded-2xl shadow-md border border-slate-100 animate-fade-in w-full text-left">
-                                            <div className="flex justify-between items-center mb-6 border-b pb-4">
-                                                <span className="text-xs font-extrabold uppercase text-socrates-primary tracking-widest bg-blue-50 border border-blue-100 px-3 py-1 rounded-md">
+                                        <div className="bg-white p-4 sm:p-10 rounded-2xl shadow-md border border-slate-100 animate-fade-in w-full text-left">
+                                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 gap-2">
+                                                <span className="text-[10px] sm:text-xs font-extrabold uppercase text-socrates-primary tracking-widest bg-blue-50 border border-blue-100 px-2 py-1 rounded-md max-w-full truncate">
                                                     {activeModule ? `${activeModule.title} (Q${activeQIdx + 1})` : `${assignmentDay} (Q${activeQIdx + 1})`} - {stage === 'pretest' ? 'Pre-Test' : 'Post-Test'}
                                                 </span>
-                                                <span className="text-xs font-semibold text-slate-500">Votes Counted: {totalVotes}</span>
+                                                <span className="text-xs font-semibold text-slate-500">Votes: {totalVotes}</span>
                                             </div>
-                                            <h3 className="text-2xl font-bold text-socrates-dark mb-10 leading-tight">
+                                            <h3 className="text-base sm:text-2xl font-bold text-socrates-dark mb-6 sm:mb-10 leading-tight">
                                                 {currentQ.question}
                                             </h3>
-                                            <div className="space-y-6">
+                                            <div className="space-y-4 sm:space-y-6">
                                                 {currentQ.options.map((opt, i) => {
                                                     const pct = totalVotes === 0 ? 0 : Math.round((votes[i]/totalVotes)*100);
                                                     const isCorrect = i === currentQ.correctIndex;
                                                     return (
-                                                        <div key={i} className="flex items-center gap-6">
-                                                            <div className={`w-36 text-right font-bold text-sm ${isCorrect ? 'text-emerald-600 flex items-center justify-end gap-1.5 font-extrabold' : 'text-socrates-dark'}`}>
-                                                                {isCorrect && <i className="fas fa-check-circle text-emerald-500 text-xs"></i>}
-                                                                {opt}
+                                                        <div key={i} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-6">
+                                                            <div className={`text-left sm:text-right font-bold text-xs sm:text-sm sm:w-36 shrink-0 ${isCorrect ? 'text-emerald-600 flex items-center gap-1.5 font-extrabold sm:justify-end' : 'text-socrates-dark'}`}>
+                                                                {isCorrect && <i className="fas fa-check-circle text-emerald-500 text-xs shrink-0"></i>}
+                                                                <span className="truncate">{opt}</span>
                                                             </div>
-                                                            <div className={`flex-1 h-12 bg-slate-100 rounded-md overflow-hidden border ${isCorrect ? 'border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]' : 'border-slate-200'} shadow-inner relative flex items-center`}>
-                                                                <div className={`h-full ${isCorrect ? 'bg-socrates-accent' : 'bg-socrates-primary'} transition-all duration-700 flex items-center justify-end pr-4 text-white font-bold`} style={{width: `${pct}%`, minWidth: pct>0?'3rem':'0'}}>
+                                                            <div className={`flex-1 h-10 sm:h-12 bg-slate-100 rounded-md overflow-hidden border ${isCorrect ? 'border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]' : 'border-slate-200'} shadow-inner relative flex items-center`}>
+                                                                <div className={`h-full ${isCorrect ? 'bg-socrates-accent' : 'bg-socrates-primary'} transition-all duration-700 flex items-center justify-end pr-4 text-white font-bold text-xs`} style={{width: `${pct}%`, minWidth: pct>0?'3rem':'0'}}>
                                                                     {pct > 5 && `${pct}%`}
                                                                 </div>
                                                                 {isCorrect && (
-                                                                    <div className="absolute left-3 text-emerald-600 text-xs font-bold bg-white border border-emerald-300 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                                                        <i className="fas fa-check text-[10px]"></i> Correct Option
+                                                                    <div className="absolute left-3 text-emerald-600 text-[10px] font-bold bg-white border border-emerald-300 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1 pointer-events-none">
+                                                                        <i className="fas fa-check text-[8px]"></i> Correct
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -4202,7 +4204,7 @@
                         </div>
                         
                         {/* SIDEBAR MASTER CONTROL */}
-                        <div className="w-80 flex flex-col bg-white">
+                        <div className="w-full lg:w-80 flex flex-col bg-white border-t lg:border-t-0 shadow-[0_-4px_12px_rgba(0,0,0,0.03)] lg:shadow-none overflow-y-auto lg:overflow-visible">
                             <div className="p-6 border-b border-slate-200 bg-slate-50">
                                 <h4 className="font-bold text-xs mb-4 uppercase text-slate-500 tracking-widest flex items-center gap-2"><i className="fas fa-gamepad text-socrates-primary"></i> Master Control</h4>
                                 
