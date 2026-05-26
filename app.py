@@ -425,7 +425,7 @@ def get_metadata():
     branches = conn.execute("SELECT DISTINCT branch_name FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
     conn.close()
     
-    bus = ["Two-Wheeler", "Personal Loan", "Gold Loan", "Commercial Vehicle", "Retail"]
+    bus = ["2-Wheeler Personal Loan", "Two-Wheeler", "Personal Loan", "Gold Loan", "Commercial Vehicle", "Retail"]
     
     return jsonify({
         "business_units": bus,

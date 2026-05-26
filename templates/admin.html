@@ -136,11 +136,11 @@
                 }
                 if(!localStorage.getItem('s_roster')) {
                     db.set('s_roster', [
-                        { emp_code: 'SF-1001', emp_name: 'Rahul Singh', branch_name: 'Delhi South', zone: 'North Zone', business_unit: 'Two-Wheeler' },
-                        { emp_code: 'SF-1002', emp_name: 'Neha Sharma', branch_name: 'Mumbai Bandra', zone: 'West Zone', business_unit: 'Two-Wheeler' },
-                        { emp_code: 'SF-1003', emp_name: 'Karthik Iyer', branch_name: 'Bangalore Central', zone: 'South Zone', business_unit: 'Commercial' },
-                        { emp_code: 'SF-1004', emp_name: 'Amit Patel', branch_name: 'Ahmedabad', zone: 'West Zone', business_unit: 'Two-Wheeler' },
-                        { emp_code: 'SF-1005', emp_name: 'Sneha Gupta', branch_name: 'Lucknow', zone: 'North Zone', business_unit: 'Retail' }
+                        { emp_code: 'SF-1001', emp_name: 'Rahul Singh', branch_name: 'DELHI RF', zone: 'North Zone', business_unit: '2-Wheeler Personal Loan' },
+                        { emp_code: 'SF-1002', emp_name: 'Neha Sharma', branch_name: 'AHMEDABAD RF', zone: 'West Zone', business_unit: '2-Wheeler Personal Loan' },
+                        { emp_code: 'SF-1003', emp_name: 'Karthik Iyer', branch_name: 'CHANDIGARH RF', zone: 'North Zone', business_unit: '2-Wheeler Personal Loan' },
+                        { emp_code: 'SF-1004', emp_name: 'Amit Patel', branch_name: 'KOLKATA RF', zone: 'East Zone', business_unit: '2-Wheeler Personal Loan' },
+                        { emp_code: 'SF-1005', emp_name: 'Sneha Gupta', branch_name: 'MUMBAI RF', zone: 'West Zone', business_unit: '2-Wheeler Personal Loan' }
                     ]);
                 }
             }
@@ -185,7 +185,7 @@
             };
 
             const downloadTemplate = () => {
-                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name\nSF-1001,Rahul Singh,Delhi South,North Zone,Delhi Division,Two-Wheeler,PL Exe,Splendor V2\nSF-1002,Neha Sharma,Mumbai Bandra,West Zone,Mumbai Division,Two-Wheeler,PL Exe,Activa 6G";
+                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name\nSF-1001,Rahul Singh,DELHI RF,North Zone,Delhi Division,2-Wheeler Personal Loan,PL Exe,Splendor V2\nSF-1002,Neha Sharma,AHMEDABAD RF,West Zone,Gujarat Division,2-Wheeler Personal Loan,PL Exe,Activa 6G\nSF-1003,Amit Patel,CHANDIGARH RF,North Zone,Punjab Division,2-Wheeler Personal Loan,PL Exe,Activa 6G\nSF-1004,Priya Das,KOLKATA RF,East Zone,Bengal Division,2-Wheeler Personal Loan,PL Exe,Activa 6G";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -693,7 +693,7 @@
             const [branchName, setBranchName] = useState('');
             const [zone, setZone] = useState('AMD_BU');
             const [division, setDivision] = useState('');
-            const [bu, setBu] = useState('Two-Wheeler');
+            const [bu, setBu] = useState('2-Wheeler Personal Loan');
             const [role, setRole] = useState('PL Exe');
             const [productName, setProductName] = useState('');
             const [changeDetail, setChangeDetail] = useState('');
@@ -716,7 +716,7 @@
             const [editBranchName, setEditBranchName] = useState('');
             const [editZone, setEditZone] = useState('AMD_BU');
             const [editDivision, setEditDivision] = useState('');
-            const [editBu, setEditBu] = useState('Two-Wheeler');
+            const [editBu, setEditBu] = useState('2-Wheeler Personal Loan');
             const [editRole, setEditRole] = useState('PL Exe');
             const [editProductName, setEditProductName] = useState('');
             const [editStatus, setEditStatus] = useState('ACTIVE');
@@ -1037,6 +1037,7 @@
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
                                                 <select value={bu} onChange={e => setBu(e.target.value)} className="input-field bg-white">
+                                                    <option>2-Wheeler Personal Loan</option>
                                                     <option>Two-Wheeler</option>
                                                     <option>Personal Loan</option>
                                                     <option>Gold Loan</option>
@@ -1120,6 +1121,7 @@
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
                                                 <select value={editBu} onChange={e => setEditBu(e.target.value)} className="input-field bg-white">
+                                                    <option>2-Wheeler Personal Loan</option>
                                                     <option>Two-Wheeler</option>
                                                     <option>Personal Loan</option>
                                                     <option>Gold Loan</option>
@@ -2151,7 +2153,7 @@
             };
 
             const downloadTrainerTemplate = () => {
-                const csvData = "Trainer ID,Trainer Name,Password,Business Units,Zones,Divisions,Branches\nTR-1002,AMIT SHARMA,pass123,Two-Wheeler,AMD_BU,GUJARAT DIVISION,AHMEDABAD\nTR-1003,PRIYA GUPTA,pass456,ALL,ALL,ALL,ALL";
+                const csvData = "Trainer ID,Trainer Name,Password,Business Units,Zones,Divisions,Branches\nTR-1002,AMIT SHARMA,pass123,2-Wheeler Personal Loan,AMD_BU,GUJARAT DIVISION,AHMEDABAD RF\nTR-1003,PRIYA GUPTA,pass456,ALL,ALL,ALL,ALL";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
