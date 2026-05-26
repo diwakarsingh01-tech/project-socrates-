@@ -6,6 +6,7 @@ import json
 import datetime
 from werkzeug.utils import secure_filename
 import csv
+import threading
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'socrates-secret-key-123'
@@ -181,6 +182,12 @@ def init_db():
     conn.close()
 
 init_db()
+
+try:
+    from gdrive_sync import sync_modules_from_gdrive
+    sync_modules_from_gdrive()
+except Exception as e:
+    print(f"[GDRIVE] Startup sync skipped or failed: {str(e)}")
 
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
@@ -764,10 +771,29 @@ def handle_modules():
 @app.route('/api/modules/<int:module_id>', methods=['DELETE'])
 def delete_module(module_id):
     conn = get_db_connection()
+    
+    # 1. Fetch title for Google Drive deletion before deleting from SQLite
+    row = conn.execute("SELECT title FROM modules WHERE id=?", (module_id,)).fetchone()
+    title = row['title'] if row else None
+    
+    # 2. Perform database deletion
     conn.execute("DELETE FROM modules WHERE id=?", (module_id,))
     conn.execute("DELETE FROM questions WHERE module_id=?", (module_id,))
     conn.commit()
     conn.close()
+    
+    # 3. Trigger Google Drive deletion in background thread (no UI block)
+    if title:
+        try:
+            from gdrive_sync import delete_module_from_gdrive
+            threading.Thread(
+                target=delete_module_from_gdrive,
+                args=(title,),
+                daemon=True
+            ).start()
+        except Exception as e:
+            print(f"[GDRIVE] Error spawning delete thread: {str(e)}")
+            
     return jsonify({"status": "success"})
 
 def get_offline_translations(type_flag, masked_s_or_intro, choices, correct_index, title="Module"):
@@ -1499,6 +1525,32 @@ def save_module():
         return jsonify({"status": "error", "message": f"Failed to save module: {str(e)}"}), 500
         
     conn.close()
+    
+    # 4. Trigger real-time Google Drive synchronization in background thread (no UI freeze)
+    try:
+        from gdrive_sync import sync_module_to_gdrive
+        gdrive_questions = []
+        for q in questions:
+            opts = q.get('options', ["Option A", "Option B", "Option C", "Option D"])
+            gdrive_questions.append({
+                "question_text": q.get('question_text', q.get('question', 'Question')),
+                "option_a": opts[0] if len(opts) > 0 else "Option A",
+                "option_b": opts[1] if len(opts) > 1 else "Option B",
+                "option_c": opts[2] if len(opts) > 2 else "Option C",
+                "option_d": opts[3] if len(opts) > 3 else "Option D",
+                "correctIndex": q.get('correctIndex', q.get('correct_index', 0)),
+                "approved": q.get('approved', 0),
+                "translations": q.get('translations', {})
+            })
+            
+        threading.Thread(
+            target=sync_module_to_gdrive,
+            args=(title, difficulty, status, trainer_id, audited_by, gdrive_questions),
+            daemon=True
+        ).start()
+    except Exception as e:
+        print(f"[GDRIVE] Error spawning save thread: {str(e)}")
+        
     return jsonify({
         "status": "success", 
         "module_id": module_id, 
