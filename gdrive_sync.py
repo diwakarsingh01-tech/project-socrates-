@@ -15,6 +15,29 @@ except ImportError:
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 DB_FILE = "socrates.db"
+def load_dotenv():
+    """
+    Manually parses the local .env file (if it exists) to load environment variables
+    without needing an external python-dotenv package.
+    """
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        key, _, val = line.partition('=')
+                        key = key.strip()
+                        val = val.strip()
+                        if val.startswith(('"', "'")) and val.endswith(val[0]):
+                            val = val[1:-1]
+                        os.environ[key] = val
+        except Exception as e:
+            print(f"[GDRIVE-SYNC] Error loading local .env file: {str(e)}")
+
+# Automatically load environment variables from local .env on import
+load_dotenv()
 
 def get_gdrive_service():
     """
