@@ -89,6 +89,16 @@
         const { useState, useEffect } = React;
         const socket = io();
 
+        const cleanQuestionText = (text) => {
+            if (typeof text !== 'string') return text;
+            return text.replace(/^\[[^\]]+\]\s*/g, '').trim();
+        };
+
+        const cleanOptionText = (opt) => {
+            if (typeof opt !== 'string') return opt;
+            return opt.replace(/^(Option\s+[A-D][:.-]?\s*|[A-D][:.-]\s*)/i, '').trim();
+        };
+
         // MOCK OFFLINE DATABASE USING LOCALSTORAGE
         const db = {
             get: (key) => JSON.parse(localStorage.getItem(key) || '[]'),
@@ -483,7 +493,7 @@
                                                     const isPending = m.status === 'Pending Audit';
                                                     return (
                                                         <option key={m.id} value={m.id.toString()}>
-                                                            {m.title} {isPending ? `⚠️ (Pending Audit - ${appCount}/${totCount} Approved)` : `✓ (Ready - ${totCount} Qs)`}
+                                                            {m.title} module creator {m.creator_name || m.created_by || 'Super Admin'} {isPending ? `⚠️ (Pending Audit - ${appCount}/${totCount} Approved)` : `✓ (Ready - ${totCount} Qs)`}
                                                         </option>
                                                     );
                                                 })}
@@ -625,7 +635,7 @@
                                         return (
                                             <div key={idx} className="p-3.5 rounded-xl border border-purple-100 bg-purple-50/10 hover:bg-purple-50/30 transition-all">
                                                 <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-xs font-bold text-socrates-dark truncate pr-2 max-w-[150px]">{mod.title}</span>
+                                                    <span className="text-xs font-bold text-socrates-dark truncate pr-2 max-w-[300px]">{mod.title} module creator {mod.creator_name || mod.created_by || 'Super Admin'}</span>
                                                     <div className="flex items-center gap-1.5">
                                                         {/* Glowing trainer-only difficulty badge */}
                                                         <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border shadow-[0_0_6px_rgba(var(--badge-glow))] ${
@@ -1798,7 +1808,9 @@
                                     <div key={mod.id} className={`p-5 border rounded-xl transition-all group relative border-slate-200 hover:border-socrates-primary hover:shadow-sm`}>
                                         <div className="flex justify-between items-start mb-2">
                                             <div>
-                                                <h4 className={`font-bold text-base text-socrates-dark group-hover:text-socrates-primary transition-colors`}>{mod.title}</h4>
+                                                <h4 className={`font-bold text-base text-socrates-dark group-hover:text-socrates-primary transition-colors`}>
+                                                    {mod.title} module creator {mod.creator_name || mod.created_by || 'Super Admin'}
+                                                </h4>
                                                 <div className="flex flex-wrap gap-2 mt-1.5">
                                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-50 border border-slate-200 text-slate-500 text-[10px] font-bold">
                                                         <i className="fas fa-magic text-[9px] text-purple-500"></i>
@@ -3782,9 +3794,9 @@
                 socket.emit('trainer_broadcast', {
                     pin: sessionId,
                     view: viewName,
-                    assignment_day: activeModule.title,
-                    question: qData.question,
-                    options: qData.options,
+                    assignment_day: `${activeModule.title} module creator ${activeModule.creator_name || activeModule.created_by || 'Super Admin'}`,
+                    question: cleanQuestionText(qData.question),
+                    options: qData.options.map(cleanOptionText),
                     correctIndex: qData.correctIndex,
                     translations: qData.translations,
                     forceLanguage: selectedLanguageOverride
@@ -3813,9 +3825,9 @@
                 socket.emit('trainer_broadcast', {
                     pin: sessionId,
                     view: stage,
-                    assignment_day: activeModule.title,
-                    question: nextQ.question,
-                    options: nextQ.options,
+                    assignment_day: `${activeModule.title} module creator ${activeModule.creator_name || activeModule.created_by || 'Super Admin'}`,
+                    question: cleanQuestionText(nextQ.question),
+                    options: nextQ.options.map(cleanOptionText),
                     correctIndex: nextQ.correctIndex,
                     translations: nextQ.translations,
                     forceLanguage: selectedLanguageOverride
@@ -4114,17 +4126,18 @@
                                                 <span className="text-xs font-semibold text-slate-500">Votes: {totalVotes}</span>
                                             </div>
                                             <h3 className="text-base sm:text-2xl font-bold text-socrates-dark mb-6 sm:mb-10 leading-tight">
-                                                {currentQ.question}
+                                                {cleanQuestionText(currentQ.question)}
                                             </h3>
                                             <div className="space-y-4 sm:space-y-6">
                                                 {currentQ.options.map((opt, i) => {
                                                     const pct = totalVotes === 0 ? 0 : Math.round((votes[i]/totalVotes)*100);
                                                     const isCorrect = i === currentQ.correctIndex;
+                                                    const cleanedOpt = cleanOptionText(opt);
                                                     return (
                                                         <div key={i} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-6">
                                                             <div className={`text-left sm:text-right font-bold text-xs sm:text-sm sm:w-36 shrink-0 ${isCorrect ? 'text-emerald-600 flex items-center gap-1.5 font-extrabold sm:justify-end' : 'text-socrates-dark'}`}>
                                                                 {isCorrect && <i className="fas fa-check-circle text-emerald-500 text-xs shrink-0"></i>}
-                                                                <span className="truncate">{opt}</span>
+                                                                <span className="truncate">{cleanedOpt}</span>
                                                             </div>
                                                             <div className={`flex-1 h-10 sm:h-12 bg-slate-100 rounded-md overflow-hidden border ${isCorrect ? 'border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]' : 'border-slate-200'} shadow-inner relative flex items-center`}>
                                                                 <div className={`h-full ${isCorrect ? 'bg-socrates-accent' : 'bg-socrates-primary'} transition-all duration-700 flex items-center justify-end pr-4 text-white font-bold text-xs`} style={{width: `${pct}%`, minWidth: pct>0?'3rem':'0'}}>
@@ -4227,11 +4240,14 @@
                                             }} 
                                             className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-purple-600 focus:ring-purple-100 animate-fade-in"
                                         >
-                                            {activeModule.questions.map((q, idx) => (
-                                                <option key={idx} value={idx}>
-                                                    Q{idx + 1}: {q.question_text.length > 25 ? `${q.question_text.substring(0, 25)}...` : q.question_text}
-                                                </option>
-                                            ))}
+                                            {activeModule.questions.map((q, idx) => {
+                                                const cleanedQ = cleanQuestionText(q.question_text);
+                                                return (
+                                                    <option key={idx} value={idx}>
+                                                        Q{idx + 1}: {cleanedQ.length > 25 ? `${cleanedQ.substring(0, 25)}...` : cleanedQ}
+                                                    </option>
+                                                );
+                                            })}
                                         </select>
                                     </div>
                                 ) : (

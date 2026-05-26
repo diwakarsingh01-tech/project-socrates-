@@ -72,6 +72,16 @@
         const { useState, useEffect } = React;
         const socket = io();
 
+        const cleanQuestionText = (text) => {
+            if (typeof text !== 'string') return text;
+            return text.replace(/^\[[^\]]+\]\s*/g, '').trim();
+        };
+
+        const cleanOptionText = (opt) => {
+            if (typeof opt !== 'string') return opt;
+            return opt.replace(/^(Option\s+[A-D][:.-]?\s*|[A-D][:.-]\s*)/i, '').trim();
+        };
+
         const fallbackQuestions = {
             'zero day': {
                 question: "What is the maximum LTV ratio allowed for a standard Two-Wheeler loan?",
@@ -150,7 +160,7 @@
 
             const renderContent = () => {
                 switch(view) {
-                    case 'dashboard': return <Dashboard empDetails={empDetails} />;
+                    case 'dashboard': return <Dashboard empDetails={empDetails} assignmentDay={activeAssignmentDay} />;
                     case 'pretest': 
                         return (
                             <Quiz 
@@ -383,7 +393,7 @@
             );
         };
 
-        const Dashboard = ({ empDetails }) => (
+        const Dashboard = ({ empDetails, assignmentDay }) => (
             <div className="animate-fade-in">
                 <div className="mb-8 mt-6 text-center">
                     <div className="w-16 h-16 bg-blue-50/80 text-blue-600 border border-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 shadow-[0_2px_10px_rgba(37,99,235,0.06)]"><i className="fas fa-user-check text-xl"></i></div>
@@ -397,7 +407,7 @@
                     <div className="flex justify-between items-start mb-4 relative z-10">
                         <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 border border-blue-100/50 px-2.5 py-1 rounded-lg uppercase tracking-widest font-outfit">Active Refresher Session</span>
                     </div>
-                    <h4 className="font-outfit font-bold text-lg text-slate-800 mb-2 relative z-10">{empDetails?.business_unit || 'Two-Wheeler'} Product Refresher</h4>
+                    <h4 className="font-outfit font-bold text-lg text-slate-800 mb-2 relative z-10">{assignmentDay && assignmentDay !== 'zero day' ? assignmentDay : `${empDetails?.business_unit || 'Two-Wheeler'} Product Refresher`}</h4>
                     <p className="text-xs text-slate-500 mb-2 relative z-10 flex items-center gap-2 font-bold"><span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span></span> Live Connection Established</p>
                     <div className="text-[11px] text-slate-400 bg-slate-50/50 p-3 rounded-xl border border-slate-100/80 mt-5 leading-relaxed font-semibold">
                         <span className="font-bold text-slate-600 uppercase tracking-wider text-[9px] mr-1.5 font-outfit">Scope:</span> {empDetails?.division} &bull; {empDetails?.zone}
@@ -451,13 +461,15 @@
             const [comments, setComments] = useState('');
             const [submittingFeedback, setSubmittingFeedback] = useState(false);
             
-            const qText = (translations && translations[activeLanguage] && translations[activeLanguage].question)
+            const qTextRaw = (translations && translations[activeLanguage] && translations[activeLanguage].question)
                 ? translations[activeLanguage].question
                 : (question || (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].question : fallbackQuestions['zero day'].question));
+            const qText = cleanQuestionText(qTextRaw);
                 
-            const qOpts = (translations && translations[activeLanguage] && translations[activeLanguage].options && translations[activeLanguage].options.length > 0)
+            const qOptsRaw = (translations && translations[activeLanguage] && translations[activeLanguage].options && translations[activeLanguage].options.length > 0)
                 ? translations[activeLanguage].options
                 : ((options && options.length > 0) ? options : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].options : fallbackQuestions['zero day'].options));
+            const qOpts = qOptsRaw.map(cleanOptionText);
                 
             const qCorrect = correctIndex !== null ? correctIndex : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].correctIndex : fallbackQuestions['zero day'].correctIndex);
             
