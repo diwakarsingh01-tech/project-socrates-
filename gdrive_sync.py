@@ -3,6 +3,7 @@ import json
 import io
 import sqlite3
 import datetime
+import threading
 
 # Robust import wrapping to prevent crashes if libraries are missing
 try:
@@ -276,3 +277,134 @@ def sync_modules_from_gdrive(conn=None):
     except Exception as e:
         print(f"[GDRIVE-SYNC] Error querying Google Drive files: {str(e)}")
         return False
+
+# --- FULL SQLITE DATABASE SYNC DAEMON ---
+
+DB_BACKUP_LOCK = threading.Lock()
+LAST_BACKUP_TIME = 0
+BACKUP_COOLDOWN = 10  # Minimum seconds between backups
+
+def restore_db_from_gdrive():
+    """
+    Downloads socrates_backup.db from Google Drive and restores it locally as socrates.db.
+    Called on startup before the database connection is initialized.
+    """
+    service = get_gdrive_service()
+    if not service:
+        print("[GDRIVE-SYNC] Warning: Could not restore socrates.db (service not initialized).")
+        return False
+
+    folder_id = os.environ.get('GD_FOLDER_ID')
+    filename = "socrates_backup.db"
+
+    try:
+        # Search for existing backup file
+        query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        files = results.get('files', [])
+
+        if not files:
+            print("[GDRIVE-SYNC] No SQLite database backup found on Google Drive. Starting fresh.")
+            return False
+
+        file_id = files[0]['id']
+        print(f"[GDRIVE-SYNC] Restoring SQLite database from Google Drive backup (ID: {file_id})...")
+
+        request = service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+        # Write downloaded bytes to local file
+        with open(DB_FILE, 'wb') as f:
+            f.write(fh.getvalue())
+
+        print("[GDRIVE-SYNC] Database successfully restored from Google Drive.")
+        return True
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Error restoring database from Google Drive: {str(e)}")
+        return False
+
+def backup_db_to_gdrive():
+    """
+    Safely reads socrates.db and uploads/updates it on Google Drive.
+    Uses a Lock and cooldown to prevent overlapping or excessive operations.
+    """
+    global LAST_BACKUP_TIME
+    import time
+    service = get_gdrive_service()
+    if not service:
+        return False
+
+    folder_id = os.environ.get('GD_FOLDER_ID')
+    filename = "socrates_backup.db"
+
+    # Avoid backing up too frequently
+    current_time = time.time()
+    if current_time - LAST_BACKUP_TIME < BACKUP_COOLDOWN:
+        return False
+
+    with DB_BACKUP_LOCK:
+        try:
+            if not os.path.exists(DB_FILE):
+                return False
+
+            # Search for existing file in the folder
+            query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+            results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+            files = results.get('files', [])
+
+            # Read local database bytes safely
+            with open(DB_FILE, 'rb') as f:
+                db_bytes = f.read()
+
+            media = MediaIoBaseUpload(io.BytesIO(db_bytes), mimetype='application/x-sqlite3', resumable=True)
+
+            if files:
+                file_id = files[0]['id']
+                print(f"[GDRIVE-SYNC] Backing up socrates.db to Google Drive (updating existing file ID: {file_id})...")
+                service.files().update(fileId=file_id, media_body=media).execute()
+            else:
+                file_metadata = {
+                    'name': filename,
+                    'parents': [folder_id]
+                }
+                print("[GDRIVE-SYNC] Backing up socrates.db to Google Drive (creating new backup)...")
+                service.files().create(body=file_metadata, media_body=media).execute()
+
+            LAST_BACKUP_TIME = time.time()
+            print("[GDRIVE-SYNC] Database backup to Google Drive completed successfully.")
+            return True
+        except Exception as e:
+            print(f"[GDRIVE-SYNC] Error backing up database to Google Drive: {str(e)}")
+            return False
+
+def start_db_backup_daemon():
+    """
+    Spawns a background thread that periodically monitors socrates.db modification time
+    and triggers a Google Drive backup if changes are detected.
+    """
+    import time
+
+    def monitor_db():
+        print("[GDRIVE-SYNC] Database backup monitoring daemon started.")
+        last_mtime = 0
+        if os.path.exists(DB_FILE):
+            last_mtime = os.path.getmtime(DB_FILE)
+
+        while True:
+            time.sleep(30)  # Check every 30 seconds
+            try:
+                if os.path.exists(DB_FILE):
+                    current_mtime = os.path.getmtime(DB_FILE)
+                    if current_mtime > last_mtime:
+                        print("[GDRIVE-SYNC] Changes detected in socrates.db. Triggering backup...")
+                        if backup_db_to_gdrive():
+                            last_mtime = current_mtime
+            except Exception as e:
+                print(f"[GDRIVE-SYNC] Error in database backup daemon: {str(e)}")
+
+    daemon = threading.Thread(target=monitor_db, name="DBBackupDaemon", daemon=True)
+    daemon.start()

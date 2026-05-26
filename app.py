@@ -181,13 +181,19 @@ def init_db():
     conn.commit()
     conn.close()
 
+try:
+    from gdrive_sync import restore_db_from_gdrive
+    restore_db_from_gdrive()
+except Exception as e:
+    print(f"[GDRIVE] Database restoration skipped: {str(e)}")
+
 init_db()
 
 try:
-    from gdrive_sync import sync_modules_from_gdrive
-    sync_modules_from_gdrive()
+    from gdrive_sync import start_db_backup_daemon
+    start_db_backup_daemon()
 except Exception as e:
-    print(f"[GDRIVE] Startup sync skipped or failed: {str(e)}")
+    print(f"[GDRIVE] Database backup daemon failed to start: {str(e)}")
 
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
