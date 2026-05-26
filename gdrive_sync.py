@@ -383,28 +383,83 @@ def backup_db_to_gdrive():
 
 def start_db_backup_daemon():
     """
-    Spawns a background thread that periodically monitors socrates.db modification time
-    and triggers a Google Drive backup if changes are detected.
+    Spawns a background thread that periodically monitors both local and remote
+    database modification states, enabling seamless bidirectional sync.
+    If local changes are detected, they are uploaded.
+    If remote updates from other trainers are found, they are dynamically restored.
     """
     import time
 
+    def get_remote_mtime(service):
+        folder_id = os.environ.get('GD_FOLDER_ID')
+        filename = "socrates_backup.db"
+        if not folder_id:
+            return None
+        try:
+            query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+            results = service.files().list(q=query, spaces='drive', fields='files(id, modifiedTime)').execute()
+            files = results.get('files', [])
+            if files:
+                return files[0]['modifiedTime']
+        except Exception as e:
+            print(f"[GDRIVE-SYNC] Error getting remote database backup mtime: {str(e)}")
+        return None
+
     def monitor_db():
-        print("[GDRIVE-SYNC] Database backup monitoring daemon started.")
-        last_mtime = 0
+        print("[GDRIVE-SYNC] Bidirectional database sync daemon started.")
+        service = get_gdrive_service()
+        
+        last_local_mtime = 0
         if os.path.exists(DB_FILE):
-            last_mtime = os.path.getmtime(DB_FILE)
+            last_local_mtime = os.path.getmtime(DB_FILE)
+
+        # Initialize tracking for the remote backup's modifiedTime
+        last_remote_mtime = None
+        if service:
+            last_remote_mtime = get_remote_mtime(service)
+            print(f"[GDRIVE-SYNC] Initial remote database mtime: {last_remote_mtime}")
 
         while True:
             time.sleep(30)  # Check every 30 seconds
             try:
+                # Reload service account client just in case credentials rotate or reconnect is needed
+                srv = get_gdrive_service()
+                if not srv:
+                    # Fallback to simple local-only tracking if GD is offline
+                    if os.path.exists(DB_FILE):
+                        current_local = os.path.getmtime(DB_FILE)
+                        if current_local > last_local_mtime:
+                            print("[GDRIVE-SYNC] GD Offline. Local database changed. (Pending sync)")
+                            last_local_mtime = current_local
+                    continue
+
+                current_local = 0
                 if os.path.exists(DB_FILE):
-                    current_mtime = os.path.getmtime(DB_FILE)
-                    if current_mtime > last_mtime:
-                        print("[GDRIVE-SYNC] Changes detected in socrates.db. Triggering backup...")
-                        if backup_db_to_gdrive():
-                            last_mtime = current_mtime
+                    current_local = os.path.getmtime(DB_FILE)
+
+                current_remote = get_remote_mtime(srv)
+
+                # Scenario 1: Local changes detected -> Backup to Google Drive
+                if current_local > last_local_mtime:
+                    print("[GDRIVE-SYNC] Changes detected in local socrates.db. Backing up to Google Drive...")
+                    if backup_db_to_gdrive():
+                        # Update tracking stamps post-upload to avoid duplicate cycles
+                        last_local_mtime = os.path.getmtime(DB_FILE)
+                        last_remote_mtime = get_remote_mtime(srv)
+                        print(f"[GDRIVE-SYNC] Backup complete. Sync state updated: remote={last_remote_mtime}")
+                
+                # Scenario 2: Remote database is newer than our last known sync -> Restore/Pull
+                elif current_remote and current_remote != last_remote_mtime:
+                    print(f"[GDRIVE-SYNC] Remote database backup updated by another trainer (new: {current_remote}, old: {last_remote_mtime}). Pulling changes...")
+                    # Perform dynamic SQLite pull using existing lock
+                    with DB_BACKUP_LOCK:
+                        if restore_db_from_gdrive():
+                            last_local_mtime = os.path.getmtime(DB_FILE)
+                            last_remote_mtime = current_remote
+                            print("[GDRIVE-SYNC] Dynamic database restore complete. Roster & Modules are now in sync.")
+                            
             except Exception as e:
-                print(f"[GDRIVE-SYNC] Error in database backup daemon: {str(e)}")
+                print(f"[GDRIVE-SYNC] Error in database bidirectional sync daemon: {str(e)}")
 
     daemon = threading.Thread(target=monitor_db, name="DBBackupDaemon", daemon=True)
     daemon.start()

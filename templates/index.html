@@ -138,7 +138,7 @@
                     }
                     if (data.translations) {
                         setActiveTranslations(data.translations);
-                    } else {
+                    } else if (data.question) {
                         setActiveTranslations({});
                     }
                     if (data.forceLanguage) {

@@ -845,6 +845,13 @@ def search_roster():
 def handle_modules():
     conn = get_db_connection()
     if request.method == 'GET':
+        # Sync Socratic modules from Google Drive to pull other trainers' custom creations!
+        try:
+            from gdrive_sync import sync_modules_from_gdrive
+            sync_modules_from_gdrive(conn)
+        except Exception as e:
+            print(f"[GDRIVE] Dynamic Socratic modules sync skipped: {str(e)}")
+
         modules = conn.execute("""
             SELECT m.*, t.name as creator_name
             FROM modules m
