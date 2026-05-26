@@ -493,6 +493,52 @@ def get_metadata():
         "branches": branches_list
     })
 
+@app.route('/api/gdrive/status', methods=['GET'])
+def get_gdrive_status():
+    from gdrive_sync import get_gdrive_service, LAST_BACKUP_TIME
+    
+    folder_id = os.environ.get('GD_FOLDER_ID')
+    sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    
+    configured = bool(folder_id and sa_json)
+    connected = False
+    service_account_email = "Not Configured"
+    masked_folder_id = "Not Configured"
+    
+    if configured:
+        if len(folder_id) > 8:
+            masked_folder_id = f"{folder_id[:4]}...{folder_id[-4:]}"
+        else:
+            masked_folder_id = folder_id
+            
+        try:
+            info = json.loads(sa_json)
+            service_account_email = info.get('client_email', 'Unknown Service Account')
+        except Exception:
+            pass
+            
+        try:
+            service = get_gdrive_service()
+            if service:
+                service.files().get(fileId=folder_id, fields='id, name').execute()
+                connected = True
+        except Exception as e:
+            print(f"[GDRIVE-STATUS] Integration connection check failed: {str(e)}")
+            connected = False
+            
+    last_sync_str = "Never"
+    if LAST_BACKUP_TIME > 0:
+        dt = datetime.datetime.fromtimestamp(LAST_BACKUP_TIME)
+        last_sync_str = dt.strftime("%Y-%m-%d %H:%M:%S")
+        
+    return jsonify({
+        "configured": configured,
+        "connected": connected,
+        "folder_id": masked_folder_id,
+        "service_account_email": service_account_email,
+        "last_sync": last_sync_str
+    })
+
 @app.route('/api/admin/reset-database', methods=['POST'])
 def reset_database():
     conn = get_db_connection()

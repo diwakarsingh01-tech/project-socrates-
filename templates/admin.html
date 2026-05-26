@@ -355,6 +355,13 @@
             const [modules, setModules] = useState([]);
             const [selectedModId, setSelectedModId] = useState('');
             const [loading, setLoading] = useState(true);
+            const [syncStatus, setSyncStatus] = useState({
+                configured: false,
+                connected: false,
+                folder_id: "Loading...",
+                service_account_email: "Loading...",
+                last_sync: "Loading..."
+            });
             const [stats, setStats] = useState({
                 sessions_count: 12,
                 branches_visited: 4,
@@ -396,9 +403,17 @@
                     .catch(err => console.error("Dashboard fetch stats error:", err));
             };
 
+            const loadSyncStatus = () => {
+                fetch('/api/gdrive/status')
+                    .then(res => res.json())
+                    .then(data => setSyncStatus(data))
+                    .catch(err => console.error("Dashboard fetch sync status error:", err));
+            };
+
             useEffect(() => {
                 loadModules();
                 loadStats();
+                loadSyncStatus();
             }, [user]);
             
             const selectedModule = modules.find(m => m.id.toString() === selectedModId);
@@ -421,6 +436,79 @@
 
             return (
                 <div>
+                    {/* Google Drive Synchronization Health and Retention Banner */}
+                    <div className="mb-8 animate-fade-in">
+                        {!syncStatus.configured ? (
+                            <div className="card p-6 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-l-4 border-l-amber-500 relative overflow-hidden group shadow-sm rounded-2xl">
+                                <div className="absolute right-4 top-4 w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shadow-sm border border-amber-100/50"><i className="fas fa-exclamation-triangle"></i></div>
+                                <h3 className="font-bold text-slate-800 text-sm md:text-base tracking-tight mb-1 flex items-center gap-2">
+                                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                                    </span>
+                                    Roster & Module Retention Inactive (Local Database Only)
+                                </h3>
+                                <p className="text-xs text-slate-500 font-medium max-w-3xl leading-relaxed">
+                                    Socrates is running on temporary cloud container storage. Since the Google Drive Folder integration is not configured, all uploaded rosters, custom trainer profiles, and Socratic modules will be **lost forever** upon the next daily server restart.
+                                </p>
+                                <div className="mt-4 flex flex-col lg:flex-row gap-3 items-start lg:items-center bg-white/70 backdrop-blur-sm border border-amber-200/40 rounded-xl p-3.5 text-xs text-slate-600 font-semibold shadow-inner">
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <i className="fas fa-cog text-amber-600 text-sm shrink-0"></i>
+                                        <span>To enable sync: add <code className="bg-amber-100 px-1.5 py-0.5 rounded text-amber-800 font-mono font-bold">GD_FOLDER_ID</code> to environment variables and share folder with:</span>
+                                    </div>
+                                    <code className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-socrates-primary font-mono text-[11px] select-all truncate max-w-full lg:max-w-none">
+                                        socrates-sync@skillful-octane-494413-a5.iam.gserviceaccount.com
+                                    </code>
+                                </div>
+                            </div>
+                        ) : !syncStatus.connected ? (
+                            <div className="card p-6 bg-gradient-to-r from-red-500/10 to-pink-500/5 border-l-4 border-l-red-500 relative overflow-hidden group shadow-sm rounded-2xl">
+                                <div className="absolute right-4 top-4 w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-xl shadow-sm border border-red-100/50"><i className="fas fa-exclamation-circle"></i></div>
+                                <h3 className="font-bold text-slate-800 text-sm md:text-base tracking-tight mb-1 flex items-center gap-2">
+                                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                                    </span>
+                                    Google Drive Configured but Unreachable!
+                                </h3>
+                                <p className="text-xs text-slate-500 font-medium max-w-3xl leading-relaxed">
+                                    A folder ID is set (<span className="font-mono bg-red-100 text-red-800 px-1 rounded font-bold">{syncStatus.folder_id}</span>), but the service account does not have access or the folder does not exist.
+                                </p>
+                                <div className="mt-4 flex flex-col lg:flex-row gap-3 items-start lg:items-center bg-white/70 backdrop-blur-sm border border-red-200/40 rounded-xl p-3.5 text-xs text-slate-600 font-semibold shadow-inner">
+                                    <div className="flex items-center gap-2 shrink-0">
+                                        <i className="fas fa-share-alt text-red-600 text-sm shrink-0"></i>
+                                        <span>CRITICAL STEP: Go to Google Drive, right-click your folder, click **Share**, and grant **Editor** access to:</span>
+                                    </div>
+                                    <code className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-socrates-primary font-mono text-[11px] select-all truncate max-w-full lg:max-w-none">
+                                        {syncStatus.service_account_email}
+                                    </code>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="card p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border-l-4 border-l-emerald-500 relative overflow-hidden group shadow-sm rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                <div className="flex items-start gap-4 min-w-0">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg border border-emerald-100 shadow-sm shrink-0"><i className="fas fa-cloud-check"></i></div>
+                                    <div className="min-w-0">
+                                        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-0.5 flex items-center gap-2">
+                                            <span className="relative flex h-2 w-2 shrink-0">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                            </span>
+                                            Google Drive Sync Active & Integrated
+                                        </h3>
+                                        <p className="text-[11px] text-slate-500 font-medium truncate">
+                                            Roster, trainers, and Socratic modules are backed up in real time to folder: <span className="font-mono font-bold text-emerald-700 bg-emerald-50/50 border border-emerald-200/50 px-1.5 py-0.5 rounded">{syncStatus.folder_id}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2.5 text-[11px] bg-white border border-slate-200/80 rounded-xl px-3 py-1.5 shadow-sm text-slate-500 font-bold shrink-0 self-end md:self-auto">
+                                    <i className="fas fa-history text-slate-400"></i>
+                                    <span>Last Sync: <span className="text-slate-800">{syncStatus.last_sync}</span></span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 animate-fade-in">
                         {/* Session Stats */}
                         <div className="card p-6 border-l-4 border-l-blue-600 bg-white relative overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group">

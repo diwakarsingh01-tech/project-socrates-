@@ -168,8 +168,8 @@ def sync_modules_from_gdrive(conn=None):
     folder_id = os.environ.get('GD_FOLDER_ID')
 
     try:
-        # 1. Fetch list of JSON files from Google Drive
-        query = f"'{folder_id}' in parents and name ends with '.json' and trashed = false"
+        # 1. Fetch list of files from Google Drive folder (filtering locally to avoid unsupported Google API operators)
+        query = f"'{folder_id}' in parents and trashed = false"
         results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=100).execute()
         files = results.get('files', [])
 
@@ -177,13 +177,16 @@ def sync_modules_from_gdrive(conn=None):
             print("[GDRIVE-SYNC] No custom Socratic modules found in Google Drive folder.")
             return True
 
-        print(f"[GDRIVE-SYNC] Found {len(files)} module files in Google Drive. Starting database restoration...")
+        print(f"[GDRIVE-SYNC] Found {len(files)} total files in Google Drive folder. Starting database restoration...")
 
         # If a connection wasn't passed, manage our own SQLite connection
         local_conn = False
         if conn is None:
             conn = sqlite3.connect(DB_FILE)
+            conn.row_factory = sqlite3.Row
             local_conn = True
+        else:
+            conn.row_factory = sqlite3.Row
 
         cursor = conn.cursor()
         now = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -191,6 +194,10 @@ def sync_modules_from_gdrive(conn=None):
         for f in files:
             file_id = f['id']
             filename = f['name']
+            
+            # Skip structured backup files and non-json files
+            if not filename.endswith('.json') or filename in ["roster_backup.json", "trainers_backup.json"]:
+                continue
             
             try:
                 # 2. Download file content
@@ -299,9 +306,12 @@ def sync_roster_to_gdrive(conn=None):
     local_conn = False
     if conn is None:
         conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
         local_conn = True
 
     try:
+        if conn is not None:
+            conn.row_factory = sqlite3.Row
         employees = conn.execute("SELECT * FROM employees ORDER BY emp_code ASC").fetchall()
         roster_data = [dict(e) for e in employees]
 
@@ -369,7 +379,10 @@ def sync_roster_from_gdrive(conn=None):
         local_conn = False
         if conn is None:
             conn = sqlite3.connect(DB_FILE)
+            conn.row_factory = sqlite3.Row
             local_conn = True
+        else:
+            conn.row_factory = sqlite3.Row
 
         cursor = conn.cursor()
 
@@ -417,9 +430,12 @@ def sync_trainers_to_gdrive(conn=None):
     local_conn = False
     if conn is None:
         conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
         local_conn = True
 
     try:
+        if conn is not None:
+            conn.row_factory = sqlite3.Row
         trainers = conn.execute("SELECT * FROM trainers ORDER BY trainer_id ASC").fetchall()
         trainers_data = [dict(t) for t in trainers]
 
@@ -487,7 +503,10 @@ def sync_trainers_from_gdrive(conn=None):
         local_conn = False
         if conn is None:
             conn = sqlite3.connect(DB_FILE)
+            conn.row_factory = sqlite3.Row
             local_conn = True
+        else:
+            conn.row_factory = sqlite3.Row
 
         cursor = conn.cursor()
 
@@ -530,6 +549,7 @@ def restore_db_from_gdrive():
     print("[GDRIVE-SYNC] Rebuilding database tables from Google Drive structured backups...")
     
     conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
     
     # 1. Pull trainers from Drive
     try:
