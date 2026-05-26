@@ -915,7 +915,7 @@ def delete_module(module_id):
             
     return jsonify({"status": "success"})
 
-def get_offline_translations(type_flag, masked_s_or_intro, choices, correct_index, title="Module"):
+def get_offline_translations(type_flag, masked_s_or_intro, choices, correct_index, title="Module", language='all'):
     # type_flag can be: 'percentage', 'threshold', 'comprehension', 'keyword', 'audit_fallback'
     translations = {}
     
@@ -1204,9 +1204,18 @@ def get_offline_translations(type_flag, masked_s_or_intro, choices, correct_inde
                 "correctIndex": correct_index
             }
         }
+        
+    if language != 'all' and language != 'en':
+        if language in translations:
+            translations = {language: translations[language]}
+        else:
+            translations = {}
+    elif language == 'en':
+        translations = {}
+        
     return translations
 
-def generate_heuristic_questions(text_content, count, title="Module"):
+def generate_heuristic_questions(text_content, count, title="Module", language='en'):
     import re
     import random
     import json
@@ -1249,7 +1258,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
             choices = list(set(choices))[:4]
             random.shuffle(choices)
             
-            translations = get_offline_translations('percentage', masked_s, choices, choices.index(correct_val), title)
+            translations = get_offline_translations('percentage', masked_s, choices, choices.index(correct_val), title, language)
             
             questions.append({
                 "question": f"According to the policy document: \"{masked_s}\" What is the correct percentage?",
@@ -1281,7 +1290,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
             choices = list(set(choices))[:4]
             random.shuffle(choices)
             
-            translations = get_offline_translations('threshold', masked_s, choices, choices.index(correct_val), title)
+            translations = get_offline_translations('threshold', masked_s, choices, choices.index(correct_val), title, language)
             
             questions.append({
                 "question": f"Based on the uploaded guidelines: \"{masked_s}\" What is the correct threshold?",
@@ -1314,7 +1323,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
                 choices = [target_sentence, doc_distractors[0], doc_distractors[1], doc_distractors[2]]
                 random.shuffle(choices)
                 
-                translations = get_offline_translations('comprehension', intro_p, choices, choices.index(target_sentence), title)
+                translations = get_offline_translations('comprehension', intro_p, choices, choices.index(target_sentence), title, language)
                 
                 questions.append({
                     "question": f"Given the section: \"{intro_p}\" Which of the following is the most accurate statement according to the uploaded policy?",
@@ -1348,7 +1357,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
                 choices = list(set(choices))[:4]
                 random.shuffle(choices)
                 
-                translations = get_offline_translations('keyword', masked_s, choices, choices.index(target_word), title)
+                translations = get_offline_translations('keyword', masked_s, choices, choices.index(target_word), title, language)
                 
                 questions.append({
                     "question": f"Based strictly on the {title} documentation: \"{masked_s}\" What is the correct term to fill the blank?",
@@ -1370,7 +1379,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
         ]
         random.shuffle(choices)
         
-        translations = get_offline_translations('audit_fallback', '', choices, 0, title)
+        translations = get_offline_translations('audit_fallback', '', choices, 0, title, language)
         
         questions.append({
             "question": f"[{title} Q{q_idx + 1}] Under the uploaded reference guidelines, what is the primary procedure for compliance audits?",
@@ -1388,6 +1397,7 @@ def generate_module():
     title = request.form.get('title', 'Product Refresher Policy').strip()
     trainer_id = request.form.get('trainer_id', 'ADMIN').strip()
     difficulty = request.form.get('difficulty', 'Medium').strip()
+    selected_lang = request.form.get('language', 'en').strip().lower()
     
     text_content = ""
     
@@ -1427,6 +1437,96 @@ def generate_module():
     else:
         difficulty_instructions = "DIFFICULTY LEVEL: MEDIUM. Focus on standard analytical Socratic questions, typical customer case scenarios, standard numeric thresholds, and day-to-day policy rules."
         
+    # Pre-compiled translation instructions based on selected dropdown language
+    translation_instructions = ""
+    example_translation_format = ""
+    
+    if selected_lang == 'en':
+        translation_instructions = "DO NOT generate any translations. The 'translations' field in the JSON object should be an empty dictionary {}."
+        example_translation_format = '"translations": {}'
+    elif selected_lang == 'all':
+        translation_instructions = """For EACH question, you must also provide the translation of the question and its 4 options in these specific languages/styles:
+            - "hindi": Translated to conversational, clear Hindi (in Devanagari script).
+            - "hinglish": Translated to conversational Hinglish (Hindi written in Latin script, e.g. "KYC document update karne ki maximum time-limit kya hai?").
+            - "punjabi": Translated to conversational Punjabi (in Gurmukhi script).
+            - "bengali": Translated to conversational Bengali (in Bengali script).
+            - "marathi": Translated to conversational Marathi (in Devanagari script).
+            - "telugu": Translated to conversational Telugu (in Telugu script).
+            - "tamil": Translated to conversational Tamil (in Tamil script).
+            - "gujarati": Translated to conversational Gujarati (in Gujarati script).
+            - "kannada": Translated to conversational Kannada (in Kannada script)."""
+            
+        example_translation_format = """"translations": {
+                  "hindi": {
+                    "question": "नई पॉलिसी के तहत अधिकतम लोन रेशियो (LTV) कितना है?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  },
+                  "hinglish": {
+                    "question": "New policy ke under maximum loan ratio kitna allowed hai?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  },
+                  "punjabi": {
+                    "question": "ਨਵੀਂ ਪਾਲਿਸੀ ਦੇ ਤਹਿਤ ਵੱਧ ਤੋਂ ਵੱਧ ਲੋਨ ਰੇਸ਼ੋ (LTV) ਕਿੰਨੀ ਹੈ?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  },
+                  "bengali": {
+                    "question": "নতুন পলিসির অধীনে সর্বাধিক ঋণের অনুপাত (LTV) কত অনুমোদিত?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  },
+                  "marathi": {
+                    "question": "नवीन पॉलिसी अंतर्गत जास्तीत जास्त कर्ज गुणोत्तर (LTV) किती मंजूर आहे?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  },
+                  "telugu": {
+                    "question": "కొత్త పాలసీ కింద గరిష్ట రుణ నిష్పత్తి (LTV) ఎంత అనుమతించబడుతుంది?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  },
+                  "tamil": {
+                    "question": "புதிய கொள்கையின் கீழ் அனுமதிக்கப்பட்ட அதிகபட்ச கடன் விகிதம் (LTV) என்ன?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  },
+                  "gujarati": {
+                    "question": "નવી પોલિસી હેઠળ મહત્તમ લોન રેશિયો (LTV) કેટલો મંજૂર છે?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  },
+                  "kannada": {
+                    "question": "ಹೊಸ ಪಾಲಿಸಿಯ ಅಡಿಯಲ್ಲಿ ಗರಿಷ್ಠ ಸಾಲದ ಅನುಪಾತ (LTV) ಎಷ್ಟು ಅನುಮತಿಸಲಾಗಿದೆ?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }
+                }"""
+    else:
+        lang_titles = {
+            "hindi": "conversational, clear Hindi (in Devanagari script)",
+            "hinglish": "conversational Hinglish (Hindi written in Latin script, e.g. 'KYC document update karne ki maximum time-limit kya hai?')",
+            "punjabi": "conversational Punjabi (in Gurmukhi script)",
+            "bengali": "conversational Bengali (in Bengali script)",
+            "marathi": "conversational Marathi (in Devanagari script)",
+            "telugu": "conversational Telugu (in Telugu script)",
+            "tamil": "conversational Tamil (in Tamil script)",
+            "gujarati": "conversational Gujarati (in Gujarati script)",
+            "kannada": "conversational Kannada (in Kannada script)"
+        }
+        lang_title = lang_titles.get(selected_lang, selected_lang)
+        translation_instructions = f"""For EACH question, you must also provide the translation of the question and its 4 options ONLY in this specific language style:
+            - "{selected_lang}": Translated to {lang_title}."""
+            
+        example_translation_format = f""""translations": {{
+                  "{selected_lang}": {{
+                    "question": "[Translate the question here to {lang_title}]",
+                    "options": ["[Option 1]", "[Option 2]", "[Option 3]", "[Option 4]"],
+                    "correctIndex": 1
+                  }}
+                }}"""
+
     # 2. Try to call Gemini API
     gemini_success = False
     generated_questions = []
@@ -1450,16 +1550,7 @@ def generate_module():
             Each question must have exactly 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
             Ensure the questions are challenging, dialogue-oriented, and directly based on the key rules, constraints, numeric thresholds, and exceptions inside the text.
             
-            For EACH question, you must also provide the translation of the question and its 4 options in these specific languages/styles:
-            - "hindi": Translated to conversational, clear Hindi (in Devanagari script).
-            - "hinglish": Translated to conversational Hinglish (Hindi written in Latin script, e.g. "KYC document update karne ki maximum time-limit kya hai?").
-            - "punjabi": Translated to conversational Punjabi (in Gurmukhi script).
-            - "bengali": Translated to conversational Bengali (in Bengali script).
-            - "marathi": Translated to conversational Marathi (in Devanagari script).
-            - "telugu": Translated to conversational Telugu (in Telugu script).
-            - "tamil": Translated to conversational Tamil (in Tamil script).
-            - "gujarati": Translated to conversational Gujarati (in Gujarati script).
-            - "kannada": Translated to conversational Kannada (in Kannada script).
+            {translation_instructions}
             
             Format your response STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks.
             Example format:
@@ -1468,53 +1559,7 @@ def generate_module():
                 "question": "What is the maximum loan ratio allowed under the new policy?",
                 "options": ["75%", "85%", "90%", "100%"],
                 "correctIndex": 1,
-                "translations": {{
-                  "hindi": {{
-                    "question": "नई पॉलिसी के तहत अधिकतम लोन रेशियो (LTV) कितना है?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }},
-                  "hinglish": {{
-                    "question": "New policy ke under maximum loan ratio kitna allowed hai?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }},
-                  "punjabi": {{
-                    "question": "ਨਵੀਂ ਪਾਲਿਸੀ ਦੇ ਤਹਿਤ ਵੱਧ ਤੋਂ ਵੱਧ ਲੋਨ ਰੇਸ਼ੋ (LTV) ਕਿੰਨੀ ਹੈ?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }},
-                  "bengali": {{
-                    "question": "নতুন পলিসির অধীনে সর্বাধিক ঋণের অনুপাত (LTV) কত অনুমোদিত?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }},
-                  "marathi": {{
-                    "question": "नवीन पॉलिसी अंतर्गत जास्तीत जास्त कर्ज गुणोत्तर (LTV) किती मंजूर आहे?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }},
-                  "telugu": {{
-                    "question": "కొత్త పాలసీ కింద గరిష్ట రుణ నిష్పత్తి (LTV) ఎంత అనుమతించబడుతుంది?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }},
-                  "tamil": {{
-                    "question": "புதிய கொள்கையின் கீழ் அனுமதிக்கப்பட்ட அதிகபட்ச கடன் விகிதம் (LTV) என்ன?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }},
-                  "gujarati": {{
-                    "question": "નવી પોલિસી હેઠળ મહત્તમ લોન રેશિયો (LTV) કેટલો મંજૂર છે?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }},
-                  "kannada": {{
-                    "question": "ಹೊಸ ಪಾಲಿಸಿಯ ಅಡಿಯಲ್ಲಿ ಗರಿಷ್ಠ ಸಾಲದ ಅನುಪಾತ (LTV) ಎಷ್ಟು ಅನುಮತಿಸಲಾಗಿದೆ?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }}
-                }}
+                {example_translation_format}
               }}
             ]
             
@@ -1544,7 +1589,7 @@ def generate_module():
                 
                 For EACH question in the array:
                 1. **Validation Step 1 (Factual Accuracy & Depth)**: Cross-reference the question, options, and translations with the source document. Make sure the Socratic question and all its translations are factually accurate, deep, and do not misrepresent any details. Correct any errors.
-                2. **Validation Step 2 (Correct Index Audit)**: Verify that the option at the `correctIndex` is mathematically and factually the only correct answer. Ensure that in all translations (hindi, hinglish, punjabi, bengali, marathi, telugu, tamil, gujarati, kannada), the option at `correctIndex` corresponds exactly to the correct answer.
+                2. **Validation Step 2 (Correct Index Audit)**: Verify that the option at the `correctIndex` is mathematically and factually the only correct answer. Ensure that in all translations, the option at `correctIndex` corresponds exactly to the correct answer.
                 
                 Return the finalized, audited, and double-corrected questions array STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks. Follow the exact same format as input.
                 """
@@ -1567,7 +1612,7 @@ def generate_module():
     # 3. High-Fidelity Socratic Offline Fallback Heuristic Generator
     if not gemini_success:
         print("Using Dynamic Offline Socratic Heuristic Generator based on uploaded document...")
-        generated_questions = generate_heuristic_questions(text_content, count, title)
+        generated_questions = generate_heuristic_questions(text_content, count, title, selected_lang)
             
     return jsonify({
         "status": "success",

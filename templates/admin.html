@@ -1323,6 +1323,8 @@
             const [assignedAuditor, setAssignedAuditor] = useState('');
             const [difficulty, setDifficulty] = useState('Medium');
             const [reviewDifficulty, setReviewDifficulty] = useState('Medium');
+            const [genLanguage, setGenLanguage] = useState('en');
+            const [pastedText, setPastedText] = useState('');
             
             // Auditor review states
             const [reviewModuleId, setReviewModuleId] = useState(null);
@@ -1437,8 +1439,12 @@
                 formData.append('count', qCount);
                 formData.append('trainer_id', user?.id || 'ADMIN');
                 formData.append('difficulty', difficulty);
+                formData.append('language', genLanguage);
                 if (selectedFile) {
                     formData.append('file', selectedFile);
+                }
+                if (pastedText) {
+                    formData.append('text', pastedText);
                 }
                 
                 fetch('/api/modules/generate', {
@@ -1788,7 +1794,7 @@
                                     </div>
                                 </div>
                                 
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Number of Questions</label>
                                         <select 
@@ -1803,7 +1809,27 @@
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Upload Training File</label>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Translation Language</label>
+                                        <select 
+                                            value={genLanguage} 
+                                            onChange={(e) => setGenLanguage(e.target.value)} 
+                                            className="input-field bg-white py-3 text-sm font-semibold"
+                                        >
+                                            <option value="en">English Only (Super Fast)</option>
+                                            <option value="all">All 9 Languages (Slow)</option>
+                                            <option value="hindi">Hindi</option>
+                                            <option value="hinglish">Hinglish</option>
+                                            <option value="punjabi">Punjabi</option>
+                                            <option value="bengali">Bengali</option>
+                                            <option value="marathi">Marathi</option>
+                                            <option value="telugu">Telugu</option>
+                                            <option value="tamil">Tamil</option>
+                                            <option value="gujarati">Gujarati</option>
+                                            <option value="kannada">Kannada</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Upload Training PDF</label>
                                         <div className="relative">
                                             <input 
                                                 type="file" 
@@ -1828,7 +1854,7 @@
 
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Paste Training Material</label>
-                                    <textarea className="input-field h-24 resize-none" placeholder="Paste policy changes here..."></textarea>
+                                    <textarea value={pastedText} onChange={(e) => setPastedText(e.target.value)} className="input-field h-24 resize-none" placeholder="Paste policy changes here..."></textarea>
                                 </div>
                                 
                                 <button onClick={startGenerator} className="w-full btn-primary py-3 flex items-center justify-center gap-2 text-base shadow-md mt-2">
