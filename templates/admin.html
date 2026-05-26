@@ -25,8 +25,24 @@
         }
     </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #F8FAFC; color: #0F172A; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap');
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            background-color: #F8FAFC;
+            color: #0F172A;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #root {
+            width: 100%;
+            height: 100%;
+            overflow-x: hidden;
+        }
+        .font-outfit { font-family: 'Outfit', sans-serif; }
         .card { background: white; border: 1px solid rgba(226, 232, 240, 0.8); border-radius: 16px; box-shadow: 0 10px 15px -3px rgba(15, 23, 42, 0.02), 0 4px 6px -4px rgba(15, 23, 42, 0.02); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .card:hover { transform: translateY(-2px); box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.04), 0 8px 10px -6px rgba(15, 23, 42, 0.04); border-color: rgba(37, 99, 235, 0.25); }
         .btn-primary { background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%); color: white; border-radius: 12px; padding: 11px 20px; font-weight: 700; font-size: 14px; transition: all 0.25s ease; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(37,99,235,0.15); border: none; outline: none; display: inline-flex; align-items: center; justify-content: center; }
@@ -40,6 +56,11 @@
         .nav-link.active { background: linear-gradient(135deg, rgba(37,99,235,0.08) 0%, rgba(30,58,138,0.02) 100%); border-left: 4px solid #2563EB; color: #2563EB; box-shadow: 0 4px 12px rgba(37,99,235,0.03); }
         .input-field { border: 1.5px solid #E2E8F0; border-radius: 12px; padding: 11px 16px; font-size: 14px; width: 100%; outline: none; transition: all 0.25s ease; background: #F8FAFC; }
         .input-field:focus { border-color: #2563EB; background: white; box-shadow: 0 0 0 4px rgba(37,99,235,0.08); }
+        
+        /* Custom hidden scrollbar utility */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
@@ -213,7 +234,7 @@
             }
 
             return (
-                <div className="flex h-screen overflow-hidden animate-fade-in">
+                <div className="flex h-[100dvh] md:h-screen overflow-hidden animate-fade-in">
                     <div className="w-64 bg-white border-r border-socrates-border flex flex-col z-10 hidden md:flex shadow-sm">
                         <div className="p-6 border-b border-socrates-border">
                             <div className="flex items-center gap-3">
@@ -244,14 +265,15 @@
                         </div>
                     </div>
                     
-                    <div className="flex-1 flex flex-col overflow-y-auto bg-slate-50/50">
-                        <div className="bg-white border-b border-socrates-border px-8 py-5 flex justify-between items-center sticky top-0 z-10 shadow-sm">
-                            <div className="flex items-center gap-4">
-                                <h1 className="text-xl font-bold text-socrates-dark capitalize tracking-tight">{view.replace('_', ' ')}</h1>
+                    <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden bg-slate-50/50 pb-20 md:pb-0">
+                        {/* Fully Responsive & Wrapped Stable Header - Locked single horizontal row */}
+                        <div className="bg-white border-b border-socrates-border px-4 py-2.5 md:px-8 md:py-4 flex flex-row justify-between items-center sticky top-0 z-30 shadow-sm gap-2">
+                            <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                                <h1 className="text-sm md:text-xl font-bold text-socrates-dark capitalize tracking-tight font-outfit truncate">{view.replace('_', ' ')}</h1>
                                 {user?.role === 'SuperAdmin' && (
-                                    <div className="flex items-center gap-2 bg-purple-50 border border-purple-100 rounded-lg px-3 py-1.5 text-xs shadow-inner">
+                                    <div className="flex items-center gap-1 bg-purple-50 border border-purple-100 rounded-xl px-1.5 py-0.5 md:px-2.5 md:py-1 text-[9px] md:text-xs shadow-inner shrink-0">
                                         <i className="fas fa-user-shield text-purple-600"></i>
-                                        <span className="font-bold text-purple-800">View Console As:</span>
+                                        <span className="font-bold text-purple-800 shrink-0 hidden sm:inline">View As:</span>
                                         <select 
                                             value={impersonatedTrainer ? impersonatedTrainer.id : ''}
                                             onChange={(e) => {
@@ -263,22 +285,57 @@
                                                     setImpersonatedTrainer(matched || null);
                                                 }
                                             }}
-                                            className="bg-white border border-purple-200 text-purple-900 rounded px-2.5 py-0.5 font-bold outline-none cursor-pointer focus:border-purple-500"
+                                            className="bg-transparent text-purple-900 font-extrabold outline-none cursor-pointer text-[9px] md:text-xs max-w-[80px] sm:max-w-none truncate"
                                         >
-                                            <option value="">Super Admin (All Overview)</option>
-                                            {trainersList.map(t => <option key={t.id} value={t.id}>{t.name} ({t.id})</option>)}
+                                            <option value="">Admin</option>
+                                            {trainersList.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                                         </select>
                                     </div>
                                 )}
                             </div>
-                            <div className="flex items-center gap-3">
-                                {view === 'roster' && <button onClick={downloadTemplate} className="btn-outline text-xs flex items-center shadow-sm hover:border-socrates-primary"><i className="fas fa-download mr-2 text-socrates-primary"></i> Download Template</button>}
-                                <button className="btn-primary flex items-center shadow-md" onClick={() => { localStorage.removeItem('socrates_active_module'); setView('live_session'); }}><i className="fas fa-play mr-2"></i> Start Session</button>
+                            <div className="flex items-center gap-1.5 md:gap-3 shrink-0">
+                                {view === 'roster' && (
+                                    <button onClick={downloadTemplate} className="btn-outline p-1.5 md:py-1.5 md:px-3 text-[10px] md:text-xs flex items-center shadow-sm hover:border-socrates-primary" title="Download Template">
+                                        <i className="fas fa-download md:mr-1.5 text-socrates-primary"></i>
+                                        <span className="hidden md:inline">Template</span>
+                                    </button>
+                                )}
+                                <button className="btn-primary p-1.5 md:py-1.5 md:px-3.5 text-[10px] md:text-xs flex items-center shadow-md bg-gradient-to-r from-blue-600 to-indigo-600 text-white" onClick={() => { localStorage.removeItem('socrates_active_module'); setView('live_session'); }} title="Start Live Session">
+                                    <i className="fas fa-play md:mr-1.5"></i>
+                                    <span className="hidden md:inline">Start Session</span>
+                                </button>
+                                <button onClick={() => { localStorage.removeItem('socrates_active_module'); setUser(null); setImpersonatedTrainer(null); setView('login'); }} className="btn-outline p-1.5 md:py-1.5 md:px-2.5 text-[10px] md:text-xs border-red-200 text-red-600 hover:bg-red-50" title="Log Out">
+                                    <i className="fas fa-sign-out-alt"></i>
+                                </button>
                             </div>
                         </div>
-                        <div className="p-8 max-w-7xl mx-auto w-full">
+                        <div className="p-4 md:p-8 max-w-7xl mx-auto w-full pb-24 md:pb-8">
                             {renderContent()}
                         </div>
+                    </div>
+
+                    {/* Bottom Mobile Navigation Bar (Visible only on mobile screen widths) */}
+                    <div className="md:hidden bg-white/95 backdrop-blur-md border-t border-slate-200/80 fixed bottom-0 left-0 right-0 z-40 flex justify-around py-3 shadow-[0_-4px_15px_rgba(0,0,0,0.04)]">
+                        <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 text-[9px] font-bold transition-colors ${view==='dashboard'?'text-blue-600':'text-slate-400'}`}>
+                            <i className="fas fa-layer-group text-lg"></i>
+                            <span>Dashboard</span>
+                        </button>
+                        <button onClick={() => { localStorage.removeItem('socrates_active_module'); setView('live_session'); }} className={`flex flex-col items-center gap-1 text-[9px] font-bold transition-colors ${view==='live_session'?'text-blue-600':'text-slate-400'}`}>
+                            <i className="fas fa-satellite-dish text-lg"></i>
+                            <span>Live Control</span>
+                        </button>
+                        <button onClick={() => setView('library')} className={`flex flex-col items-center gap-1 text-[9px] font-bold transition-colors ${view==='library'?'text-blue-600':'text-slate-400'}`}>
+                            <i className="fas fa-robot text-lg"></i>
+                            <span>Library</span>
+                        </button>
+                        <button onClick={() => setView('roster')} className={`flex flex-col items-center gap-1 text-[9px] font-bold transition-colors ${view==='roster'?'text-blue-600':'text-slate-400'}`}>
+                            <i className="fas fa-users-cog text-lg"></i>
+                            <span>Roster</span>
+                        </button>
+                        <button onClick={() => setView('analytics')} className={`flex flex-col items-center gap-1 text-[9px] font-bold transition-colors ${view==='analytics'?'text-blue-600':'text-slate-400'}`}>
+                            <i className="fas fa-chart-pie text-lg"></i>
+                            <span>Analytics</span>
+                        </button>
                     </div>
                 </div>
             );
@@ -2596,33 +2653,33 @@
 
             return (
                 <div className="card overflow-hidden">
-                    {/* Header Tabs */}
-                    <div className="flex justify-between items-center border-b border-socrates-border bg-slate-50 px-4 pt-2">
-                        <div className="flex">
+                    {/* Header Tabs (Fully Mobile Responsive & Scrollable) */}
+                    <div className="flex flex-col lg:flex-row justify-between items-stretch lg:items-center border-b border-socrates-border bg-slate-50 px-4 pt-2 gap-3 lg:gap-0">
+                        <div className="flex overflow-x-auto no-scrollbar shrink-0 select-none">
                             <button 
                                 onClick={() => setTab('executive')} 
-                                className={`px-6 py-4 font-bold text-sm transition-all rounded-t-lg ${tab==='executive' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
+                                className={`px-4 md:px-6 py-3 md:py-4 font-bold text-xs md:text-sm transition-all rounded-t-xl whitespace-nowrap ${tab==='executive' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
                             >
-                                <i className="fas fa-chart-line mr-2 text-socrates-primary"></i>
-                                Learning Curves & Growth (Delta)
+                                <i className="fas fa-chart-line mr-1.5 md:mr-2 text-socrates-primary"></i>
+                                Learning Delta (Delta Curves)
                             </button>
                             <button 
                                 onClick={() => setTab('painpoints')} 
-                                className={`px-6 py-4 font-bold text-sm transition-all rounded-t-lg ${tab==='painpoints' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
+                                className={`px-4 md:px-6 py-3 md:py-4 font-bold text-xs md:text-sm transition-all rounded-t-xl whitespace-nowrap ${tab==='painpoints' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
                             >
-                                <i className="fas fa-exclamation-triangle text-rose-500 mr-2"></i> 
-                                Executive Summary & Socratic Pain-Points Map
+                                <i className="fas fa-exclamation-triangle text-rose-500 mr-1.5 md:mr-2"></i> 
+                                Socratic Pain-Points Map
                             </button>
                             <button 
                                 onClick={() => setTab('trainer')} 
-                                className={`px-6 py-4 font-bold text-sm transition-all rounded-t-lg ${tab==='trainer' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
+                                className={`px-4 md:px-6 py-3 md:py-4 font-bold text-xs md:text-sm transition-all rounded-t-xl whitespace-nowrap ${tab==='trainer' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
                             >
-                                <i className="fas fa-crown text-amber-500 mr-2"></i> 
-                                Trainer Quality comparison Matrix
+                                <i className="fas fa-crown text-amber-500 mr-1.5 md:mr-2"></i> 
+                                Trainer Comparison Matrix
                             </button>
                         </div>
                         {(tab === 'executive' || tab === 'painpoints') && (
-                            <div className="flex gap-3 mb-2">
+                            <div className="flex flex-wrap gap-2 mb-2">
                                 <button 
                                     onClick={copyAnalyticalEmailReport}
                                     className="btn-outline border-purple-300 text-purple-700 bg-purple-50 hover:bg-purple-100 py-2 px-4 text-xs font-bold flex items-center gap-2 shadow-sm transform transition hover:-translate-y-0.5"
@@ -3429,85 +3486,87 @@
                                 </div>
 
                                 <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
-                                    <table className="w-full text-left text-xs border-collapse">
-                                        <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-                                            <tr>
-                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px]">Trainer Name</th>
-                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Sessions Conducted</th>
-                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Avg. Trainee Rating</th>
-                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Learning Growth Delta ($\Delta$)</th>
-                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Concept Clarity Index</th>
-                                                <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Time-Saving NPS</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100">
-                                            {loadingTrainers ? (
+                                    <div className="overflow-x-auto w-full no-scrollbar">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
                                                 <tr>
-                                                    <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
-                                                        <i className="fas fa-spinner fa-spin text-xl text-slate-200 mr-2"></i>
-                                                        Loading Socratic trainer metrics...
-                                                    </td>
+                                                    <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px]">Trainer Name</th>
+                                                    <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Sessions Conducted</th>
+                                                    <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Avg. Trainee Rating</th>
+                                                    <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Learning Growth Delta ($\Delta$)</th>
+                                                    <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Concept Clarity Index</th>
+                                                    <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Time-Saving NPS</th>
                                                 </tr>
-                                            ) : trainersPerf.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
-                                                        No trainer performance data found. Complete feedback forms first!
-                                                    </td>
-                                                </tr>
-                                            ) : (
-                                                trainersPerf.map((trainer) => (
-                                                    <tr key={trainer.trainer_id} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="px-6 py-4 font-extrabold text-socrates-dark flex items-center gap-3">
-                                                            <div className="w-8 h-8 rounded-lg bg-blue-50 text-socrates-primary flex items-center justify-center font-bold text-xs border border-blue-100">
-                                                                {trainer.name.split(' ').map(n => n[0]).join('')}
-                                                            </div>
-                                                            <div>
-                                                                <span className="font-extrabold">{trainer.name}</span>
-                                                                <span className="block text-[9px] text-slate-400 font-medium mt-0.5">{trainer.trainer_id}</span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 font-bold text-slate-700 text-center">{trainer.sessions_count}</td>
-                                                        <td className="px-6 py-4 text-center">
-                                                            <div className="flex flex-col items-center gap-0.5">
-                                                                <span className="font-extrabold text-amber-600 flex items-center gap-1">
-                                                                    {trainer.avg_rating} <i className="fas fa-star text-amber-400"></i>
-                                                                </span>
-                                                                <span className="text-[9px] text-slate-400">
-                                                                    {trainer.avg_rating >= 4.5 ? '🏆 Outstanding' : trainer.avg_rating >= 4.0 ? '✨ Great' : '📈 Needs Work'}
-                                                                </span>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-center">
-                                                            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold ${
-                                                                trainer.growth_delta >= 25 
-                                                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm' 
-                                                                    : 'bg-blue-50 text-blue-700 border border-blue-100 shadow-sm'
-                                                            }`}>
-                                                                +{trainer.growth_delta}% <i className="fas fa-arrow-up text-[8px] ml-0.5"></i>
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-center">
-                                                            <div className="flex flex-col items-center gap-1">
-                                                                <span className="font-bold text-slate-700">{trainer.clarity_index}%</span>
-                                                                <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                                                                    <div style={{ width: `${trainer.clarity_index}%` }} className="h-full bg-emerald-500 rounded-full"></div>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-center">
-                                                            <span className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold ${
-                                                                trainer.nps >= 80 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                                                trainer.nps >= 60 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                                                                'bg-rose-50 text-rose-600 border border-rose-100'
-                                                            }`}>
-                                                                {trainer.nps}% Saved Time
-                                                            </span>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {loadingTrainers ? (
+                                                    <tr>
+                                                        <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
+                                                            <i className="fas fa-spinner fa-spin text-xl text-slate-200 mr-2"></i>
+                                                            Loading Socratic trainer metrics...
                                                         </td>
                                                     </tr>
-                                                ))
-                                            )}
-                                        </tbody>
-                                    </table>
+                                                ) : trainersPerf.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
+                                                            No trainer performance data found. Complete feedback forms first!
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    trainersPerf.map((trainer) => (
+                                                        <tr key={trainer.trainer_id} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="px-6 py-4 font-extrabold text-socrates-dark flex items-center gap-3">
+                                                                <div className="w-8 h-8 rounded-lg bg-blue-50 text-socrates-primary flex items-center justify-center font-bold text-xs border border-blue-100">
+                                                                    {trainer.name.split(' ').map(n => n[0]).join('')}
+                                                                </div>
+                                                                <div>
+                                                                    <span className="font-extrabold">{trainer.name}</span>
+                                                                    <span className="block text-[9px] text-slate-400 font-medium mt-0.5">{trainer.trainer_id}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 font-bold text-slate-700 text-center">{trainer.sessions_count}</td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <div className="flex flex-col items-center gap-0.5">
+                                                                    <span className="font-extrabold text-amber-600 flex items-center gap-1">
+                                                                        {trainer.avg_rating} <i className="fas fa-star text-amber-400"></i>
+                                                                    </span>
+                                                                    <span className="text-[9px] text-slate-400">
+                                                                        {trainer.avg_rating >= 4.5 ? '🏆 Outstanding' : trainer.avg_rating >= 4.0 ? '✨ Great' : '📈 Needs Work'}
+                                                                    </span>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold ${
+                                                                    trainer.growth_delta >= 25 
+                                                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-100 shadow-sm' 
+                                                                        : 'bg-blue-50 text-blue-700 border border-blue-100 shadow-sm'
+                                                                }`}>
+                                                                    +{trainer.growth_delta}% <i className="fas fa-arrow-up text-[8px] ml-0.5"></i>
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <div className="flex flex-col items-center gap-1">
+                                                                    <span className="font-bold text-slate-700">{trainer.clarity_index}%</span>
+                                                                    <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                                                                        <div style={{ width: `${trainer.clarity_index}%` }} className="h-full bg-emerald-500 rounded-full"></div>
+                                                                    </div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <span className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold ${
+                                                                    trainer.nps >= 80 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                                                    trainer.nps >= 60 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                                                    'bg-rose-50 text-rose-600 border border-rose-100'
+                                                                }`}>
+                                                                    {trainer.nps}% Saved Time
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                         )}
