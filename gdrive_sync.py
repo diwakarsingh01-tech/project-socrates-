@@ -284,31 +284,78 @@ DB_BACKUP_LOCK = threading.Lock()
 LAST_BACKUP_TIME = 0
 BACKUP_COOLDOWN = 10  # Minimum seconds between backups
 
-def restore_db_from_gdrive():
+def sync_roster_to_gdrive(conn=None):
     """
-    Downloads socrates_backup.db from Google Drive and restores it locally as socrates.db.
-    Called on startup before the database connection is initialized.
+    Saves the entire employees roster to Google Drive as roster_backup.json.
     """
     service = get_gdrive_service()
     if not service:
-        print("[GDRIVE-SYNC] Warning: Could not restore socrates.db (service not initialized).")
+        print("[GDRIVE-SYNC] Skipping roster backup to Google Drive (service not initialized).")
         return False
 
     folder_id = os.environ.get('GD_FOLDER_ID')
-    filename = "socrates_backup.db"
+    filename = "roster_backup.json"
+
+    local_conn = False
+    if conn is None:
+        conn = sqlite3.connect(DB_FILE)
+        local_conn = True
 
     try:
-        # Search for existing backup file
+        employees = conn.execute("SELECT * FROM employees ORDER BY emp_code ASC").fetchall()
+        roster_data = [dict(e) for e in employees]
+
+        query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        files = results.get('files', [])
+
+        payload_bytes = json.dumps(roster_data, indent=2).encode('utf-8')
+        media = MediaIoBaseUpload(io.BytesIO(payload_bytes), mimetype='application/json', resumable=True)
+
+        if files:
+            file_id = files[0]['id']
+            print(f"[GDRIVE-SYNC] Syncing roster to Google Drive (updating existing file ID: {file_id})...")
+            service.files().update(fileId=file_id, media_body=media).execute()
+        else:
+            file_metadata = {
+                'name': filename,
+                'parents': [folder_id]
+            }
+            print("[GDRIVE-SYNC] Syncing roster to Google Drive (creating new backup)...")
+            service.files().create(body=file_metadata, media_body=media).execute()
+
+        print("[GDRIVE-SYNC] Roster synced to Google Drive successfully.")
+        return True
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Error syncing roster to Google Drive: {str(e)}")
+        return False
+    finally:
+        if local_conn:
+            conn.close()
+
+def sync_roster_from_gdrive(conn=None):
+    """
+    Downloads roster_backup.json from Google Drive and merges it into local SQLite employees table.
+    """
+    service = get_gdrive_service()
+    if not service:
+        print("[GDRIVE-SYNC] Skipping roster import from Google Drive (service not initialized).")
+        return False
+
+    folder_id = os.environ.get('GD_FOLDER_ID')
+    filename = "roster_backup.json"
+
+    try:
         query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
         results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
         files = results.get('files', [])
 
         if not files:
-            print("[GDRIVE-SYNC] No SQLite database backup found on Google Drive. Starting fresh.")
+            print("[GDRIVE-SYNC] No custom roster backup found in Google Drive.")
             return False
 
         file_id = files[0]['id']
-        print(f"[GDRIVE-SYNC] Restoring SQLite database from Google Drive backup (ID: {file_id})...")
+        print(f"[GDRIVE-SYNC] Downloading roster backup from Google Drive (ID: {file_id})...")
 
         request = service.files().get_media(fileId=file_id)
         fh = io.BytesIO()
@@ -317,15 +364,195 @@ def restore_db_from_gdrive():
         while not done:
             status, done = downloader.next_chunk()
 
-        # Write downloaded bytes to local file
-        with open(DB_FILE, 'wb') as f:
-            f.write(fh.getvalue())
+        roster_data = json.loads(fh.getvalue().decode('utf-8'))
 
-        print("[GDRIVE-SYNC] Database successfully restored from Google Drive.")
+        local_conn = False
+        if conn is None:
+            conn = sqlite3.connect(DB_FILE)
+            local_conn = True
+
+        cursor = conn.cursor()
+
+        for emp in roster_data:
+            cursor.execute("""
+                INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(emp_code) DO UPDATE SET
+                    emp_name=excluded.emp_name,
+                    branch_name=excluded.branch_name,
+                    zone=excluded.zone,
+                    division=excluded.division,
+                    business_unit=excluded.business_unit,
+                    role=excluded.role,
+                    product_name=excluded.product_name,
+                    status=excluded.status,
+                    change_detail=excluded.change_detail
+            """, (
+                emp['emp_code'], emp['emp_name'], emp['branch_name'], emp['zone'], emp['division'],
+                emp['business_unit'], emp['role'], emp['product_name'], emp['status'], emp['change_detail']
+            ))
+
+        conn.commit()
+        if local_conn:
+            conn.close()
+
+        print(f"[GDRIVE-SYNC] Successfully restored {len(roster_data)} employees from Google Drive roster backup.")
         return True
     except Exception as e:
-        print(f"[GDRIVE-SYNC] Error restoring database from Google Drive: {str(e)}")
+        print(f"[GDRIVE-SYNC] Error restoring roster from Google Drive: {str(e)}")
         return False
+
+def sync_trainers_to_gdrive(conn=None):
+    """
+    Saves the entire trainers list to Google Drive as trainers_backup.json.
+    """
+    service = get_gdrive_service()
+    if not service:
+        print("[GDRIVE-SYNC] Skipping trainers backup to Google Drive (service not initialized).")
+        return False
+
+    folder_id = os.environ.get('GD_FOLDER_ID')
+    filename = "trainers_backup.json"
+
+    local_conn = False
+    if conn is None:
+        conn = sqlite3.connect(DB_FILE)
+        local_conn = True
+
+    try:
+        trainers = conn.execute("SELECT * FROM trainers ORDER BY trainer_id ASC").fetchall()
+        trainers_data = [dict(t) for t in trainers]
+
+        query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        files = results.get('files', [])
+
+        payload_bytes = json.dumps(trainers_data, indent=2).encode('utf-8')
+        media = MediaIoBaseUpload(io.BytesIO(payload_bytes), mimetype='application/json', resumable=True)
+
+        if files:
+            file_id = files[0]['id']
+            print(f"[GDRIVE-SYNC] Syncing trainers to Google Drive (updating existing file ID: {file_id})...")
+            service.files().update(fileId=file_id, media_body=media).execute()
+        else:
+            file_metadata = {
+                'name': filename,
+                'parents': [folder_id]
+            }
+            print("[GDRIVE-SYNC] Syncing trainers to Google Drive (creating new backup)...")
+            service.files().create(body=file_metadata, media_body=media).execute()
+
+        print("[GDRIVE-SYNC] Trainers synced to Google Drive successfully.")
+        return True
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Error syncing trainers to Google Drive: {str(e)}")
+        return False
+    finally:
+        if local_conn:
+            conn.close()
+
+def sync_trainers_from_gdrive(conn=None):
+    """
+    Downloads trainers_backup.json from Google Drive and merges it into local SQLite trainers table.
+    """
+    service = get_gdrive_service()
+    if not service:
+        print("[GDRIVE-SYNC] Skipping trainers import from Google Drive (service not initialized).")
+        return False
+
+    folder_id = os.environ.get('GD_FOLDER_ID')
+    filename = "trainers_backup.json"
+
+    try:
+        query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        files = results.get('files', [])
+
+        if not files:
+            print("[GDRIVE-SYNC] No trainers backup found in Google Drive.")
+            return False
+
+        file_id = files[0]['id']
+        print(f"[GDRIVE-SYNC] Downloading trainers backup from Google Drive (ID: {file_id})...")
+
+        request = service.files().get_media(fileId=file_id)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+        trainers_data = json.loads(fh.getvalue().decode('utf-8'))
+
+        local_conn = False
+        if conn is None:
+            conn = sqlite3.connect(DB_FILE)
+            local_conn = True
+
+        cursor = conn.cursor()
+
+        for t in trainers_data:
+            cursor.execute("""
+                INSERT INTO trainers (trainer_id, name, zone, password, status, role, last_login, zones, divisions, branches, business_units)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(trainer_id) DO UPDATE SET
+                    name=excluded.name,
+                    zone=excluded.zone,
+                    password=excluded.password,
+                    status=excluded.status,
+                    role=excluded.role,
+                    last_login=excluded.last_login,
+                    zones=excluded.zones,
+                    divisions=excluded.divisions,
+                    branches=excluded.branches,
+                    business_units=excluded.business_units
+            """, (
+                t['trainer_id'], t['name'], t['zone'], t['password'], t.get('status', 'Active'),
+                t.get('role', 'Trainer'), t.get('last_login'), t.get('zones', 'ALL'),
+                t.get('divisions', 'ALL'), t.get('branches', 'ALL'), t.get('business_units', 'ALL')
+            ))
+
+        conn.commit()
+        if local_conn:
+            conn.close()
+
+        print(f"[GDRIVE-SYNC] Successfully restored {len(trainers_data)} trainers from Google Drive trainers backup.")
+        return True
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Error restoring trainers from Google Drive: {str(e)}")
+        return False
+
+def restore_db_from_gdrive():
+    """
+    Restores the complete database structured contents from Google Drive JSON backup files.
+    Ensures that Rosters, Trainers, and Modules are rebuilt perfectly.
+    """
+    print("[GDRIVE-SYNC] Rebuilding database tables from Google Drive structured backups...")
+    
+    conn = sqlite3.connect(DB_FILE)
+    
+    # 1. Pull trainers from Drive
+    try:
+        sync_trainers_from_gdrive(conn)
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Trainers restore skipped: {str(e)}")
+        
+    # 2. Pull employees roster from Drive
+    try:
+        sync_roster_from_gdrive(conn)
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Roster restore skipped: {str(e)}")
+        
+    # 3. Pull custom Socratic modules from Drive
+    try:
+        from gdrive_sync import sync_modules_from_gdrive
+        sync_modules_from_gdrive(conn)
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Modules restore skipped: {str(e)}")
+        
+    conn.close()
+    print("[GDRIVE-SYNC] Database tables successfully restored and rebuilt from Google Drive.")
+    return True
 
 def backup_db_to_gdrive():
     """

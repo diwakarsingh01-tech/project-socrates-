@@ -181,13 +181,13 @@ def init_db():
     conn.commit()
     conn.close()
 
+init_db()
+
 try:
     from gdrive_sync import restore_db_from_gdrive
     restore_db_from_gdrive()
 except Exception as e:
     print(f"[GDRIVE] Database restoration skipped: {str(e)}")
-
-init_db()
 
 try:
     from gdrive_sync import start_db_backup_daemon
@@ -235,6 +235,13 @@ def admin_login():
 def handle_trainers():
     conn = get_db_connection()
     if request.method == 'GET':
+        # Pull newly uploaded trainers from Google Drive
+        try:
+            from gdrive_sync import sync_trainers_from_gdrive
+            sync_trainers_from_gdrive(conn)
+        except Exception as e:
+            print(f"[GDRIVE] Dynamic trainers sync skipped: {str(e)}")
+
         trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units, password FROM trainers WHERE role='Trainer'").fetchall()
         conn.close()
         return jsonify([dict(t) for t in trainers])
@@ -260,6 +267,14 @@ def handle_trainers():
             conn.close()
             return jsonify({"status": "error", "message": "Trainer ID already exists. Please choose a different ID or delete the existing account first."}), 400
         conn.close()
+
+        # Sync trainers to Google Drive in background thread
+        try:
+            from gdrive_sync import sync_trainers_to_gdrive
+            threading.Thread(target=sync_trainers_to_gdrive, daemon=True).start()
+        except Exception as e:
+            print(f"[GDRIVE] Error spawning trainers upload thread: {str(e)}")
+
         return jsonify({"status": "success"})
 
 @app.route('/api/trainers/<trainer_id>', methods=['PUT', 'DELETE'])
@@ -277,6 +292,14 @@ def handle_single_trainer(trainer_id):
             conn.close()
             return jsonify({"status": "error", "message": str(e)}), 500
         conn.close()
+        
+        # Trigger real-time trainers synchronization to Google Drive in background thread
+        try:
+            from gdrive_sync import sync_trainers_to_gdrive
+            threading.Thread(target=sync_trainers_to_gdrive, daemon=True).start()
+        except Exception as e:
+            print(f"[GDRIVE] Error spawning trainers upload thread: {str(e)}")
+            
         return jsonify({"status": "success", "message": "Trainer deleted successfully"})
         
     elif request.method == 'PUT':
@@ -303,6 +326,14 @@ def handle_single_trainer(trainer_id):
             conn.close()
             return jsonify({"status": "error", "message": str(e)}), 500
         conn.close()
+        
+        # Trigger real-time trainers synchronization to Google Drive in background thread
+        try:
+            from gdrive_sync import sync_trainers_to_gdrive
+            threading.Thread(target=sync_trainers_to_gdrive, daemon=True).start()
+        except Exception as e:
+            print(f"[GDRIVE] Error spawning trainers upload thread: {str(e)}")
+            
         return jsonify({"status": "success", "message": "Trainer updated successfully"})
 
 @app.route('/api/trainers/<trainer_id>/status', methods=['PUT'])
@@ -312,6 +343,14 @@ def update_trainer_status(trainer_id):
     conn.execute("UPDATE trainers SET status=? WHERE trainer_id=?", (data['status'], trainer_id))
     conn.commit()
     conn.close()
+    
+    # Trigger real-time trainers synchronization to Google Drive in background thread
+    try:
+        from gdrive_sync import sync_trainers_to_gdrive
+        threading.Thread(target=sync_trainers_to_gdrive, daemon=True).start()
+    except Exception as e:
+        print(f"[GDRIVE] Error spawning trainers upload thread: {str(e)}")
+        
     return jsonify({"status": "success"})
 
 @app.route('/api/trainers/upload', methods=['POST'])
@@ -415,6 +454,14 @@ def upload_trainers():
                 
         conn.commit()
         conn.close()
+
+        # Trigger real-time trainers synchronization to Google Drive in background thread
+        try:
+            from gdrive_sync import sync_trainers_to_gdrive
+            threading.Thread(target=sync_trainers_to_gdrive, daemon=True).start()
+        except Exception as e:
+            print(f"[GDRIVE] Error spawning trainers upload thread: {str(e)}")
+
         return jsonify({"status": "success", "message": "Trainers uploaded and registered successfully!"})
 
 @app.route('/api/metadata', methods=['GET'])
@@ -475,6 +522,13 @@ def reset_database():
 # 3. ROSTER MANAGEMENT
 @app.route('/api/roster', methods=['GET'])
 def get_roster():
+    # Pull any newly uploaded roster profiles by other trainers from Google Drive
+    try:
+        from gdrive_sync import sync_roster_from_gdrive
+        sync_roster_from_gdrive()
+    except Exception as e:
+        print(f"[GDRIVE] Dynamic roster import skipped: {str(e)}")
+
     zone = request.args.get('zone', '').strip()
     branch = request.args.get('branch', '').strip()
     division = request.args.get('division', '').strip()
@@ -714,6 +768,14 @@ def upload_roster():
                 
         conn.commit()
         conn.close()
+
+        # Trigger real-time roster synchronization to Google Drive in background thread
+        try:
+            from gdrive_sync import sync_roster_to_gdrive
+            threading.Thread(target=sync_roster_to_gdrive, daemon=True).start()
+        except Exception as e:
+            print(f"[GDRIVE] Error spawning roster upload thread: {str(e)}")
+
         return jsonify({"status": "success", "message": "Roster uploaded and processed successfully!"})
 
 @app.route('/api/roster/manual', methods=['POST'])
@@ -754,6 +816,14 @@ def add_roster_manual():
                  (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, change_detail))
     conn.commit()
     conn.close()
+
+    # Trigger real-time roster synchronization to Google Drive in background thread
+    try:
+        from gdrive_sync import sync_roster_to_gdrive
+        threading.Thread(target=sync_roster_to_gdrive, daemon=True).start()
+    except Exception as e:
+        print(f"[GDRIVE] Error spawning roster upload thread: {str(e)}")
+
     return jsonify({"status": "success", "message": f"Employee '{emp_name}' added manually successfully!"})
 
 @app.route('/api/roster/<emp_code>', methods=['PUT', 'DELETE'])
@@ -768,6 +838,12 @@ def handle_single_roster_item(emp_code):
                 conn.execute("DELETE FROM employees WHERE emp_code=?", (emp_code,))
                 conn.commit()
                 conn.close()
+                # Trigger real-time roster synchronization to Google Drive in background thread
+                try:
+                    from gdrive_sync import sync_roster_to_gdrive
+                    threading.Thread(target=sync_roster_to_gdrive, daemon=True).start()
+                except Exception as e:
+                    print(f"[GDRIVE] Error spawning roster upload thread: {str(e)}")
                 return jsonify({"status": "success", "message": "Employee permanently deleted successfully"})
             else:
                 reason = request.args.get('reason', '').strip().upper()
@@ -787,6 +863,12 @@ def handle_single_roster_item(emp_code):
                 )
                 conn.commit()
                 conn.close()
+                # Trigger real-time roster synchronization to Google Drive in background thread
+                try:
+                    from gdrive_sync import sync_roster_to_gdrive
+                    threading.Thread(target=sync_roster_to_gdrive, daemon=True).start()
+                except Exception as e:
+                    print(f"[GDRIVE] Error spawning roster upload thread: {str(e)}")
                 return jsonify({"status": "success", "message": "Employee status set to DELETED"})
         except Exception as e:
             conn.close()
@@ -823,6 +905,12 @@ def handle_single_roster_item(emp_code):
             conn.close()
             return jsonify({"status": "error", "message": str(e)}), 500
         conn.close()
+        # Trigger real-time roster synchronization to Google Drive in background thread
+        try:
+            from gdrive_sync import sync_roster_to_gdrive
+            threading.Thread(target=sync_roster_to_gdrive, daemon=True).start()
+        except Exception as e:
+            print(f"[GDRIVE] Error spawning roster upload thread: {str(e)}")
         return jsonify({"status": "success", "message": "Employee updated successfully"})
 
 @app.route('/api/roster/search', methods=['GET'])
