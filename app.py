@@ -770,6 +770,297 @@ def delete_module(module_id):
     conn.close()
     return jsonify({"status": "success"})
 
+def get_offline_translations(type_flag, masked_s_or_intro, choices, correct_index, title="Module"):
+    # type_flag can be: 'percentage', 'threshold', 'comprehension', 'keyword', 'audit_fallback'
+    translations = {}
+    
+    if type_flag == 'percentage':
+        translations = {
+            "hindi": {
+                "question": f"पॉलिसी डॉक्युमेंट के अनुसार: \"{masked_s_or_intro}\" यहाँ सही प्रतिशत क्या होना चाहिए?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "hinglish": {
+                "question": f"Policy guidelines ke according: \"{masked_s_or_intro}\" Correct percentage kya hona chahiye?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "punjabi": {
+                "question": f"ਪਾਲਿਸੀ ਦਸਤਾਵੇਜ਼ ਦੇ ਅਨੁਸਾਰ: \"{masked_s_or_intro}\" ਇੱਥੇ ਸਹੀ ਪ੍ਰਤੀਸ਼ਤ ਕੀ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "bengali": {
+                "question": f"পলিসি ডকুমেন্ট অনুযায়ী: \"{masked_s_or_intro}\" এখানে সঠিক শতাংশ কত হওয়া উচিত?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "marathi": {
+                "question": f"पॉलिसी दस्तऐवजानुसार: \"{masked_s_or_intro}\" येथे योग्य टक्केवारी काय असावी?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "telugu": {
+                "question": f"పాలసీ డాక్యుమెంట్ ప్రకారం: \"{masked_s_or_intro}\" ఇక్కడ సరైన శాతం ఎంత ఉండాలి?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "tamil": {
+                "question": f"கொள்கை ஆவணத்தின்படி: \"{masked_s_or_intro}\" இங்கே சரியான சதவீதம் என்னவாக இருக்க வேண்டும்?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "gujarati": {
+                "question": f"પોલિસી દસ્તાવેજ મુજબ: \"{masked_s_or_intro}\" અહીં સાચી ટકાવારી શું હોવી જોઈએ?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "kannada": {
+                "question": f"ಪಾಲಿಸಿ ದಾಖಲೆಯ ಪ್ರಕಾರ: \"{masked_s_or_intro}\" ಇಲ್ಲಿ ಸರಿಯಾದ ಶೇಕಡಾವಾರು ಎಷ್ಟು ಇರಬೇಕು?",
+                "options": choices,
+                "correctIndex": correct_index
+            }
+        }
+    elif type_flag == 'threshold':
+        translations = {
+            "hindi": {
+                "question": f"गाइडलाइंस के अनुसार: \"{masked_s_or_intro}\" यहाँ सही सीमा क्या होनी चाहिए?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "hinglish": {
+                "question": f"Policy guidelines ke according: \"{masked_s_or_intro}\" Correct threshold kya hona chahiye?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "punjabi": {
+                "question": f"ਦਿਸ਼ਾ-ਨਿਰਦੇਸ਼ਾਂ ਦੇ ਅਨੁਸਾਰ: \"{masked_s_or_intro}\" ਇੱਥੇ ਸਹੀ ਸੀਮਾ ਕੀ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "bengali": {
+                "question": f"নির্দেশিকা অনুযায়ী: \"{masked_s_or_intro}\" এখানে সঠিক সীমা কি হওয়া উচিত?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "marathi": {
+                "question": f"मार्गदर्शक तत्त्वांनुसार: \"{masked_s_or_intro}\" येथे योग्य मर्यादा काय असावी?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "telugu": {
+                "question": f"మార్గదర్శకాల ప్రకారం: \"{masked_s_or_intro}\" ఇక్కడ సరైన పరిమితి ఎంత ఉండాలి?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "tamil": {
+                "question": f"வழிகாட்டுதல்களின்படி: \"{masked_s_or_intro}\" இங்கே சரியான வரம்பு என்னவாக இருக்க வேண்டும்?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "gujarati": {
+                "question": f"માર્ગદર્શિકા મુજબ: \"{masked_s_or_intro}\" અહીં સાચી મર્યાદા શું હોવી જોઈએ?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "kannada": {
+                "question": f"ಮಾರ್ಗಸೂಚಿಗಳ ಪ್ರಕಾರ: \"{masked_s_or_intro}\" ಇಲ್ಲಿ ಸರಿಯಾದ ಮಿತಿ ಎಷ್ಟು ಇರಬೇಕು?",
+                "options": choices,
+                "correctIndex": correct_index
+            }
+        }
+    elif type_flag == 'comprehension':
+        translations = {
+            "hindi": {
+                "question": f"दिए गए पैराग्राफ: \"{masked_s_or_intro}\" के अनुसार कौन सा कथन सही है?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "hinglish": {
+                "question": f"Given paragraph: \"{masked_s_or_intro}\" ke according, correct statement select karein:",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "punjabi": {
+                "question": f"ਦਿੱਤੇ ਗਏ ਪੈਰੇ: \"{masked_s_or_intro}\" ਦੇ ਅਨੁਸਾਰ ਕਿਹੜਾ ਕਥਨ ਸਹੀ ਹੈ?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "bengali": {
+                "question": f"প্রদত্ত অনুচ্ছেদ: \"{masked_s_or_intro}\" অনুযায়ী কোন বিবৃতিটি সঠিক?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "marathi": {
+                "question": f"दिलेल्या परिच्छेदानुसार: \"{masked_s_or_intro}\" खालीलपैकी कोणते विधान योग्य आहे?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "telugu": {
+                "question": f"ఇచ్చిన పేరాగ్రాఫ్: \"{masked_s_or_intro}\" ప్రకారం క్రింది వాటిలో ఏది సరైనది?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "tamil": {
+                "question": f"கொடுக்கப்பட்ட பத்தி: \"{masked_s_or_intro}\" படி பின்வருவனவற்றில் எது சரியானது?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "gujarati": {
+                "question": f"આપેલ ફકરા મુજબ: \"{masked_s_or_intro}\" નીચેનામાંથી કયું વિધાન સાચું છે?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "kannada": {
+                "question": f"ನೀಡಿರುವ ಪ್ಯಾರಾಗ್ರಾಫ್: \"{masked_s_or_intro}\" ರ ಪ್ರಕಾರ ಈ ಕೆಳಗಿನವುಗಳಲ್ಲಿ ಯಾವುದು ಸರಿಯಾಗಿದೆ?",
+                "options": choices,
+                "correctIndex": correct_index
+            }
+        }
+    elif type_flag == 'keyword':
+        translations = {
+            "hindi": {
+                "question": f"रिक्त स्थान भरें! \"{masked_s_or_intro}\" यहाँ सही शब्द क्या होगा?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "hinglish": {
+                "question": f"Blank space fill karein! \"{masked_s_or_intro}\" What is the correct term?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "punjabi": {
+                "question": f"ਖਾਲੀ ਥਾਂ ਭਰੋ! \"{masked_s_or_intro}\" ਇੱਥੇ ਸਹੀ ਸ਼ਬਦ ਕੀ ਹੋਵੇਗਾ?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "bengali": {
+                "question": f"শূন্যস্থান পূরণ করুন! \"{masked_s_or_intro}\" এখানে সঠিক শব্দটি কি হবে?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "marathi": {
+                "question": f"रिकामी जागा भरा! \"{masked_s_or_intro}\" येथे योग्य शब्द कोणता असेल?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "telugu": {
+                "question": f"ఖాళీని పూరించండి! \"{masked_s_or_intro}\" ఇక్కడ సరైన పదం ఏమిటి?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "tamil": {
+                "question": f"கோடிட்ட இடத்தை நிரப்புக! \"{masked_s_or_intro}\" இங்கே crayfish சரியான சொல் எது?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "gujarati": {
+                "question": f"ખાલી જગ્યા પૂરો! \"{masked_s_or_intro}\" અહીં સાચો શબ્દ કયો હશે?",
+                "options": choices,
+                "correctIndex": correct_index
+            },
+            "kannada": {
+                "question": f"ಖಾಲಿ ಜಾಗವನ್ನು ತುಂಬಿ! \"{masked_s_or_intro}\" ಇಲ್ಲಿ ಸರಿಯಾದ ಪದ ಯಾವುದು?",
+                "options": choices,
+                "correctIndex": correct_index
+            }
+        }
+    elif type_flag == 'audit_fallback':
+        translations = {
+            "hindi": {
+                "question": f"{title} गाइडलाइंस के अनुसार ऑडिट की मुख्य प्रक्रिया क्या है?",
+                "options": [
+                    f"{title} मानकों के अनुसार दैनिक मिलान करें।",
+                    "केवल वित्तीय तिमाही के अंत में फाइलों की समीक्षा करें।",
+                    "पहले फाइलें स्वीकृत करें और सत्यापन बाद में करें।",
+                    "ऑडिट पूरी तरह से स्वैच्छिक है।"
+                ],
+                "correctIndex": correct_index
+            },
+            "hinglish": {
+                "question": f"{title} guidelines ke according audit ka main procedure kya hai?",
+                "options": [
+                    f"{title} standard ke according daily reconciliation karein.",
+                    "Sirf quarter end par files review karein.",
+                    "Pehle file disburse karein fir check karein.",
+                    "Audits purely voluntary base par hote hain."
+                ],
+                "correctIndex": correct_index
+            },
+            "punjabi": {
+                "question": f"{title} ਦਿਸ਼ਾ-ਨਿਰਦੇਸ਼ਾਂ ਦੇ ਅਨੁਸਾਰ ਆਡਿਟ ਦੀ ਮੁੱਖ ਪ੍ਰਕਿਰਿਆ ਕੀ ਹੈ?",
+                "options": [
+                    f"{title} ਮਿਆਰਾਂ ਅਨੁਸਾਰ ਰੋਜ਼ਾਨਾ ਮਿਲਾਣ ਕਰੋ।",
+                    "ਸਿਰਫ਼ ਵਿੱਤੀ ਤਿਮਾਹੀ ਦੇ ਅੰਤ ਵਿੱਚ ਫਾਈਲਾਂ ਦੀ ਸਮੀਖਿਆ ਕਰੋ।",
+                    "ਪਹਿਲਾਂ ਫਾਈਲਾਂ ਮਨਜ਼ੂਰ ਕਰੋ ਅਤੇ ਬਾਅਦ ਵਿੱਚ ਤਸਦੀਕ ਕਰੋ।",
+                    "ਆਡਿਟ ਪੂਰੀ ਤਰ੍ਹਾਂ ਸਵੈ-ਇੱਛਤ ਹੈ।"
+                ],
+                "correctIndex": correct_index
+            },
+            "bengali": {
+                "question": f"{title} নির্দেশিকা অনুসারে অডিট করার প্রধান পদ্ধতি কী?",
+                "options": [
+                    f"{title} মান অনুসারে দৈনিক সমন্বয় করুন।",
+                    "কেবলমাত্র প্রতিটি আর্থিক ত্রৈমাসিকের শেষে ফাইলগুলি পর্যালোচনা করুন।",
+                    "প্রথমে ফাইলগুলি বিতরণ করুন এবং পরে যাচাইকরণ করুন।",
+                    "অডিট সম্পূর্ণভাবে স্বেচ্ছামূলক ভিত্তিতে করা হয়।"
+                ],
+                "correctIndex": correct_index
+            },
+            "marathi": {
+                "question": f"{title} मार्गदर्शक तत्त्वांनुसार ऑडिटची मुख्य प्रक्रिया काय आहे?",
+                "options": [
+                    f"{title} मानकांनुसार दररोज ताळमेळ घाला।",
+                    "फक्त प्रत्येक आर्थिक तिमाहीच्या शेवटी फायलींचे पुनरावलोकन करा।",
+                    "आधी फायली वितरित करा आणि नंतर पडताळणी करा।",
+                    "ऑडिट पूर्णपणे ऐच्छिक तत्त्वावर केले जाते।"
+                ],
+                "correctIndex": correct_index
+            },
+            "telugu": {
+                "question": f"{title} మార్గదర్శకాల ప్రకారం ఆడిట్ యొక్క ప్రధాన విధానం ఏమిటి?",
+                "options": [
+                    f"{title} ప్రమాణాల ప్రకారం ప్రతిరోజూ సరిపోల్చండి.",
+                    "ప్రతి ఆర్థిక త్రైమాసికం చివరలో మాత్రమే ఫైళ్లను సమీక్షించండి.",
+                    "ముందుగా ఫైళ్లను పంపిణీ చేయండి మరియు తరువాత ధృవీకరించండి.",
+                    "ఆడిట్లు పూర్తిగా స్వచ్ఛంద ప్రాతిపదికన నిర్వహించబడతాయి।"
+                ],
+                "correctIndex": correct_index
+            },
+            "tamil": {
+                "question": f"{title} வழிகாட்டுதல்களின்படி தணிக்கையின் முதன்மை நடைமுறை என்ன?",
+                "options": [
+                    f"{title} தரநிலைகளின்படி தினசரி சமரசம் செய்யுங்கள்.",
+                    "ஒவ்வொரு நிதியாண்டின் காலாண்டு முடிவில் மட்டுமே கோப்புகளை மதிப்பாய்வு செய்யவும்.",
+                    "கோப்புகளை முதலில் வழங்கி பின்னர் சரிபார்ப்பை மேற்கொள்ளுங்கள்.",
+                    "தணிக்கைகள் முற்றிலும் தன்னிச்சையான அடிப்படையில் நடத்தப்படுகின்றன।"
+                ],
+                "correctIndex": correct_index
+            },
+            "gujarati": {
+                "question": f"{title} માર્ગદર્શિકા મુજબ ઓડિટની મુખ્ય પ્રક્રિયા શું છે?",
+                "options": [
+                    f"{title} ધોરણો અનુસાર દૈનિક સુમેળ સાધો.",
+                    "માત્ર દરેક નાણાકીય ત્રિમાસિક ગાળાના અંતે ફાઇલોની સમીક્ષા કરો.",
+                    "પહેલા ફાઇલોનું વિતરણ કરો અને પછી ચકાસણી કરો.",
+                    "ઓડિટ સંપૂર્ણપણે સ્વૈચ્છિક ધોરણે હાથ ધરવામાં આવે છે।"
+                ],
+                "correctIndex": correct_index
+            },
+            "kannada": {
+                "question": f"{title} ಮಾರ್ಗಸೂಚಿಗಳ ಪ್ರಕಾರ ಆಡಿಟ್‌ನ ಮುಖ್ಯ ಪ್ರಕ್ರಿಯೆ ಏನು?",
+                "options": [
+                    f"{title} ಮಾನದಂಡಗಳ ಪ್ರಕಾರ ಪ್ರತಿದಿನ ಹೊಂದಾಣಿಕೆ ಮಾಡಿ.",
+                    "ಪ್ರತಿ ಆರ್ಥಿಕ ತ್ರೈಮಾಸಿಕ ಕೊನೆಯಲ್ಲಿ ಮಾತ್ರ ಫೈಲ್‌ಗಳನ್ನು ಪರಿಶೀಲಿಸಿ.",
+                    "ಮೊದಲು ಫೈಲ್‌ಗಳನ್ನು ವಿತರಿಸಿ ಮತ್ತು ನಂತರ ಪರಿಶೀಲನೆ ನಡೆಸಿ.",
+                    "ಆಡಿಟ್‌ಗಳನ್ನು ಸಂಪೂರ್ಣವಾಗಿ ಸ್ವಯಂಪ್ರೇರಿತ ಆಧಾರದ ಮೇಲೆ ನಡೆಸಲಾಗುತ್ತದೆ।"
+                ],
+                "correctIndex": correct_index
+            }
+        }
+    return translations
+
 def generate_heuristic_questions(text_content, count, title="Module"):
     import re
     import random
@@ -813,26 +1104,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
             choices = list(set(choices))[:4]
             random.shuffle(choices)
             
-            easy_q = masked_s
-            easy_q = easy_q.replace("Loan-to-Value", "pocket money limit").replace("LTV", "piggy bank limit").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules").replace("threshold", "limit")
-            
-            translations = {
-                "easy": {
-                    "question": f"Let's play a game! Under the rule: \"{easy_q}\" What is the correct percentage?",
-                    "options": choices,
-                    "correctIndex": choices.index(correct_val)
-                },
-                "hindi": {
-                    "question": f"पॉलिसी डॉक्युमेंट के अनुसार: \"{masked_s}\" यहाँ सही प्रतिशत क्या होना चाहिए?",
-                    "options": choices,
-                    "correctIndex": choices.index(correct_val)
-                },
-                "hinglish": {
-                    "question": f"Policy guidelines ke according: \"{masked_s}\" Correct percentage kya hona chahiye?",
-                    "options": choices,
-                    "correctIndex": choices.index(correct_val)
-                }
-            }
+            translations = get_offline_translations('percentage', masked_s, choices, choices.index(correct_val), title)
             
             questions.append({
                 "question": f"According to the policy document: \"{masked_s}\" What is the correct percentage?",
@@ -864,26 +1136,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
             choices = list(set(choices))[:4]
             random.shuffle(choices)
             
-            easy_q = masked_s
-            easy_q = easy_q.replace("Loan-to-Value", "pocket money limit").replace("LTV", "piggy bank limit").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules").replace("threshold", "limit")
-            
-            translations = {
-                "easy": {
-                    "question": f"Based on the toy piggy bank rules: \"{easy_q}\" What is the correct number?",
-                    "options": choices,
-                    "correctIndex": choices.index(correct_val)
-                },
-                "hindi": {
-                    "question": f"गाइडलाइंस के अनुसार: \"{masked_s}\" यहाँ सही सीमा क्या होनी चाहिए?",
-                    "options": choices,
-                    "correctIndex": choices.index(correct_val)
-                },
-                "hinglish": {
-                    "question": f"Policy guidelines ke according: \"{masked_s}\" Correct threshold kya hona chahiye?",
-                    "options": choices,
-                    "correctIndex": choices.index(correct_val)
-                }
-            }
+            translations = get_offline_translations('threshold', masked_s, choices, choices.index(correct_val), title)
             
             questions.append({
                 "question": f"Based on the uploaded guidelines: \"{masked_s}\" What is the correct threshold?",
@@ -916,29 +1169,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
                 choices = [target_sentence, doc_distractors[0], doc_distractors[1], doc_distractors[2]]
                 random.shuffle(choices)
                 
-                easy_intro = intro_p.replace("Loan-to-Value", "pocket money").replace("LTV", "piggy bank").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules").replace("threshold", "limit")
-                easy_target = target_sentence.replace("Loan-to-Value", "pocket money").replace("LTV", "piggy bank").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules")
-                easy_distractors = [d.replace("Loan-to-Value", "pocket money").replace("LTV", "piggy bank").replace("tenure", "months to pay back").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules") for d in doc_distractors]
-                easy_choices = [easy_target, easy_distractors[0], easy_distractors[1], easy_distractors[2]]
-                random.shuffle(easy_choices)
-                
-                translations = {
-                    "easy": {
-                        "question": f"Given the section: \"{easy_intro}\" Which of the following is correct?",
-                        "options": easy_choices,
-                        "correctIndex": easy_choices.index(easy_target)
-                    },
-                    "hindi": {
-                        "question": f"दिए गए पैराग्राफ: \"{intro_p}\" के अनुसार कौन सा कथन सही है?",
-                        "options": choices,
-                        "correctIndex": choices.index(target_sentence)
-                    },
-                    "hinglish": {
-                        "question": f"Given paragraph: \"{intro_p}\" ke according, correct statement select karein:",
-                        "options": choices,
-                        "correctIndex": choices.index(target_sentence)
-                    }
-                }
+                translations = get_offline_translations('comprehension', intro_p, choices, choices.index(target_sentence), title)
                 
                 questions.append({
                     "question": f"Given the section: \"{intro_p}\" Which of the following is the most accurate statement according to the uploaded policy?",
@@ -972,25 +1203,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
                 choices = list(set(choices))[:4]
                 random.shuffle(choices)
                 
-                easy_masked = masked_s.replace("Loan-to-Value", "pocket money").replace("LTV", "piggy bank").replace("tenure", "months to pay").replace("maximum", "most").replace("minimum", "least").replace("policy", "game rules")
-                
-                translations = {
-                    "easy": {
-                        "question": f"Fill in the blank! \"{easy_masked}\" What is the correct simple word?",
-                        "options": choices,
-                        "correctIndex": choices.index(target_word)
-                    },
-                    "hindi": {
-                        "question": f"रिक्त स्थान भरें! \"{masked_s}\" यहाँ सही शब्द क्या होगा?",
-                        "options": choices,
-                        "correctIndex": choices.index(target_word)
-                    },
-                    "hinglish": {
-                        "question": f"Blank space fill karein! \"{masked_s}\" What is the correct term?",
-                        "options": choices,
-                        "correctIndex": choices.index(target_word)
-                    }
-                }
+                translations = get_offline_translations('keyword', masked_s, choices, choices.index(target_word), title)
                 
                 questions.append({
                     "question": f"Based strictly on the {title} documentation: \"{masked_s}\" What is the correct term to fill the blank?",
@@ -1012,38 +1225,7 @@ def generate_heuristic_questions(text_content, count, title="Module"):
         ]
         random.shuffle(choices)
         
-        translations = {
-            "easy": {
-                "question": f"How do we play by the game rules of {title}?",
-                "options": [
-                    f"Check our piggy banks daily according to {title} rules.",
-                    "Only clean our toys at the end of the month.",
-                    "Eat candies first and wash hands later.",
-                    "We do not need to follow any rules."
-                ],
-                "correctIndex": 0
-            },
-            "hindi": {
-                "question": f"{title} गाइडलाइंस के अनुसार ऑडिट की मुख्य प्रक्रिया क्या है?",
-                "options": [
-                    f"{title} मानकों के अनुसार दैनिक मिलान करें।",
-                    "केवल वित्तीय तिमाही के अंत में फाइलों की समीक्षा करें।",
-                    "पहले फाइलें स्वीकृत करें और सत्यापन बाद में करें।",
-                    "ऑडिट पूरी तरह से स्वैच्छिक है।"
-                ],
-                "correctIndex": 0
-            },
-            "hinglish": {
-                "question": f"{title} guidelines ke according audit ka main procedure kya hai?",
-                "options": [
-                    f"{title} standard ke according daily reconciliation karein.",
-                    "Sirf quarter end par files review karein.",
-                    "Pehle file disburse karein fir check karein.",
-                    "Audits purely voluntary base par hote hain."
-                ],
-                "correctIndex": 0
-            }
-        }
+        translations = get_offline_translations('audit_fallback', '', choices, 0, title)
         
         questions.append({
             "question": f"[{title} Q{q_idx + 1}] Under the uploaded reference guidelines, what is the primary procedure for compliance audits?",
@@ -1123,10 +1305,16 @@ def generate_module():
             Each question must have exactly 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
             Ensure the questions are challenging, dialogue-oriented, and directly based on the key rules, constraints, numeric thresholds, and exceptions inside the text.
             
-            For EACH question, you must also provide the translation or simplified adaptation of the question and its 4 options in these specific styles:
-            - "easy": Extremely simple English so that a 5-year-old child can easily understand (e.g. replacing complex banking terms like LTV ratio, CIBIL, interest with playful analogies like buying a toy, loan piggy-banks, or candy rules using simple nouns and verbs).
+            For EACH question, you must also provide the translation of the question and its 4 options in these specific languages/styles:
             - "hindi": Translated to conversational, clear Hindi (in Devanagari script).
             - "hinglish": Translated to conversational Hinglish (Hindi written in Latin script, e.g. "KYC document update karne ki maximum time-limit kya hai?").
+            - "punjabi": Translated to conversational Punjabi (in Gurmukhi script).
+            - "bengali": Translated to conversational Bengali (in Bengali script).
+            - "marathi": Translated to conversational Marathi (in Devanagari script).
+            - "telugu": Translated to conversational Telugu (in Telugu script).
+            - "tamil": Translated to conversational Tamil (in Tamil script).
+            - "gujarati": Translated to conversational Gujarati (in Gujarati script).
+            - "kannada": Translated to conversational Kannada (in Kannada script).
             
             Format your response STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks.
             Example format:
@@ -1136,11 +1324,6 @@ def generate_module():
                 "options": ["75%", "85%", "90%", "100%"],
                 "correctIndex": 1,
                 "translations": {{
-                  "easy": {{
-                    "question": "If you want to buy a big toy, what is the most candy money we can lend you from our piggy bank?",
-                    "options": ["75 pennies out of 100", "85 pennies out of 100", "90 pennies out of 100", "All the pennies"],
-                    "correctIndex": 1
-                  }},
                   "hindi": {{
                     "question": "नई पॉलिसी के तहत अधिकतम लोन रेशियो (LTV) कितना है?",
                     "options": ["75%", "85%", "90%", "100%"],
@@ -1148,6 +1331,41 @@ def generate_module():
                   }},
                   "hinglish": {{
                     "question": "New policy ke under maximum loan ratio kitna allowed hai?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }},
+                  "punjabi": {{
+                    "question": "ਨਵੀਂ ਪਾਲਿਸੀ ਦੇ ਤਹਿਤ ਵੱਧ ਤੋਂ ਵੱਧ ਲੋਨ ਰੇਸ਼ੋ (LTV) ਕਿੰਨੀ ਹੈ?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }},
+                  "bengali": {{
+                    "question": "নতুন পলিসির অধীনে সর্বাধিক ঋণের অনুপাত (LTV) কত অনুমোদিত?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }},
+                  "marathi": {{
+                    "question": "नवीन पॉलिसी अंतर्गत जास्तीत जास्त कर्ज गुणोत्तर (LTV) किती मंजूर आहे?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }},
+                  "telugu": {{
+                    "question": "కొత్త పాలసీ కింద గరిష్ట రుణ నిష్పత్తి (LTV) ఎంత అనుమతించబడుతుంది?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }},
+                  "tamil": {{
+                    "question": "புதிய கொள்கையின் கீழ் அனுமதிக்கப்பட்ட அதிகபட்ச கடன் விகிதம் (LTV) என்ன?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }},
+                  "gujarati": {{
+                    "question": "નવી પોલિસી હેઠળ મહત્તમ લોન રેશિયો (LTV) કેટલો મંજૂર છે?",
+                    "options": ["75%", "85%", "90%", "100%"],
+                    "correctIndex": 1
+                  }},
+                  "kannada": {{
+                    "question": "ಹೊಸ ಪಾಲಿಸಿಯ ಅಡಿಯಲ್ಲಿ ಗರಿಷ್ಠ ಸಾಲದ ಅನುಪಾತ (LTV) ಎಷ್ಟು ಅನುಮತಿಸಲಾಗಿದೆ?",
                     "options": ["75%", "85%", "90%", "100%"],
                     "correctIndex": 1
                   }}
@@ -1181,7 +1399,7 @@ def generate_module():
                 
                 For EACH question in the array:
                 1. **Validation Step 1 (Factual Accuracy & Depth)**: Cross-reference the question, options, and translations with the source document. Make sure the Socratic question and all its translations are factually accurate, deep, and do not misrepresent any details. Correct any errors.
-                2. **Validation Step 2 (Correct Index Audit)**: Verify that the option at the `correctIndex` is mathematically and factually the only correct answer. Ensure that in all translations (easy, hindi, hinglish), the option at `correctIndex` corresponds exactly to the correct answer.
+                2. **Validation Step 2 (Correct Index Audit)**: Verify that the option at the `correctIndex` is mathematically and factually the only correct answer. Ensure that in all translations (hindi, hinglish, punjabi, bengali, marathi, telugu, tamil, gujarati, kannada), the option at `correctIndex` corresponds exactly to the correct answer.
                 
                 Return the finalized, audited, and double-corrected questions array STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks. Follow the exact same format as input.
                 """

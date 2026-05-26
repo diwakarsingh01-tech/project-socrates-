@@ -4111,9 +4111,15 @@
                                         <div className="grid grid-cols-2 gap-1.5">
                                             {[
                                                 { id: 'en', label: 'English' },
-                                                { id: 'hindi', label: 'Hindi' },
+                                                { id: 'hindi', label: 'हिन्दी (Hindi)' },
                                                 { id: 'hinglish', label: 'Hinglish' },
-                                                { id: 'easy', label: 'Easy (Kid)' }
+                                                { id: 'punjabi', label: 'ਪੰਜਾਬੀ (Punjabi)' },
+                                                { id: 'bengali', label: 'বাংলা (Bengali)' },
+                                                { id: 'marathi', label: 'मराठी (Marathi)' },
+                                                { id: 'telugu', label: 'తెలుగు (Telugu)' },
+                                                { id: 'tamil', label: 'தமிழ் (Tamil)' },
+                                                { id: 'gujarati', label: 'ગુજરાતી (Gujarati)' },
+                                                { id: 'kannada', label: 'ಕನ್ನಡ (Kannada)' }
                                             ].map(lang => {
                                                 const isActive = selectedLanguageOverride === lang.id;
                                                 return (
@@ -4121,7 +4127,7 @@
                                                         key={lang.id}
                                                         type="button"
                                                         onClick={() => broadcastLanguageOverride(lang.id)}
-                                                        className={`py-2 px-1 rounded-lg text-[10px] font-bold border transition-all flex flex-col items-center justify-center ${
+                                                        className={`py-1.5 px-1 rounded-lg text-[9px] font-bold border transition-all flex flex-col items-center justify-center ${
                                                             isActive
                                                                 ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
                                                                 : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'

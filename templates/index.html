@@ -535,9 +535,15 @@
                         <div className="flex gap-1.5 overflow-x-auto py-0.5">
                             {[
                                 { id: 'en', label: 'English' },
-                                { id: 'hindi', label: 'Hindi' },
+                                { id: 'hindi', label: 'हिन्दी (Hindi)' },
                                 { id: 'hinglish', label: 'Hinglish' },
-                                { id: 'easy', label: 'Easy (Kid)' }
+                                { id: 'punjabi', label: 'ਪੰਜਾਬੀ (Punjabi)' },
+                                { id: 'bengali', label: 'বাংলা (Bengali)' },
+                                { id: 'marathi', label: 'मराठी (Marathi)' },
+                                { id: 'telugu', label: 'తెలుగు (Telugu)' },
+                                { id: 'tamil', label: 'தமிழ் (Tamil)' },
+                                { id: 'gujarati', label: 'ગુજરાતી (Gujarati)' },
+                                { id: 'kannada', label: 'ಕನ್ನಡ (Kannada)' }
                             ].map((lang) => {
                                 const isSelected = activeLanguage === lang.id;
                                 return (
@@ -545,7 +551,7 @@
                                         key={lang.id}
                                         type="button"
                                         onClick={() => setActiveLanguage(lang.id)}
-                                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                                        className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-all whitespace-nowrap ${
                                             isSelected 
                                                 ? 'bg-blue-600 border-blue-600 text-white shadow-sm' 
                                                 : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
