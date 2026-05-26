@@ -1326,6 +1326,7 @@
             const [reviewModuleId, setReviewModuleId] = useState(null);
             const [reviewTitle, setReviewTitle] = useState('');
             const [reviewQuestions, setReviewQuestions] = useState([]);
+            const [activeEditIdx, setActiveEditIdx] = useState(null);
 
             const loadModules = () => {
                 const trId = user?.id || 'ADMIN';
@@ -1461,6 +1462,7 @@
                             translations: q.translations
                         }));
                         setReviewQuestions(mappedQs);
+                        setActiveEditIdx(null);
                         setStatus('review');
                         setTitle('');
                         setSelectedFile(null);
@@ -1477,6 +1479,7 @@
             };
 
             const handleResumeAudit = (mod) => {
+                setActiveEditIdx(null);
                 setReviewModuleId(mod.id);
                 setReviewTitle(mod.title);
                 setReviewDifficulty(mod.difficulty || 'Medium');
@@ -1603,41 +1606,96 @@
                                                     </button>
                                                 </div>
                                                 
-                                                <div className="space-y-4">
-                                                    <div>
-                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Question Dialogue Text</label>
-                                                        <textarea 
-                                                            value={q.question_text} 
-                                                            onChange={(e) => updateQuestionField(idx, 'question_text', e.target.value)}
-                                                            className="input-field min-h-[60px]"
-                                                        />
+                                                {activeEditIdx === idx ? (
+                                                    <div className="space-y-4 animate-fade-in">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Question Dialogue Text</label>
+                                                            <textarea 
+                                                                value={q.question_text} 
+                                                                onChange={(e) => updateQuestionField(idx, 'question_text', e.target.value)}
+                                                                className="input-field min-h-[60px]"
+                                                            />
+                                                        </div>
+                                                        
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            {['a', 'b', 'c', 'd'].map((ch, i) => (
+                                                                <div key={ch} className="relative">
+                                                                    <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Option {ch.toUpperCase()}</label>
+                                                                    <input 
+                                                                        type="text" 
+                                                                        value={q[`option_${ch}`]} 
+                                                                        onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
+                                                                        className="input-field pr-12 font-medium"
+                                                                    />
+                                                                    <button
+                                                                        onClick={() => updateQuestionField(idx, 'correct_index', i)}
+                                                                        className={`absolute right-2 top-6 w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold transition-all ${
+                                                                            q.correct_index === i 
+                                                                                ? 'bg-emerald-500 text-white shadow-sm' 
+                                                                                : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
+                                                                        }`}
+                                                                        title="Set as Correct"
+                                                                    >
+                                                                        {ch.toUpperCase()}
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        
+                                                        <div className="flex justify-end pt-2">
+                                                            <button 
+                                                                onClick={() => setActiveEditIdx(null)}
+                                                                className="btn-primary py-1.5 px-4 rounded-xl text-xs font-bold bg-slate-800 border-slate-800 hover:bg-slate-900 text-white flex items-center gap-1.5 shadow-sm transition-all"
+                                                            >
+                                                                <i className="fas fa-check"></i> Done Editing
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        {['a', 'b', 'c', 'd'].map((ch, i) => (
-                                                            <div key={ch} className="relative">
-                                                                <label className="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Option {ch.toUpperCase()}</label>
-                                                                <input 
-                                                                    type="text" 
-                                                                    value={q[`option_${ch}`]} 
-                                                                    onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
-                                                                    className="input-field pr-12 font-medium"
-                                                                />
-                                                                <button
-                                                                    onClick={() => updateQuestionField(idx, 'correct_index', i)}
-                                                                    className={`absolute right-2 top-6 w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold transition-all ${
-                                                                        q.correct_index === i 
-                                                                            ? 'bg-emerald-500 text-white shadow-sm' 
-                                                                            : 'bg-slate-100 text-slate-400 hover:bg-slate-200'
-                                                                    }`}
-                                                                    title="Set as Correct"
-                                                                >
-                                                                    {ch.toUpperCase()}
-                                                                </button>
-                                                            </div>
-                                                        ))}
+                                                ) : (
+                                                    <div className="space-y-4 animate-fade-in">
+                                                        <p className="text-slate-800 font-bold text-sm sm:text-base leading-relaxed">
+                                                            {cleanQuestionText(q.question_text)}
+                                                        </p>
+                                                        
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                                                            {['a', 'b', 'c', 'd'].map((ch, i) => {
+                                                                const optVal = q[`option_${ch}`];
+                                                                const isCorrect = q.correct_index === i;
+                                                                return (
+                                                                    <div 
+                                                                        key={ch} 
+                                                                        className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${
+                                                                            isCorrect 
+                                                                                ? 'border-emerald-500 bg-emerald-50/40 text-emerald-950 font-bold shadow-sm' 
+                                                                                : 'border-slate-100 bg-slate-50/50 text-slate-600 font-semibold'
+                                                                        }`}
+                                                                    >
+                                                                        <div className={`w-6 h-6 rounded-lg border flex items-center justify-center text-xs font-extrabold shrink-0 ${
+                                                                            isCorrect 
+                                                                                ? 'border-emerald-500 bg-emerald-500 text-white' 
+                                                                                : 'border-slate-200 text-slate-400 bg-white'
+                                                                        }`}>
+                                                                            {ch.toUpperCase()}
+                                                                        </div>
+                                                                        <span className="text-xs leading-normal">{cleanOptionText(optVal)}</span>
+                                                                        {isCorrect && (
+                                                                            <i className="fas fa-check-circle text-emerald-500 ml-auto text-xs shrink-0"></i>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        
+                                                        <div className="flex justify-end pt-3 border-t border-slate-100 mt-2">
+                                                            <button 
+                                                                onClick={() => setActiveEditIdx(idx)}
+                                                                className="btn-outline py-1.5 px-3.5 rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 text-xs transition-all"
+                                                            >
+                                                                <i className="fas fa-edit text-slate-400"></i> Edit Question
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                )}
                                             </div>
                                         );
                                     })}
