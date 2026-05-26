@@ -178,35 +178,6 @@ def init_db():
     )''')
     
     conn.commit()
-    
-    # Pre-seed default template modules if none exist in the database
-    cursor.execute("SELECT COUNT(*) FROM modules")
-    if cursor.fetchone()[0] == 0:
-        try:
-            from seed_data import SEED_MODULES
-            import json
-            import datetime
-            now = datetime.datetime.now().strftime("%Y-%m-%d")
-            
-            for m in SEED_MODULES:
-                cursor.execute(
-                    "INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (m['title'], len(m['questions']), now, 'Ready', 'ADMIN', 'Super Admin', m['difficulty'])
-                )
-                module_id = cursor.lastrowid
-                
-                for q in m['questions']:
-                    opts = q['options']
-                    trans_json = json.dumps(q['translations'])
-                    cursor.execute(
-                        "INSERT INTO questions (module_id, question_text, option_a, option_b, option_c, option_d, correct_index, approved, translations) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (module_id, q['question'], opts[0], opts[1], opts[2], opts[3], q['correctIndex'], 1, trans_json)
-                    )
-            conn.commit()
-            print("Successfully pre-seeded default training modules with 10-language translations!")
-        except Exception as e:
-            print(f"Failed to seed default training modules: {str(e)}")
-            
     conn.close()
 
 init_db()
