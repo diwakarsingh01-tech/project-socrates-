@@ -1295,6 +1295,69 @@
                 }
             };
 
+            const handleExport = (mod) => {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(mod, null, 2));
+                const downloadAnchor = document.createElement('a');
+                downloadAnchor.setAttribute("href", dataStr);
+                downloadAnchor.setAttribute("download", `${mod.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_module.json`);
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+            };
+
+            const handleImportFile = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const parsed = JSON.parse(event.target.result);
+                        if (!parsed.title || (!parsed.questions && !parsed.questions_count)) {
+                            alert("❌ Invalid Socrates module format. Missing title or questions.");
+                            return;
+                        }
+                        
+                        const payload = {
+                            title: parsed.title,
+                            difficulty: parsed.difficulty || 'Medium',
+                            trainer_id: user?.id || 'ADMIN',
+                            audited_by: parsed.audited_by || 'Super Admin',
+                            questions: (parsed.questions || []).map(q => ({
+                                question_text: q.question_text || q.question,
+                                options: [q.option_a, q.option_b, q.option_c, q.option_d] || q.options,
+                                correctIndex: q.correct_index !== undefined ? q.correct_index : q.correctIndex,
+                                approved: q.approved !== undefined ? q.approved : 1,
+                                translations: q.translations || {}
+                            }))
+                        };
+                        
+                        fetch('/api/modules/save', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.status === 'success') {
+                                alert(`✓ Module "${parsed.title}" imported successfully!`);
+                                loadModules();
+                            } else {
+                                alert("Import failed: " + data.message);
+                            }
+                        })
+                        .catch(err => {
+                            console.error("Import API crash:", err);
+                            alert("Error saving imported module to database.");
+                        });
+                    } catch (err) {
+                        alert("❌ Failed to parse JSON file. Make sure it is a valid JSON module.");
+                    }
+                };
+                reader.readAsText(file);
+                e.target.value = ''; // Reset input
+            };
+
             const startGenerator = () => {
                 if(!title) return alert("Please enter a Module Title.");
                 
@@ -1652,7 +1715,23 @@
                     <div className="card overflow-hidden flex flex-col">
                         <div className="px-6 py-5 border-b border-socrates-border bg-slate-50 flex justify-between items-center">
                             <h3 className="font-bold text-socrates-dark text-lg">Manage Modules</h3>
-                            <span className="text-xs font-bold bg-blue-100 text-socrates-primary px-2 py-1 rounded-md">{modules.length} Available</span>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => document.getElementById('socrates-import-input').click()} 
+                                    className="btn-outline border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 py-1.5 px-2.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm transition-all"
+                                    title="Import Module JSON file"
+                                >
+                                    <i className="fas fa-file-import"></i> Import Module
+                                </button>
+                                <input 
+                                    type="file" 
+                                    id="socrates-import-input" 
+                                    onChange={handleImportFile} 
+                                    accept=".json" 
+                                    className="hidden" 
+                                />
+                                <span className="text-xs font-bold bg-blue-100 text-socrates-primary px-2 py-1 rounded-md">{modules.length} Available</span>
+                            </div>
                         </div>
                         <div className="p-6 flex-1 space-y-4 overflow-y-auto bg-white max-h-[460px]">
                             {modules.map((mod) => {
@@ -1702,6 +1781,7 @@
                                                         <i className="fas fa-clipboard-check"></i> Resume Audit
                                                     </button>
                                                 )}
+                                                <button onClick={() => handleExport(mod)} className="text-slate-400 hover:text-blue-500 transition-colors p-1" title="Export Module JSON"><i className="fas fa-file-export"></i></button>
                                                 <button onClick={() => handleDelete(mod.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1" title="Delete Module"><i className="fas fa-trash-alt"></i></button>
                                             </div>
                                         </div>
