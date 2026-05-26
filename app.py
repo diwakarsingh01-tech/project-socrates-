@@ -427,11 +427,23 @@ def get_metadata():
     
     bus = ["2-Wheeler Personal Loan", "Two-Wheeler", "Personal Loan", "Gold Loan", "Commercial Vehicle", "Retail"]
     
+    branches_list = [r[0] for r in branches]
+    if not branches_list:
+        branches_list = ["AHMEDABAD RF", "DELHI RF", "CHANDIGARH RF", "KOLKATA RF", "MUMBAI RF"]
+        
+    zones_list = [r[0] for r in zones]
+    if not zones_list:
+        zones_list = ["AMD_BU", "CH_BU", "DEL_BU", "KOL_BU"]
+        
+    divisions_list = [r[0] for r in divisions]
+    if not divisions_list:
+        divisions_list = ["GUJARAT DIVISION", "DELHI DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION"]
+        
     return jsonify({
         "business_units": bus,
-        "zones": [r[0] for r in zones],
-        "divisions": [r[0] for r in divisions],
-        "branches": [r[0] for r in branches]
+        "zones": zones_list,
+        "divisions": divisions_list,
+        "branches": branches_list
     })
 
 @app.route('/api/admin/reset-database', methods=['POST'])
@@ -500,13 +512,98 @@ def get_roster_filters():
     branches = conn.execute("SELECT DISTINCT branch_name, division FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
     conn.close()
     
+    zones_list = [r[0] for r in zones]
+    if not zones_list:
+        zones_list = ["AMD_BU", "CH_BU", "DEL_BU", "KOL_BU"]
+        
+    divisions_list = [r[0] for r in divisions]
+    # Always ensure default divisions are present
+    default_divs = ["GUJARAT DIVISION", "DELHI DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION", "MAHARASHTRA DIVISION"]
+    for div in default_divs:
+        if div not in divisions_list:
+            divisions_list.append(div)
+        
+    branches_list = [r[0] for r in branches]
+    # Always ensure the main RF centers are included in the branches list
+    default_rfs = ["AHMEDABAD RF", "DELHI RF", "CHANDIGARH RF", "KOLKATA RF", "MUMBAI RF"]
+    for rf in default_rfs:
+        if rf not in branches_list:
+            branches_list.append(rf)
+            
+    # Always ensure default branches meta is populated
+    branches_meta = [{"name": r[0], "division": r[1]} for r in branches]
+    existing_meta_names = {m["name"] for m in branches_meta}
+    rf_division_mapping = {
+        "AHMEDABAD RF": "GUJARAT DIVISION",
+        "DELHI RF": "DELHI DIVISION",
+        "CHANDIGARH RF": "PUNJAB DIVISION",
+        "KOLKATA RF": "BENGAL DIVISION",
+        "MUMBAI RF": "MAHARASHTRA DIVISION"
+    }
+    for rf in default_rfs:
+        if rf not in existing_meta_names:
+            branches_meta.append({"name": rf, "division": rf_division_mapping.get(rf, "GUJARAT DIVISION")})
+            
+    divisions_meta = [{"name": r[0], "zone": r[1]} for r in divisions]
+    existing_div_names = {d["name"] for d in divisions_meta}
+    div_zone_mapping = {
+        "GUJARAT DIVISION": "AMD_BU",
+        "DELHI DIVISION": "DEL_BU",
+        "PUNJAB DIVISION": "CH_BU",
+        "BENGAL DIVISION": "KOL_BU",
+        "MAHARASHTRA DIVISION": "AMD_BU"
+    }
+    for div in divisions_list:
+        if div not in existing_div_names and div in div_zone_mapping:
+            divisions_meta.append({"name": div, "zone": div_zone_mapping[div]})
+            
     return jsonify({
-        "zones": [r[0] for r in zones],
-        "divisions": [r[0] for r in divisions],
-        "branches": [r[0] for r in branches],
-        "divisions_meta": [{"name": r[0], "zone": r[1]} for r in divisions],
-        "branches_meta": [{"name": r[0], "division": r[1]} for r in branches]
+        "zones": zones_list,
+        "divisions": divisions_list,
+        "branches": branches_list,
+        "divisions_meta": divisions_meta,
+        "branches_meta": branches_meta
     })
+
+def normalize_employee_data(branch_name, business_unit, product_name, division=None):
+    b_name = (branch_name or "").strip().upper()
+    bu_name = (business_unit or "").strip()
+    p_name = (product_name or "").strip().upper()
+    
+    # Check if business_unit contains 'RF' or matches refresher centers (e.g. 'AHMEDABAD RF')
+    if any(rf in bu_name.upper() for rf in ['RF', 'AHMEDABAD', 'DELHI', 'CHANDIGARH', 'KOLKATA', 'MUMBAI']):
+        refresher_center = bu_name.upper().strip()
+        local_branch = b_name
+        
+        b_name = refresher_center
+        bu_name = "2-Wheeler Personal Loan"
+        p_name = local_branch
+        
+    # If branch_name is 2-Wheeler Personal Loan or similar, correct it
+    if b_name in ["2-WHEELER PERSONAL LOAN", "TWO-WHEELER", "PERSONAL LOAN", "GOLD LOAN", "COMMERCIAL VEHICLE", "RETAIL"]:
+        bu_name = branch_name
+        # Guess branch from division or default
+        div_upper = (division or "").strip().upper()
+        if "GUJARAT" in div_upper or "AHMEDABAD" in div_upper:
+            b_name = "AHMEDABAD RF"
+        elif "DELHI" in div_upper or "NORTH" in div_upper:
+            b_name = "DELHI RF"
+        elif "PUNJAB" in div_upper or "CHANDIGARH" in div_upper:
+            b_name = "CHANDIGARH RF"
+        elif "BENGAL" in div_upper or "KOLKATA" in div_upper or "EAST" in div_upper:
+            b_name = "KOLKATA RF"
+        elif "MUMBAI" in div_upper or "WEST" in div_upper:
+            b_name = "MUMBAI RF"
+        else:
+            b_name = "AHMEDABAD RF" # Default fallback
+            
+    if not bu_name:
+        bu_name = "2-Wheeler Personal Loan"
+        
+    if not p_name or p_name == 'N/A':
+        p_name = ""
+        
+    return b_name, bu_name, p_name
 
 @app.route('/api/roster/upload', methods=['POST'])
 def upload_roster():
@@ -600,9 +697,15 @@ def upload_roster():
         now_str = datetime.datetime.now().strftime("%Y-%m-%d")
         for _, row in rows:
             try:
+                b_name, bu_name, p_name = normalize_employee_data(
+                    row.get('Branch Name', ''),
+                    row.get('Business Unit', ''),
+                    row.get('Product Name', ''),
+                    row.get('Division', '')
+                )
                 conn.execute(
                     "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
-                    (row['Employee Code'], row['Employee Name'], row['Branch Name'], row['Zone'], row['Division'], row['Business Unit'], row['Role'], row['Product Name'], f"UPLOADED VIA CSV ON {now_str}")
+                    (row['Employee Code'], row['Employee Name'], b_name, row['Zone'], row['Division'], bu_name, row['Role'], p_name, f"UPLOADED VIA CSV ON {now_str}")
                 )
             except Exception as e:
                 conn.rollback()
@@ -625,6 +728,11 @@ def add_roster_manual():
     role = data.get('role', '').strip().upper()
     product_name = data.get('product_name', '').strip().upper()
     change_detail = data.get('change_detail', '').strip().upper()
+    
+    # Normalize employee fields
+    branch_name, business_unit, product_name = normalize_employee_data(
+        branch_name, business_unit, product_name, division
+    )
     
     if not change_detail:
         change_detail = "ADDED MANUALLY"
@@ -695,6 +803,11 @@ def handle_single_roster_item(emp_code):
         product_name = data.get('product_name', '').strip().upper()
         status = data.get('status', 'ACTIVE').strip().upper()
         change_detail = data.get('change_detail', '').strip().upper()
+        
+        # Normalize employee fields
+        branch_name, business_unit, product_name = normalize_employee_data(
+            branch_name, business_unit, product_name, division
+        )
         
         if not emp_name:
             conn.close()
