@@ -94,7 +94,7 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
         # 1. Search for existing file with the exact name in the folder
         escaped_title = title.replace("'", "\\'")
         query = f"name = '{escaped_title}.json' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         # 2. Encode payload as binary bytes
@@ -105,7 +105,7 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
             # Update existing file
             file_id = files[0]['id']
             print(f"[GDRIVE-SYNC] Updating existing module file '{filename}' (ID: {file_id}) in Google Drive.")
-            service.files().update(fileId=file_id, media_body=media).execute()
+            service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
         else:
             # Create new file
             file_metadata = {
@@ -113,7 +113,7 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
                 'parents': [folder_id]
             }
             print(f"[GDRIVE-SYNC] Creating new module file '{filename}' in Google Drive.")
-            service.files().create(body=file_metadata, media_body=media).execute()
+            service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
 
         print(f"[GDRIVE-SYNC] Successfully synchronized '{title}' to Google Drive.")
         return True
@@ -136,7 +136,7 @@ def delete_module_from_gdrive(title):
         # Search for the file in the designated folder
         escaped_title = title.replace("'", "\\'")
         query = f"name = '{escaped_title}.json' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         if not files:
@@ -147,7 +147,7 @@ def delete_module_from_gdrive(title):
         for f in files:
             file_id = f['id']
             print(f"[GDRIVE-SYNC] Deleting file '{f['name']}' (ID: {file_id}) from Google Drive.")
-            service.files().delete(fileId=file_id).execute()
+            service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
 
         print(f"[GDRIVE-SYNC] Successfully deleted '{title}' from Google Drive.")
         return True
@@ -170,7 +170,7 @@ def sync_modules_from_gdrive(conn=None):
     try:
         # 1. Fetch list of files from Google Drive folder (filtering locally to avoid unsupported Google API operators)
         query = f"'{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=100).execute()
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=100, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         if not files:
@@ -201,7 +201,7 @@ def sync_modules_from_gdrive(conn=None):
             
             try:
                 # 2. Download file content
-                request = service.files().get_media(fileId=file_id)
+                request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
                 fh = io.BytesIO()
                 downloader = MediaIoBaseDownload(fh, request)
                 done = False
@@ -316,7 +316,7 @@ def sync_roster_to_gdrive(conn=None):
         roster_data = [dict(e) for e in employees]
 
         query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         payload_bytes = json.dumps(roster_data, indent=2).encode('utf-8')
@@ -325,14 +325,14 @@ def sync_roster_to_gdrive(conn=None):
         if files:
             file_id = files[0]['id']
             print(f"[GDRIVE-SYNC] Syncing roster to Google Drive (updating existing file ID: {file_id})...")
-            service.files().update(fileId=file_id, media_body=media).execute()
+            service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
         else:
             file_metadata = {
                 'name': filename,
                 'parents': [folder_id]
             }
             print("[GDRIVE-SYNC] Syncing roster to Google Drive (creating new backup)...")
-            service.files().create(body=file_metadata, media_body=media).execute()
+            service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
 
         print("[GDRIVE-SYNC] Roster synced to Google Drive successfully.")
         return True
@@ -357,7 +357,7 @@ def sync_roster_from_gdrive(conn=None):
 
     try:
         query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         if not files:
@@ -367,7 +367,7 @@ def sync_roster_from_gdrive(conn=None):
         file_id = files[0]['id']
         print(f"[GDRIVE-SYNC] Downloading roster backup from Google Drive (ID: {file_id})...")
 
-        request = service.files().get_media(fileId=file_id)
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
         done = False
@@ -440,7 +440,7 @@ def sync_trainers_to_gdrive(conn=None):
         trainers_data = [dict(t) for t in trainers]
 
         query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         payload_bytes = json.dumps(trainers_data, indent=2).encode('utf-8')
@@ -449,14 +449,14 @@ def sync_trainers_to_gdrive(conn=None):
         if files:
             file_id = files[0]['id']
             print(f"[GDRIVE-SYNC] Syncing trainers to Google Drive (updating existing file ID: {file_id})...")
-            service.files().update(fileId=file_id, media_body=media).execute()
+            service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
         else:
             file_metadata = {
                 'name': filename,
                 'parents': [folder_id]
             }
             print("[GDRIVE-SYNC] Syncing trainers to Google Drive (creating new backup)...")
-            service.files().create(body=file_metadata, media_body=media).execute()
+            service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
 
         print("[GDRIVE-SYNC] Trainers synced to Google Drive successfully.")
         return True
@@ -481,7 +481,7 @@ def sync_trainers_from_gdrive(conn=None):
 
     try:
         query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         if not files:
@@ -491,7 +491,7 @@ def sync_trainers_from_gdrive(conn=None):
         file_id = files[0]['id']
         print(f"[GDRIVE-SYNC] Downloading trainers backup from Google Drive (ID: {file_id})...")
 
-        request = service.files().get_media(fileId=file_id)
+        request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
         fh = io.BytesIO()
         downloader = MediaIoBaseDownload(fh, request)
         done = False
@@ -600,7 +600,7 @@ def backup_db_to_gdrive():
 
             # Search for existing file in the folder
             query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+            results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
             files = results.get('files', [])
 
             # Read local database bytes safely
@@ -612,14 +612,14 @@ def backup_db_to_gdrive():
             if files:
                 file_id = files[0]['id']
                 print(f"[GDRIVE-SYNC] Backing up socrates.db to Google Drive (updating existing file ID: {file_id})...")
-                service.files().update(fileId=file_id, media_body=media).execute()
+                service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
             else:
                 file_metadata = {
                     'name': filename,
                     'parents': [folder_id]
                 }
                 print("[GDRIVE-SYNC] Backing up socrates.db to Google Drive (creating new backup)...")
-                service.files().create(body=file_metadata, media_body=media).execute()
+                service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
 
             LAST_BACKUP_TIME = time.time()
             print("[GDRIVE-SYNC] Database backup to Google Drive completed successfully.")
@@ -644,7 +644,7 @@ def start_db_backup_daemon():
             return None
         try:
             query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, spaces='drive', fields='files(id, modifiedTime)').execute()
+            results = service.files().list(q=query, spaces='drive', fields='files(id, modifiedTime)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
             files = results.get('files', [])
             if files:
                 return files[0]['modifiedTime']
