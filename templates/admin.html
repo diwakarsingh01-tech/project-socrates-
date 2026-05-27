@@ -204,7 +204,14 @@
                     if (res.ok) {
                         return res.json();
                     } else {
-                        return res.json().then(err => { throw new Error(err.message || 'Invalid Credentials'); });
+                        return res.text().then(text => {
+                            let msg = 'Invalid Credentials';
+                            try {
+                                const err = JSON.parse(text);
+                                msg = err.message || msg;
+                            } catch(e) {}
+                            throw new Error(msg);
+                        });
                     }
                 })
                 .then(data => {
