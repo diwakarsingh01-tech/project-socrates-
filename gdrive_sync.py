@@ -16,6 +16,161 @@ except ImportError:
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 DB_FILE = "socrates.db"
+
+# --- POSTGRESQL WRAPPER FOR SQLITE COMPATIBILITY ---
+class PostgresRow:
+    def __init__(self, description, row_data):
+        self.fields = [col[0].decode('utf-8') if isinstance(col[0], bytes) else col[0] for col in description]
+        self.data = row_data
+        self.mapping = {name: val for name, val in zip(self.fields, self.data)}
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self.data[key]
+        return self.mapping[key]
+
+    def keys(self):
+        return self.fields
+
+    def __len__(self):
+        return len(self.data)
+
+    def __iter__(self):
+        return iter(self.data)
+
+    def __repr__(self):
+        return f"PostgresRow({self.mapping})"
+
+class PostgresCursorWrapper:
+    def __init__(self, pg_cursor):
+        self.pg_cursor = pg_cursor
+        self._lastrowid = None
+
+    def execute(self, query, params=None):
+        # Convert SQLite ? placeholders to PostgreSQL %s placeholders
+        query = query.replace('?', '%s')
+        
+        # Translate SQLite-specific AUTOINCREMENT to PostgreSQL SERIAL
+        if "INTEGER PRIMARY KEY AUTOINCREMENT" in query:
+            query = query.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+            
+        # Handle SQLite-specific column-info pragma
+        if "PRAGMA table_info" in query:
+            import re
+            match = re.search(r"PRAGMA table_info\((\w+)\)", query, re.IGNORECASE)
+            if match:
+                table_name = match.group(1)
+                query = f"""
+                    SELECT 0 as cid, column_name as name, data_type as type, 
+                           case when is_nullable = 'NO' then 1 else 0 end as notnull,
+                           column_default as dflt_value, 0 as pk
+                    FROM information_schema.columns 
+                    WHERE table_name = '{table_name.lower()}'
+                """
+                params = None
+
+        # Automatically append RETURNING id for INSERT queries to populate lastrowid
+        is_insert = query.strip().upper().startswith("INSERT INTO")
+        if is_insert and "RETURNING" not in query.upper():
+            table_name = query.split()[2].lower().replace('(', '')
+            if "employees" not in table_name and "trainers" not in table_name and "training_sessions" not in table_name:
+                query += " RETURNING id"
+
+        if params is not None:
+            if not isinstance(params, (tuple, list)):
+                params = (params,)
+            self.pg_cursor.execute(query, params)
+        else:
+            self.pg_cursor.execute(query)
+
+        # Retrieve lastrowid if we appended RETURNING
+        if is_insert:
+            try:
+                row = self.pg_cursor.fetchone()
+                if row:
+                    self._lastrowid = row[0]
+            except Exception:
+                pass
+
+    def executemany(self, query, params_list):
+        query = query.replace('?', '%s')
+        self.pg_cursor.executemany(query, params_list)
+
+    def fetchone(self):
+        row = self.pg_cursor.fetchone()
+        if row and self.pg_cursor.description:
+            return PostgresRow(self.pg_cursor.description, row)
+        return row
+
+    def fetchall(self):
+        rows = self.pg_cursor.fetchall()
+        desc = self.pg_cursor.description
+        if rows and desc:
+            return [PostgresRow(desc, r) for r in rows]
+        return rows
+
+    def __iter__(self):
+        return iter(self.fetchall())
+
+    @property
+    def lastrowid(self):
+        return self._lastrowid
+
+class PostgresConnectionWrapper:
+    def __init__(self, pg_conn):
+        self.pg_conn = pg_conn
+        self.row_factory = None  # To match SQLite api signatures
+
+    def cursor(self):
+        return PostgresCursorWrapper(self.pg_conn.cursor())
+
+    def execute(self, query, params=None):
+        cursor = self.cursor()
+        cursor.execute(query, params)
+        return cursor
+
+    def commit(self):
+        self.pg_conn.commit()
+
+    def rollback(self):
+        self.pg_conn.rollback()
+
+    def close(self):
+        self.pg_conn.close()
+
+def get_db_connection():
+    db_url = os.environ.get('DATABASE_URL')
+    if db_url:
+        try:
+            from urllib.parse import urlparse
+            import pg8000.dbapi
+            
+            # Handle standard "postgres://" to "postgresql://" url schemes
+            if db_url.startswith("postgres://"):
+                db_url = db_url.replace("postgres://", "postgresql://", 1)
+                
+            url = urlparse(db_url)
+            username = url.username
+            password = url.password
+            database = url.path[1:]
+            hostname = url.hostname
+            port = url.port or 5432
+            
+            pg_conn = pg8000.dbapi.connect(
+                user=username,
+                password=password,
+                host=hostname,
+                database=database,
+                port=port
+            )
+            return PostgresConnectionWrapper(pg_conn)
+        except Exception as e:
+            print(f"[POSTGRES] Connection failed, falling back to SQLite: {str(e)}")
+            
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def load_dotenv():
     """
     Manually parses the local .env file (if it exists) to load environment variables
@@ -179,14 +334,16 @@ def sync_modules_from_gdrive(conn=None):
 
         print(f"[GDRIVE-SYNC] Found {len(files)} total files in Google Drive folder. Starting database restoration...")
 
-        # If a connection wasn't passed, manage our own SQLite connection
+        # If a connection wasn't passed, manage our own connection
         local_conn = False
         if conn is None:
-            conn = sqlite3.connect(DB_FILE)
-            conn.row_factory = sqlite3.Row
+            conn = get_db_connection()
             local_conn = True
         else:
-            conn.row_factory = sqlite3.Row
+            try:
+                conn.row_factory = sqlite3.Row
+            except Exception:
+                pass
 
         cursor = conn.cursor()
         now = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -305,13 +462,15 @@ def sync_roster_to_gdrive(conn=None):
 
     local_conn = False
     if conn is None:
-        conn = sqlite3.connect(DB_FILE)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         local_conn = True
 
     try:
         if conn is not None:
-            conn.row_factory = sqlite3.Row
+            try:
+                conn.row_factory = sqlite3.Row
+            except Exception:
+                pass
         employees = conn.execute("SELECT * FROM employees ORDER BY emp_code ASC").fetchall()
         roster_data = [dict(e) for e in employees]
 
@@ -378,11 +537,13 @@ def sync_roster_from_gdrive(conn=None):
 
         local_conn = False
         if conn is None:
-            conn = sqlite3.connect(DB_FILE)
-            conn.row_factory = sqlite3.Row
+            conn = get_db_connection()
             local_conn = True
         else:
-            conn.row_factory = sqlite3.Row
+            try:
+                conn.row_factory = sqlite3.Row
+            except Exception:
+                pass
 
         cursor = conn.cursor()
 
@@ -429,13 +590,15 @@ def sync_trainers_to_gdrive(conn=None):
 
     local_conn = False
     if conn is None:
-        conn = sqlite3.connect(DB_FILE)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection()
         local_conn = True
 
     try:
         if conn is not None:
-            conn.row_factory = sqlite3.Row
+            try:
+                conn.row_factory = sqlite3.Row
+            except Exception:
+                pass
         trainers = conn.execute("SELECT * FROM trainers ORDER BY trainer_id ASC").fetchall()
         trainers_data = [dict(t) for t in trainers]
 
@@ -502,11 +665,13 @@ def sync_trainers_from_gdrive(conn=None):
 
         local_conn = False
         if conn is None:
-            conn = sqlite3.connect(DB_FILE)
-            conn.row_factory = sqlite3.Row
+            conn = get_db_connection()
             local_conn = True
         else:
-            conn.row_factory = sqlite3.Row
+            try:
+                conn.row_factory = sqlite3.Row
+            except Exception:
+                pass
 
         cursor = conn.cursor()
 
@@ -546,10 +711,28 @@ def restore_db_from_gdrive():
     Restores the complete database structured contents from Google Drive JSON backup files.
     Ensures that Rosters, Trainers, and Modules are rebuilt perfectly.
     """
+    if os.environ.get('DATABASE_URL'):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM trainers")
+            t_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM employees")
+            e_count = cursor.fetchone()[0]
+            conn.close()
+            if t_count > 0 or e_count > 0:
+                print("[GDRIVE-SYNC] PostgreSQL database is already populated. Skipping initial restore from Google Drive.")
+                return True
+        except Exception as e:
+            print(f"[GDRIVE-SYNC] Error checking PostgreSQL populate state: {str(e)}")
+
     print("[GDRIVE-SYNC] Rebuilding database tables from Google Drive structured backups...")
     
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
+    conn = get_db_connection()
+    try:
+        conn.row_factory = sqlite3.Row
+    except Exception:
+        pass
     
     # 1. Pull trainers from Drive
     try:
@@ -581,6 +764,9 @@ def backup_db_to_gdrive():
     """
     global LAST_BACKUP_TIME
     import time
+    if os.environ.get('DATABASE_URL'):
+        return True
+
     service = get_gdrive_service()
     if not service:
         return False
@@ -654,6 +840,11 @@ def start_db_backup_daemon():
 
     def monitor_db():
         print("[GDRIVE-SYNC] Bidirectional database sync daemon started.")
+        if os.environ.get('DATABASE_URL'):
+            print("[GDRIVE-SYNC] PostgreSQL mode is active. Bidirectional SQLite file sync daemon will remain idle.")
+            while True:
+                time.sleep(3600)
+
         service = get_gdrive_service()
         
         last_local_mtime = 0
