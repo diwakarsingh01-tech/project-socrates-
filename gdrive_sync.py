@@ -142,7 +142,7 @@ def get_db_connection():
     db_url = os.environ.get('DATABASE_URL')
     if db_url:
         try:
-            from urllib.parse import urlparse
+            from urllib.parse import urlparse, unquote
             import pg8000.dbapi
             
             # Handle standard "postgres://" to "postgresql://" url schemes
@@ -150,8 +150,8 @@ def get_db_connection():
                 db_url = db_url.replace("postgres://", "postgresql://", 1)
                 
             url = urlparse(db_url)
-            username = url.username
-            password = url.password
+            username = unquote(url.username) if url.username else None
+            password = unquote(url.password) if url.password else None
             database = url.path[1:]
             hostname = url.hostname
             port = url.port or 5432
