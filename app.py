@@ -643,7 +643,7 @@ def get_metadata():
 
 @app.route('/api/gdrive/status', methods=['GET'])
 def get_gdrive_status():
-    from gdrive_sync import get_gdrive_service, LAST_BACKUP_TIME
+    from gdrive_sync import get_gdrive_service, LAST_BACKUP_TIME, load_sa_json
     
     folder_id = os.environ.get('GD_FOLDER_ID')
     sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
@@ -660,7 +660,7 @@ def get_gdrive_status():
             masked_folder_id = folder_id
             
         try:
-            info = json.loads(sa_json)
+            info = load_sa_json(sa_json)
             service_account_email = info.get('client_email', 'Unknown Service Account')
         except Exception:
             pass

@@ -195,6 +195,59 @@ def load_dotenv():
 # Automatically load environment variables from local .env on import
 load_dotenv()
 
+def clean_private_key(key_str):
+    if not isinstance(key_str, str):
+        return key_str
+    
+    # If the key contains literally '\n' as text, replace it with actual newlines
+    if '\\n' in key_str:
+        key_str = key_str.replace('\\n', '\n')
+        
+    # If the backslash was stripped and '\n' became literal 'n', we clean the headers
+    if "-----BEGIN PRIVATE KEY-----n" in key_str:
+        key_str = key_str.replace("-----BEGIN PRIVATE KEY-----n", "-----BEGIN PRIVATE KEY-----\n")
+    if "n-----END PRIVATE KEY-----" in key_str:
+        key_str = key_str.replace("n-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
+        
+    # Normalize headers wrapping
+    key_str = key_str.replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
+    key_str = key_str.replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
+    
+    # Normalize multiple newlines
+    while "\n\n" in key_str:
+        key_str = key_str.replace("\n\n", "\n")
+        
+    return key_str
+
+def load_sa_json(sa_json_str):
+    if not sa_json_str:
+        return None
+    sa_json_str = sa_json_str.strip()
+    
+    # Check if it is base64 encoded
+    if not sa_json_str.startswith('{'):
+        try:
+            import base64
+            decoded = base64.b64decode(sa_json_str).decode('utf-8')
+            if decoded.strip().startswith('{'):
+                sa_json_str = decoded.strip()
+        except Exception:
+            pass
+            
+    try:
+        info = json.loads(sa_json_str)
+    except Exception as e:
+        try:
+            # Attempt parsing after replacing double escaped backslashes
+            info = json.loads(sa_json_str.replace('\\\\', '\\'))
+        except Exception:
+            raise e
+            
+    if isinstance(info, dict) and 'private_key' in info:
+        info['private_key'] = clean_private_key(info['private_key'])
+        
+    return info
+
 def get_gdrive_service():
     """
     Initializes and returns the Google Drive API service using Google Service Account credentials.
@@ -212,8 +265,8 @@ def get_gdrive_service():
         return None
 
     try:
-        # Load the credentials JSON directly from memory
-        info = json.loads(sa_json)
+        # Load the credentials JSON directly from memory using the robust loader
+        info = load_sa_json(sa_json)
         credentials = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
         service = build('drive', 'v3', credentials=credentials)
         return service
@@ -719,8 +772,12 @@ def restore_db_from_gdrive():
             t_count = cursor.fetchone()[0]
             cursor.execute("SELECT COUNT(*) FROM employees")
             e_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM modules")
+            m_count = cursor.fetchone()[0]
             conn.close()
-            if t_count > 0 or e_count > 0:
+            # If we have custom trainers (more than the default ADMIN), or any employees, or any custom modules,
+            # we consider the database populated. Otherwise, it is brand-new and should be seeded.
+            if t_count > 1 or e_count > 0 or m_count > 0:
                 print("[GDRIVE-SYNC] PostgreSQL database is already populated. Skipping initial restore from Google Drive.")
                 return True
         except Exception as e:
