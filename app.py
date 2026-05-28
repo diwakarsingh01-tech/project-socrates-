@@ -362,6 +362,48 @@ def init_db():
         FOREIGN KEY(module_id) REFERENCES modules(id)
     )''')
     
+    # Branch Geofence Coordinates Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS branch_coordinates (
+        branch_name TEXT PRIMARY KEY,
+        zone TEXT NOT NULL,
+        division TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        manager_pin TEXT NOT NULL DEFAULT '1234'
+    )''')
+    
+    # Field Visits Table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS field_visits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trainer_id TEXT NOT NULL,
+        branch_name TEXT NOT NULL,
+        planned_date TEXT NOT NULL,
+        purpose TEXT NOT NULL,
+        key_contacts TEXT,
+        status TEXT DEFAULT 'PLANNED',
+        checkin_time TEXT,
+        checkin_latitude REAL,
+        checkin_longitude REAL,
+        co_presence_count INTEGER DEFAULT 0,
+        verification_time TEXT,
+        FOREIGN KEY (trainer_id) REFERENCES trainers(trainer_id),
+        FOREIGN KEY (branch_name) REFERENCES branch_coordinates(branch_name)
+    )''')
+
+    # Seed branch baseline coordinates if empty
+    cursor.execute("SELECT COUNT(*) FROM branch_coordinates")
+    if cursor.fetchone()[0] == 0:
+        seed_data = [
+            ('DELHI RF', 'North Zone', 'Delhi Division', 28.6139, 77.2090, '1234'),
+            ('AHMEDABAD RF', 'West Zone', 'Gujarat Division', 23.0225, 72.5714, '1234'),
+            ('CHANDIGARH RF', 'North Zone', 'Punjab Division', 30.7333, 76.7794, '1234'),
+            ('KOLKATA RF', 'East Zone', 'Bengal Division', 22.5726, 88.3639, '1234'),
+            ('MUMBAI RF', 'West Zone', 'Mumbai Division', 19.0760, 72.8777, '1234')
+        ]
+        cursor.executemany("INSERT INTO branch_coordinates VALUES (?, ?, ?, ?, ?, ?)", seed_data)
+        
     conn.commit()
     conn.close()
 
@@ -3089,6 +3131,243 @@ def on_trainer_command(data):
             
     # Forward general custom commands (e.g. final confetti podium) to all clients
     emit('client_command', data, room=pin)
+
+
+# ===================================================
+# FIELD-VISIT & SOCRATIC VERIFICATION SYSTEM APIs
+# ===================================================
+
+import math
+
+def calculate_haversine_distance(lat1, lon1, lat2, lon2):
+    R = 6371000.0  # Earth's radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    a = math.sin(delta_phi / 2.0)**2 + \
+        math.cos(phi1) * math.cos(phi2) * \
+        math.sin(delta_lambda / 2.0)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    
+    return R * c
+
+@app.route('/api/visits', methods=['GET'])
+def get_visits():
+    curr_user = session.get('user')
+    if not curr_user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # SuperAdmins fetch all field visits, standard trainers only fetch their own schedules
+    if curr_user['role'] == 'SuperAdmin':
+        cursor.execute('''
+            SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
+                   bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
+                   v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
+                   v.co_presence_count, v.verification_time, bc.manager_pin
+            FROM field_visits v
+            JOIN trainers t ON v.trainer_id = t.trainer_id
+            JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
+            ORDER BY v.planned_date DESC
+        ''')
+    else:
+        cursor.execute('''
+            SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
+                   bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
+                   v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
+                   v.co_presence_count, v.verification_time, bc.manager_pin
+            FROM field_visits v
+            JOIN trainers t ON v.trainer_id = t.trainer_id
+            JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
+            WHERE v.trainer_id = ?
+            ORDER BY v.planned_date DESC
+        ''', (curr_user['trainer_id'],))
+        
+    rows = cursor.fetchall()
+    
+    # Query branch delta scores (post_test - pre_test average growth)
+    cursor.execute('''
+        SELECT ts.branch_name, AVG(ar.post_test_score - ar.pre_test_score)
+        FROM assessment_results ar
+        JOIN training_sessions ts ON ar.session_id = ts.session_id
+        GROUP BY ts.branch_name
+    ''')
+    deltas = {row[0]: round(row[1], 1) if row[1] is not None else 0.0 for row in cursor.fetchall()}
+    conn.close()
+    
+    visits = []
+    for r in rows:
+        visits.append({
+            "id": r[0],
+            "trainer_id": r[1],
+            "trainer_name": r[2],
+            "branch_name": r[3],
+            "zone": r[4],
+            "division": r[5],
+            "latitude": r[6],
+            "longitude": r[7],
+            "planned_date": r[8],
+            "purpose": r[9],
+            "key_contacts": r[10],
+            "status": r[11],
+            "checkin_time": r[12],
+            "checkin_latitude": r[13],
+            "checkin_longitude": r[14],
+            "co_presence_count": r[15],
+            "verification_time": r[16],
+            "manager_pin": r[17],
+            "socratic_delta": deltas.get(r[3], 0.0)
+        })
+        
+    return jsonify(visits)
+
+@app.route('/api/visits/plan', methods=['POST'])
+def plan_visit():
+    curr_user = session.get('user')
+    if not curr_user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    data = request.json or {}
+    branch_name = data.get('branch_name', '').strip()
+    planned_date = data.get('planned_date', '').strip()
+    purpose = data.get('purpose', '').strip()
+    key_contacts = data.get('key_contacts', '').strip()
+    
+    if not branch_name or not planned_date or not purpose:
+        return jsonify({"status": "error", "message": "Branch Name, Planned Date, and Purpose are required."}), 400
+        
+    conn = get_db_connection()
+    bc = conn.execute("SELECT * FROM branch_coordinates WHERE branch_name=?", (branch_name,)).fetchone()
+    if not bc:
+        conn.close()
+        return jsonify({"status": "error", "message": f"Branch '{branch_name}' coordinates not registered in geofence benchmark database."}), 400
+        
+    conn.execute('''
+        INSERT INTO field_visits (trainer_id, branch_name, planned_date, purpose, key_contacts)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (curr_user['trainer_id'], branch_name, planned_date, purpose, key_contacts))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"status": "success", "message": "Field visit itinerary successfully planned!"})
+
+@app.route('/api/visits/checkin', methods=['POST'])
+def checkin_visit():
+    curr_user = session.get('user')
+    if not curr_user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    data = request.json or {}
+    visit_id = data.get('visit_id')
+    lat = data.get('latitude')
+    lon = data.get('longitude')
+    
+    if not visit_id or lat is None or lon is None:
+        return jsonify({"status": "error", "message": "Missing check-in location parameters."}), 400
+        
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM field_visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Field visit not found."}), 404
+        
+    bc = conn.execute("SELECT * FROM branch_coordinates WHERE branch_name=?", (visit['branch_name'],)).fetchone()
+    if not bc:
+        conn.close()
+        return jsonify({"status": "error", "message": "Target branch coordinates benchmark not found."}), 404
+        
+    distance = calculate_haversine_distance(lat, lon, bc['latitude'], bc['longitude'])
+    
+    if distance > 150.0:
+        conn.close()
+        return jsonify({
+            "status": "error",
+            "message": f"❌ Location Geofence Failed! You are {round(distance, 1)}m away from branch center. Please ensure you check-in within 150m of branch coordinates."
+        }), 400
+        
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    # Socratic Co-Presence count: active trainee completions on this date at this branch
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT COUNT(DISTINCT ar.emp_code)
+        FROM assessment_results ar
+        JOIN training_sessions ts ON ar.session_id = ts.session_id
+        WHERE ts.branch_name = ? AND ts.trainer_id = ? AND date(ar.completed_at) = date(?)
+    ''', (visit['branch_name'], curr_user['trainer_id'], now))
+    co_presence = cursor.fetchone()[0] or 0
+    
+    conn.execute('''
+        UPDATE field_visits
+        SET status = 'GEOFENCED', checkin_time = ?, checkin_latitude = ?, checkin_longitude = ?, co_presence_count = ?
+        WHERE id = ?
+    ''', (now, lat, lon, co_presence, visit_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "status": "success",
+        "message": f"🟢 GPS Verification Cleared! Located {round(distance, 1)}m from branch center. Active Socratic Co-presence: {co_presence} trainees.",
+        "co_presence": co_presence
+    })
+
+@app.route('/api/visits/verify', methods=['POST'])
+def verify_visit():
+    curr_user = session.get('user')
+    if not curr_user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    data = request.json or {}
+    visit_id = data.get('visit_id')
+    pin = data.get('manager_pin', '').strip()
+    
+    if not visit_id or not pin:
+        return jsonify({"status": "error", "message": "Missing validation parameters."}), 400
+        
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM field_visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Field visit not found."}), 404
+        
+    bc = conn.execute("SELECT * FROM branch_coordinates WHERE branch_name=?", (visit['branch_name'],)).fetchone()
+    if not bc:
+        conn.close()
+        return jsonify({"status": "error", "message": "Target branch coordinates benchmark not found."}), 404
+        
+    if bc['manager_pin'] != pin:
+        conn.close()
+        return jsonify({"status": "error", "message": "❌ Invalid Branch Manager PIN. Verification aborted."}), 400
+        
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    
+    # Recount final co-presence trainee list
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT COUNT(DISTINCT ar.emp_code)
+        FROM assessment_results ar
+        JOIN training_sessions ts ON ar.session_id = ts.session_id
+        WHERE ts.branch_name = ? AND ts.trainer_id = ? AND date(ar.completed_at) = date(?)
+    ''', (visit['branch_name'], curr_user['trainer_id'], now))
+    co_presence = cursor.fetchone()[0] or 0
+    
+    conn.execute('''
+        UPDATE field_visits
+        SET status = 'VERIFIED', verification_time = ?, co_presence_count = ?
+        WHERE id = ?
+    ''', (now, co_presence, visit_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "status": "success",
+        "message": "🟢 Branch visit successfully verified and logged by Branch Manager!"
+    })
+
 
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5050, host='0.0.0.0', allow_unsafe_werkzeug=True)

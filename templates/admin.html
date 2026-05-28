@@ -214,6 +214,7 @@
                     case 'library': return <LibraryView user={activeTrainer} />;
                     case 'analytics': return <AnalyticsView user={activeTrainer} />;
                     case 'access_mgmt': return <AccessMgmtView />;
+                    case 'travel_hub': return <TravelHubView user={activeTrainer} />;
                     default: return <AdminDashboard onNav={setView} user={activeTrainer} dbDiag={dbDiag} />;
                 }
             };
@@ -327,6 +328,7 @@
                             <div onClick={() => setView('library')} className={`nav-link ${view==='library'?'active':''}`}><i className="fas fa-robot w-5"></i> AI Module Library</div>
                             <div onClick={() => setView('roster')} className={`nav-link ${view==='roster'?'active':''}`}><i className="fas fa-users-cog w-5"></i> Employee Roster</div>
                             <div onClick={() => setView('analytics')} className={`nav-link ${view==='analytics'?'active':''}`}><i className="fas fa-chart-pie w-5"></i> Analytics Hub</div>
+                            <div onClick={() => setView('travel_hub')} className={`nav-link ${view==='travel_hub'?'active':''}`}><i className="fas fa-map-marked-alt w-5"></i> Field Travel Hub</div>
                             
                             {user?.role === 'SuperAdmin' && (
                                 <div onClick={() => setView('access_mgmt')} className={`nav-link ${view==='access_mgmt'?'active':''} mt-4 border-t border-slate-100 pt-4`}><i className="fas fa-user-shield w-5 text-purple-500"></i> Access Control</div>
@@ -454,6 +456,7 @@
                                     <div onClick={() => { setView('library'); setIsMobileMenuOpen(false); }} className={`nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all cursor-pointer ${view==='library'?'bg-blue-50 text-blue-700 shadow-sm border border-blue-100/50 font-semibold':'text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-robot w-5 text-center text-base"></i> AI Module Library</div>
                                     <div onClick={() => { setView('roster'); setIsMobileMenuOpen(false); }} className={`nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all cursor-pointer ${view==='roster'?'bg-blue-50 text-blue-700 shadow-sm border border-blue-100/50 font-semibold':'text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-users-cog w-5 text-center text-base"></i> Employee Roster</div>
                                     <div onClick={() => { setView('analytics'); setIsMobileMenuOpen(false); }} className={`nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all cursor-pointer ${view==='analytics'?'bg-blue-50 text-blue-700 shadow-sm border border-blue-100/50 font-semibold':'text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-chart-pie w-5 text-center text-base"></i> Analytics Hub</div>
+                                    <div onClick={() => { setView('travel_hub'); setIsMobileMenuOpen(false); }} className={`nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all cursor-pointer ${view==='travel_hub'?'bg-blue-50 text-blue-700 shadow-sm border border-blue-100/50 font-semibold':'text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-map-marked-alt w-5 text-center text-base"></i> Field Travel Hub</div>
                                     
                                     {user?.role === 'SuperAdmin' && (
                                         <div onClick={() => { setView('access_mgmt'); setIsMobileMenuOpen(false); }} className={`nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm transition-all cursor-pointer mt-4 border-t border-slate-100 pt-4 ${view==='access_mgmt'?'bg-purple-50 text-purple-700 shadow-sm border border-purple-100/50 font-semibold':'text-slate-600 hover:bg-slate-50'}`}><i className="fas fa-user-shield w-5 text-center text-base text-purple-500"></i> Access Control</div>
@@ -2755,6 +2758,572 @@
                             <button onClick={handleResetDatabase} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-4 rounded text-xs transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg">
                                 <i className="fas fa-trash-alt"></i> Clean All Demo Data
                             </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const TravelHubView = ({ user }) => {
+            const [visits, setVisits] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [showPlanModal, setShowPlanModal] = useState(false);
+            
+            // Plan form states
+            const [branchName, setBranchName] = useState('');
+            const [plannedDate, setPlannedDate] = useState('');
+            const [purposeTraining, setPurposeTraining] = useState(true);
+            const [purposeBusiness, setPurposeBusiness] = useState(false);
+            const [businessAgenda, setBusinessAgenda] = useState('');
+            const [keyContacts, setKeyContacts] = useState('');
+            
+            // Geofence active tracking states
+            const [activeCheckinVisit, setActiveCheckinVisit] = useState(null);
+            const [isLocating, setIsLocating] = useState(false);
+            const [checkinLocation, setCheckinLocation] = useState(null);
+            const [checkinResult, setCheckinResult] = useState(null);
+            const [managerPin, setManagerPin] = useState('');
+            const [verifyResult, setVerifyResult] = useState(null);
+            
+            const [branchOptions, setBranchOptions] = useState([]);
+
+            const loadVisits = () => {
+                setLoading(true);
+                fetch('/api/visits')
+                    .then(res => res.json())
+                    .then(data => {
+                        setVisits(data);
+                        setLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Error loading visits:", err);
+                        setLoading(false);
+                    });
+            };
+
+            useEffect(() => {
+                loadVisits();
+                // Load roster filters to get branch list options
+                fetch('/api/roster/filters')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.branches_meta) {
+                            // Seeded coordinates are only for these branches, let's filter to coordinate branches
+                            const seedBranches = ['DELHI RF', 'AHMEDABAD RF', 'CHANDIGARH RF', 'KOLKATA RF', 'MUMBAI RF'];
+                            setBranchOptions(data.branches_meta.filter(b => seedBranches.includes(b.name)));
+                        }
+                    })
+                    .catch(err => console.error("Error loading roster branches:", err));
+            }, []);
+
+            const handlePlanSubmit = (e) => {
+                e.preventDefault();
+                if (!branchName || !plannedDate) return alert("Please select branch and planned date.");
+                
+                const purposes = [];
+                if (purposeTraining) purposes.push("Training");
+                if (purposeBusiness) purposes.push("Business Discussion");
+                
+                if (purposes.length === 0) return alert("Please select at least one purpose (Training or Business Discussion).");
+                
+                let purposeText = purposes.join(" & ");
+                if (purposeBusiness && businessAgenda) {
+                    purposeText += ` (Agenda: ${businessAgenda.trim()})`;
+                }
+
+                fetch('/api/visits/plan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        branch_name: branchName,
+                        planned_date: plannedDate,
+                        purpose: purposeText,
+                        key_contacts: keyContacts.trim()
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setShowPlanModal(false);
+                        setBranchName('');
+                        setPlannedDate('');
+                        setPurposeTraining(true);
+                        setPurposeBusiness(false);
+                        setBusinessAgenda('');
+                        setKeyContacts('');
+                        loadVisits();
+                    } else {
+                        alert("❌ Error: " + data.message);
+                    }
+                })
+                .catch(err => console.error("Error planning visit:", err));
+            };
+
+            const triggerGPSCheckin = (visit) => {
+                setActiveCheckinVisit(visit);
+                setCheckinResult(null);
+                setVerifyResult(null);
+                setManagerPin('');
+                setIsLocating(true);
+                
+                if (!navigator.geolocation) {
+                    setIsLocating(false);
+                    alert("❌ Geolocation is not supported by your browser.");
+                    return;
+                }
+                
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const lat = position.coords.latitude;
+                        const lon = position.coords.longitude;
+                        setCheckinLocation({ latitude: lat, longitude: lon });
+                        
+                        fetch('/api/visits/checkin', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                visit_id: visit.id,
+                                latitude: lat,
+                                longitude: lon
+                            })
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            setIsLocating(false);
+                            if (data.status === 'success') {
+                                setCheckinResult({
+                                    status: 'success',
+                                    message: data.message,
+                                    co_presence: data.co_presence
+                                });
+                                loadVisits();
+                            } else {
+                                setCheckinResult({
+                                    status: 'error',
+                                    message: data.message
+                                });
+                            }
+                        })
+                        .catch(err => {
+                            setIsLocating(false);
+                            setCheckinResult({
+                                status: 'error',
+                                message: "Failed to communicate with check-in location server."
+                            });
+                        });
+                    },
+                    (error) => {
+                        setIsLocating(false);
+                        setCheckinResult({
+                            status: 'error',
+                            message: "❌ Geolocation access denied or unavailable. Please enable location permissions."
+                        });
+                    },
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+            };
+
+            const handleManagerPINVerify = (e) => {
+                e.preventDefault();
+                if (!managerPin) return;
+                
+                fetch('/api/visits/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        visit_id: activeCheckinVisit.id,
+                        manager_pin: managerPin
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setVerifyResult({ status: 'success', message: data.message });
+                        setManagerPin('');
+                        loadVisits();
+                        setTimeout(() => setActiveCheckinVisit(null), 2500);
+                    } else {
+                        setVerifyResult({ status: 'error', message: data.message });
+                    }
+                })
+                .catch(err => console.error("Error verifying PIN:", err));
+            };
+
+            // Calculate overall compliance (Plan vs Actual)
+            const verifiedCount = visits.filter(v => v.status === 'VERIFIED').length;
+            const geofencedCount = visits.filter(v => v.status === 'GEOFENCED').length;
+            const totalPlanned = visits.length;
+            const complianceRate = totalPlanned > 0 ? ((verifiedCount / totalPlanned) * 100).toFixed(1) : '0.0';
+
+            return (
+                <div className="space-y-6">
+                    {/* Header Controls Block */}
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl border border-socrates-border shadow-sm gap-4 animate-fade-in">
+                        <div>
+                            <h3 className="font-bold text-socrates-dark text-lg font-outfit">Socratic Travel Hub & FVSE</h3>
+                            <p className="text-xs text-slate-500 mt-1 font-medium">Pre-visit Travel Planner, Geofenced Check-in, & Socratic Manager Sign-off.</p>
+                        </div>
+                        {user?.role !== 'SuperAdmin' && (
+                            <button 
+                                onClick={() => setShowPlanModal(true)}
+                                className="btn-primary flex items-center gap-2 shadow-md bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2.5 px-4 font-bold text-xs rounded-xl transition-all"
+                            >
+                                <i className="fas fa-calendar-plus text-sm"></i> Plan Field Visit
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Planning Modal */}
+                    {showPlanModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all animate-scale-up">
+                                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-socrates-dark font-outfit">Plan New Field Itinerary</h3>
+                                        <p className="text-xs text-slate-500 mt-0.5 font-medium">Schedule branch visit and set meeting purposes.</p>
+                                    </div>
+                                    <button onClick={() => setShowPlanModal(false)} className="text-slate-400 hover:text-slate-700 text-xl focus:outline-none"><i className="fas fa-times"></i></button>
+                                </div>
+                                <form onSubmit={handlePlanSubmit}>
+                                    <div className="p-6 space-y-4">
+                                        {/* Branch Select */}
+                                        <div className="space-y-1.5">
+                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Target Branch</label>
+                                            <select 
+                                                value={branchName} 
+                                                onChange={e => setBranchName(e.target.value)} 
+                                                required 
+                                                className="input-field bg-white"
+                                            >
+                                                <option value="">-- Select Benchmark Branch --</option>
+                                                {branchOptions.map(b => (
+                                                    <option key={b.name} value={b.name}>{b.name} ({b.zone})</option>
+                                                ))}
+                                            </select>
+                                        </div>
+
+                                        {/* Planned Date */}
+                                        <div className="space-y-1.5">
+                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Planned Date</label>
+                                            <input 
+                                                type="date" 
+                                                value={plannedDate} 
+                                                onChange={e => setPlannedDate(e.target.value)} 
+                                                required 
+                                                className="input-field bg-white cursor-pointer" 
+                                            />
+                                        </div>
+
+                                        {/* Visit Purpose Checkboxes */}
+                                        <div className="space-y-2">
+                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Visit Purpose</label>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <label className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 cursor-pointer select-none">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={purposeTraining} 
+                                                        onChange={e => setPurposeTraining(e.target.checked)} 
+                                                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" 
+                                                    />
+                                                    <span className="text-xs font-bold text-slate-700">Socratic Training</span>
+                                                </label>
+                                                <label className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 cursor-pointer select-none">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={purposeBusiness} 
+                                                        onChange={e => setPurposeBusiness(e.target.checked)} 
+                                                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" 
+                                                    />
+                                                    <span className="text-xs font-bold text-slate-700">Business Discussion</span>
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        {/* Business Agenda details (if checked) */}
+                                        {purposeBusiness && (
+                                            <div className="space-y-1.5 animate-fade-in">
+                                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Business Discussion Agenda</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={businessAgenda} 
+                                                    onChange={e => setBusinessAgenda(e.target.value)} 
+                                                    required 
+                                                    placeholder="e.g. Branch audit, review PL leads, CSE productivity review" 
+                                                    className="input-field" 
+                                                />
+                                            </div>
+                                        )}
+
+                                        {/* Key Roster Contacts */}
+                                        <div className="space-y-1.5">
+                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Key Branch Contacts</label>
+                                            <input 
+                                                type="text" 
+                                                value={keyContacts} 
+                                                onChange={e => setKeyContacts(e.target.value)} 
+                                                placeholder="e.g. Branch Manager, Sales Executive (SF-1002)" 
+                                                className="input-field" 
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                                        <button type="button" onClick={() => setShowPlanModal(false)} className="btn-outline">Cancel</button>
+                                        <button type="submit" className="btn-primary shadow-md bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2 px-4 rounded-lg">Schedule Visit</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Geofence Check-in Panel (Floating Overlay/Full View when active) */}
+                    {activeCheckinVisit && (
+                        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white p-6 rounded-2xl shadow-xl border border-indigo-500/20 space-y-5 animate-fade-in relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -z-10"></div>
+                            
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <span className="bg-indigo-500/25 border border-indigo-400/30 text-indigo-300 font-extrabold text-[9px] uppercase tracking-widest px-2.5 py-0.5 rounded-full">
+                                        Verification Active
+                                    </span>
+                                    <h4 className="font-extrabold text-lg mt-2 font-outfit">Verification Deck: {activeCheckinVisit.branch_name}</h4>
+                                    <p className="text-[10px] text-slate-400 font-medium">Calculates physical coordinates to validate travel compliance.</p>
+                                </div>
+                                <button 
+                                    onClick={() => setActiveCheckinVisit(null)}
+                                    className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-all focus:outline-none"
+                                >
+                                    <i className="fas fa-times text-xs"></i>
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                                {/* Layer 1: GPS Geofence */}
+                                <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">Layer 1: GPS Geofence</h5>
+                                        {isLocating ? (
+                                            <i className="fas fa-spinner fa-spin text-blue-400 text-sm"></i>
+                                        ) : activeCheckinVisit.status === 'GEOFENCED' || activeCheckinVisit.status === 'VERIFIED' ? (
+                                            <i className="fas fa-check-circle text-emerald-400 text-base"></i>
+                                        ) : (
+                                            <i className="fas fa-map-marker-alt text-amber-400 text-base"></i>
+                                        )}
+                                    </div>
+                                    
+                                    {isLocating ? (
+                                        <div className="text-xs text-slate-400 animate-pulse py-2">Acquiring high-accuracy GPS coordinates...</div>
+                                    ) : checkinResult ? (
+                                        <div className={`p-3 rounded-lg text-xs font-semibold ${checkinResult.status === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'}`}>
+                                            {checkinResult.message}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <p className="text-[11px] text-slate-400 font-medium leading-relaxed">System demands physical presence confirmation. Click below to verify GPS.</p>
+                                            <button 
+                                                onClick={() => triggerGPSCheckin(activeCheckinVisit)}
+                                                className="w-full btn-primary bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-3 text-xs font-bold flex items-center justify-center gap-2 rounded-lg"
+                                            >
+                                                <i className="fas fa-satellite"></i> Capture Location Check-In
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Layer 2: Trainee Co-Presence */}
+                                <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">Layer 2: Co-Presence</h5>
+                                        {activeCheckinVisit.status === 'VERIFIED' ? (
+                                            <i className="fas fa-check-circle text-emerald-400 text-base"></i>
+                                        ) : (
+                                            <span className="bg-blue-500/25 border border-blue-400/30 text-blue-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full">
+                                                {activeCheckinVisit.co_presence_count} Joins
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="space-y-2 text-xs">
+                                        <p className="text-[11px] text-slate-400 font-medium leading-relaxed">Checks Socratic learning session activity. Local employees must join trainer session on QR scanner.</p>
+                                        <div className="p-3 bg-white/5 border border-white/10 rounded-lg flex items-center justify-between">
+                                            <span className="font-semibold text-slate-400">Roster Checkins:</span>
+                                            <span className="font-extrabold text-blue-400 text-sm">{activeCheckinVisit.co_presence_count} employees</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Layer 3: Branch PIN Verification */}
+                                <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">Layer 3: BM PIN Sign-off</h5>
+                                        {activeCheckinVisit.status === 'VERIFIED' ? (
+                                            <i className="fas fa-check-circle text-emerald-400 text-base"></i>
+                                        ) : (
+                                            <i className="fas fa-key text-slate-400 text-sm"></i>
+                                        )}
+                                    </div>
+                                    
+                                    {activeCheckinVisit.status === 'VERIFIED' ? (
+                                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-bold text-center rounded-lg">
+                                            Visit Signed Off & Completed Successfully!
+                                        </div>
+                                    ) : (
+                                        <form onSubmit={handleManagerPINVerify} className="space-y-3">
+                                            <input 
+                                                type="password" 
+                                                maxLength="4" 
+                                                value={managerPin} 
+                                                onChange={e => setManagerPin(e.target.value)} 
+                                                disabled={activeCheckinVisit.status === 'PLANNED'}
+                                                placeholder="Branch Manager PIN" 
+                                                className="w-full bg-white/5 border border-white/15 focus:border-indigo-400 rounded-lg py-2 px-3 text-center font-mono font-bold tracking-widest text-sm outline-none placeholder:font-sans placeholder:tracking-normal placeholder:text-xs placeholder:text-slate-500 disabled:opacity-50"
+                                            />
+                                            <button 
+                                                type="submit" 
+                                                disabled={activeCheckinVisit.status === 'PLANNED' || !managerPin}
+                                                className="w-full btn-primary bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 text-white py-2 px-3 text-xs font-bold flex items-center justify-center gap-2 rounded-lg"
+                                            >
+                                                <i className="fas fa-fingerprint"></i> Validate & Lock Visit
+                                            </button>
+                                        </form>
+                                    )}
+
+                                    {verifyResult && (
+                                        <div className={`p-2 rounded text-[11px] font-semibold text-center ${verifyResult.status === 'success' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
+                                            {verifyResult.message}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Zonal Compliance Summary stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="card p-5 border border-slate-200 shadow-sm flex items-center gap-4 bg-white animate-fade-in">
+                            <div className="w-12 h-12 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-center text-blue-600 text-xl shadow-inner shrink-0">
+                                <i className="fas fa-route"></i>
+                            </div>
+                            <div>
+                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Total Planned Journeys</div>
+                                <div className="font-extrabold text-2xl text-socrates-dark font-outfit mt-0.5">{totalPlanned} visits</div>
+                            </div>
+                        </div>
+                        <div className="card p-5 border border-slate-200 shadow-sm flex items-center gap-4 bg-white animate-fade-in">
+                            <div className="w-12 h-12 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 text-xl shadow-inner shrink-0">
+                                <i className="fas fa-check-double"></i>
+                            </div>
+                            <div>
+                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Verified Audits Completed</div>
+                                <div className="font-extrabold text-2xl text-socrates-dark font-outfit mt-0.5">{verifiedCount} branches</div>
+                            </div>
+                        </div>
+                        <div className="card p-5 border border-slate-200 shadow-sm flex items-center gap-4 bg-white animate-fade-in">
+                            <div className="w-12 h-12 bg-purple-50 border border-purple-100 rounded-xl flex items-center justify-center text-purple-600 text-xl shadow-inner shrink-0">
+                                <i className="fas fa-chart-line"></i>
+                            </div>
+                            <div>
+                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Plan vs. Actual Compliance</div>
+                                <div className="font-extrabold text-2xl text-socrates-dark font-outfit mt-0.5">{complianceRate}%</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Master Travel Itinerary Table Card */}
+                    <div className="card overflow-hidden border border-socrates-border bg-white shadow-sm">
+                        <div className="px-6 py-5 border-b border-socrates-border bg-white">
+                            <h4 className="font-bold text-socrates-dark text-base font-outfit">Itinerary Tracker & Field Logs</h4>
+                            <p className="text-xs text-slate-500 mt-1">Real-time tracking status of Socratic field training plans.</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                            {loading ? (
+                                <div className="p-12 flex flex-col justify-center items-center gap-3">
+                                    <div className="w-8 h-8 border-3 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
+                                    <span className="text-xs font-bold text-slate-400">Loading travel database...</span>
+                                </div>
+                            ) : visits.length === 0 ? (
+                                <div className="p-12 text-center text-slate-400 text-xs font-bold">
+                                    <i className="fas fa-map-marked-alt text-3xl text-slate-200 mb-2 block"></i>
+                                    No planned branch itineraries logged for this month.
+                                </div>
+                            ) : (
+                                <table className="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
+                                            <th className="py-3.5 px-6">Branch Name</th>
+                                            <th className="py-3.5 px-6">Planned Date</th>
+                                            <th className="py-3.5 px-6">Trainer</th>
+                                            <th className="py-3.5 px-6">Visit Purpose / Objective</th>
+                                            <th className="py-3.5 px-6">Contacts</th>
+                                            <th className="py-3.5 px-6 text-center">Status</th>
+                                            <th className="py-3.5 px-6 text-center">Co-Presence</th>
+                                            <th className="py-3.5 px-6 text-center">Socratic Delta</th>
+                                            <th className="py-3.5 px-6 text-center">Verification Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 font-medium">
+                                        {visits.map((visit) => (
+                                            <tr key={visit.id} className="hover:bg-slate-50/50 transition-colors">
+                                                <td className="py-4 px-6">
+                                                    <div className="font-extrabold text-socrates-dark">{visit.branch_name}</div>
+                                                    <div className="text-[10px] text-slate-400 mt-0.5">{visit.zone} • {visit.division}</div>
+                                                </td>
+                                                <td className="py-4 px-6 text-slate-600 font-bold">{visit.planned_date}</td>
+                                                <td className="py-4 px-6 text-slate-500 font-semibold">{visit.trainer_name}</td>
+                                                <td className="py-4 px-6 text-slate-600 max-w-[200px] truncate" title={visit.purpose}>
+                                                    {visit.purpose.includes("Training") && (
+                                                        <span className="inline-block bg-blue-50 text-blue-700 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded mr-1">Training</span>
+                                                    )}
+                                                    {visit.purpose.includes("Business Discussion") && (
+                                                        <span className="inline-block bg-purple-50 text-purple-700 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded mr-1">Discussion</span>
+                                                    )}
+                                                    <span className="text-[11px] text-slate-500 leading-snug">{visit.purpose}</span>
+                                                </td>
+                                                <td className="py-4 px-6 text-slate-500">{visit.key_contacts || 'Roster Team'}</td>
+                                                <td className="py-4 px-6 text-center">
+                                                    <span className={`px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider border ${
+                                                        visit.status === 'VERIFIED'
+                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                            : visit.status === 'GEOFENCED'
+                                                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                    }`}>
+                                                        {visit.status}
+                                                    </span>
+                                                </td>
+                                                <td className="py-4 px-6 text-center text-slate-600 font-bold">{visit.co_presence_count} CSEs</td>
+                                                <td className="py-4 px-6 text-center">
+                                                    <span className={`font-extrabold text-[11px] px-2 py-0.5 rounded-full ${
+                                                        visit.socratic_delta > 0
+                                                            ? 'bg-emerald-50 text-emerald-600'
+                                                            : 'bg-slate-100 text-slate-500'
+                                                    }`}>
+                                                        +{visit.socratic_delta}%
+                                                    </span>
+                                                </td>
+                                                <td className="py-4 px-6 text-center">
+                                                    {visit.status === 'VERIFIED' ? (
+                                                        <span className="text-slate-400 font-semibold text-xs flex items-center justify-center gap-1.5">
+                                                            <i className="fas fa-check-double text-emerald-500"></i> Locked
+                                                        </span>
+                                                    ) : user?.role === 'SuperAdmin' ? (
+                                                        <span className="text-slate-400 italic text-[11px]">Verify (Trainer Only)</span>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={() => setActiveCheckinVisit(visit)}
+                                                            className={`py-1 px-3 text-[10px] font-extrabold uppercase rounded-lg shadow-sm border transition-all ${
+                                                                visit.status === 'GEOFENCED'
+                                                                    ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
+                                                                    : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-700'
+                                                            }`}
+                                                        >
+                                                            {visit.status === 'GEOFENCED' ? 'Input PIN' : 'Start Check-In'}
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
                     </div>
                 </div>

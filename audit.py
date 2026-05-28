@@ -815,5 +815,118 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
             cursor.execute("DELETE FROM trainers WHERE trainer_id='TEST-TQR-1'")
             self.conn.commit()
 
+    def test_branch_coordinates_schema(self):
+        """Audit 18: Verify that branch_coordinates exist and DELHI RF is seeded"""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM branch_coordinates WHERE branch_name='DELHI RF'")
+        row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[1], 'North Zone')
+        self.assertEqual(row[3], 28.6139)
+        self.assertEqual(row[4], 77.2090)
+
+    def test_plan_visit_endpoint(self):
+        """Audit 19: Verify /api/visits/plan adds planned travel entries"""
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('TEST-TR-1', 'Test Trainer', 'All', 'password123', 'Trainer', 'Active')")
+        self.conn.commit()
+        
+        try:
+            # Login standard trainer to get session context
+            self.client.post('/api/admin/login', json={"trainer_id": "TEST-TR-1", "password": "password123"})
+            
+            # Plan a visit
+            res = self.client.post('/api/visits/plan', json={
+                "branch_name": "DELHI RF",
+                "planned_date": "2026-06-01",
+                "purpose": "Training & Business Discussion",
+                "key_contacts": "SF-1001"
+            })
+            self.assertEqual(res.status_code, 200)
+            
+            # Verify visit retrieval
+            res_list = self.client.get('/api/visits')
+            self.assertEqual(res_list.status_code, 200)
+            visits = json.loads(res_list.data)
+            
+            visit = next((v for v in visits if v['branch_name'] == 'DELHI RF' and v['planned_date'] == '2026-06-01'), None)
+            self.assertIsNotNone(visit)
+            self.assertEqual(visit['purpose'], "Training & Business Discussion")
+            self.assertEqual(visit['status'], "PLANNED")
+            
+        finally:
+            cursor.execute("DELETE FROM field_visits WHERE branch_name='DELHI RF' AND planned_date='2026-06-01'")
+            cursor.execute("DELETE FROM trainers WHERE trainer_id='TEST-TR-1'")
+            self.conn.commit()
+
+    def test_haversine_calculation(self):
+        """Audit 20: Verify backend calculate_haversine_distance is accurate"""
+        from app import calculate_haversine_distance
+        # Distance between AHMEDABAD RF (23.0225, 72.5714) and nearby point (23.0230, 72.5720)
+        dist = calculate_haversine_distance(23.0225, 72.5714, 23.0230, 72.5720)
+        self.assertTrue(50.0 < dist < 120.0)
+
+    def test_checkin_and_manager_verification(self):
+        """Audit 21: Verify visit state transitions (Planned -> Geofenced -> Verified)"""
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('TEST-TR-1', 'Test Trainer', 'All', 'password123', 'Trainer', 'Active')")
+        self.conn.commit()
+        
+        # 1. Plan a visit
+        cursor.execute("INSERT INTO field_visits (trainer_id, branch_name, planned_date, purpose) VALUES ('TEST-TR-1', 'DELHI RF', '2026-06-02', 'Training')")
+        visit_id = cursor.lastrowid
+        self.conn.commit()
+        
+        try:
+            # Login standard trainer
+            self.client.post('/api/admin/login', json={"trainer_id": "TEST-TR-1", "password": "password123"})
+
+            # 2. Check-in from outside geofence (should fail)
+            res_fail = self.client.post('/api/visits/checkin', json={
+                "visit_id": visit_id,
+                "latitude": 12.9716, # Bangalore lat (very far from Delhi!)
+                "longitude": 77.5946
+            })
+            self.assertEqual(res_fail.status_code, 400)
+            
+            # 3. Check-in inside geofence (28.6139, 77.2090)
+            res_pass = self.client.post('/api/visits/checkin', json={
+                "visit_id": visit_id,
+                "latitude": 28.6140,
+                "longitude": 77.2091
+            })
+            self.assertEqual(res_pass.status_code, 200)
+            
+            # Verify status is GEOFENCED
+            res_list = self.client.get('/api/visits')
+            visits = json.loads(res_list.data)
+            visit = next((v for v in visits if v['id'] == visit_id), None)
+            self.assertEqual(visit['status'], 'GEOFENCED')
+            
+            # 4. Verify with wrong manager PIN (should fail)
+            res_pin_fail = self.client.post('/api/visits/verify', json={
+                "visit_id": visit_id,
+                "manager_pin": "9999"
+            })
+            self.assertEqual(res_pin_fail.status_code, 400)
+            
+            # 5. Verify with correct manager PIN (seeded as '1234')
+            res_pin_pass = self.client.post('/api/visits/verify', json={
+                "visit_id": visit_id,
+                "manager_pin": "1234"
+            })
+            self.assertEqual(res_pin_pass.status_code, 200)
+            
+            # Verify status is VERIFIED
+            res_list2 = self.client.get('/api/visits')
+            visits2 = json.loads(res_list2.data)
+            visit2 = next((v for v in visits2 if v['id'] == visit_id), None)
+            self.assertEqual(visit2['status'], 'VERIFIED')
+            
+        finally:
+            cursor.execute("DELETE FROM field_visits WHERE id=?", (visit_id,))
+            cursor.execute("DELETE FROM trainers WHERE trainer_id='TEST-TR-1'")
+            self.conn.commit()
+
 if __name__ == '__main__':
     unittest.main()
