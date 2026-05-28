@@ -156,6 +156,13 @@ def get_db_connection():
             hostname = url.hostname
             port = url.port or 5432
             
+            # Defensive Rewrite: Supabase poolers on port 5432 often time out in hosted environments
+            # like Render due to outbound firewall restrictions on direct PostgreSQL ports.
+            # We automatically switch to the Transaction Pooler port 6543 which is open.
+            if hostname and ".pooler.supabase.com" in hostname.lower() and port == 5432:
+                print("[POSTGRES] Automatically rewriting Supabase pooler port from 5432 to 6543 for Render compatibility.")
+                port = 6543
+            
             import ssl
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
