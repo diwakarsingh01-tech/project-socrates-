@@ -561,6 +561,28 @@
                                     </p>
                                 </div>
                             )
+                        ) : (dbDiag?.database_type === 'SQLite' && !dbDiag?.is_ephemeral) ? (
+                            <div className="card p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border-l-4 border-l-emerald-500 relative overflow-hidden group shadow-sm rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in">
+                                <div className="flex items-start gap-4 min-w-0">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg border border-emerald-100 shadow-sm shrink-0"><i className="fas fa-database"></i></div>
+                                    <div className="min-w-0">
+                                        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-0.5 flex items-center gap-2">
+                                            <span className="relative flex h-2 w-2 shrink-0">
+                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                            </span>
+                                            Local Persistent Storage Active (socrates.db)
+                                        </h3>
+                                        <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-4xl">
+                                            Socrates is running in local development mode on your machine. All uploaded rosters, trainer profiles, Socratic modules, and trainee analytics are permanently saved to your local database file and will never be lost on restart.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="shrink-0 flex items-center gap-2 bg-emerald-50/50 border border-emerald-200/30 px-3 py-1.5 rounded-xl text-[11px] text-emerald-700 font-bold shadow-sm">
+                                    <i className="fas fa-check-circle"></i>
+                                    <span>Local Safe Persistence Active</span>
+                                </div>
+                            </div>
                         ) : (!syncStatus.configured && !hideSyncWarnings) ? (
                             <div className="card p-6 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-l-4 border-l-amber-500 relative overflow-hidden group shadow-sm rounded-2xl">
                                 <button 

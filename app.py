@@ -871,7 +871,8 @@ def get_db_diagnostics():
         "database_type": db_type,
         "connection_status": status,
         "connection_error": error_msg,
-        "database_url": masked_url
+        "database_url": masked_url,
+        "is_ephemeral": bool(os.environ.get('RENDER') == 'true')
     })
 
 @app.route('/api/admin/reset-database', methods=['POST'])
