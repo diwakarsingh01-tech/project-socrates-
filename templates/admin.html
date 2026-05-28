@@ -152,8 +152,16 @@
             const [user, setUser] = useState(null); 
             const [trainersList, setTrainersList] = useState([]);
             const [impersonatedTrainer, setImpersonatedTrainer] = useState(null);
+            const [dbDiag, setDbDiag] = useState({ database_type: 'Checking...', connection_status: 'Checking...', connection_error: null, database_url: '' });
 
             const activeTrainer = impersonatedTrainer || user;
+
+            useEffect(() => {
+                fetch('/api/admin/diagnostics')
+                    .then(res => res.json())
+                    .then(data => setDbDiag(data))
+                    .catch(err => setDbDiag({ database_type: 'Unknown', connection_status: 'Failed to fetch', connection_error: err.message, database_url: '' }));
+            }, []);
 
             useEffect(() => {
                 if (user?.role === 'SuperAdmin') {
@@ -244,6 +252,33 @@
                                     <input type="password" id="loginPwd" defaultValue="admin123" className="input-field" />
                                 </div>
                                 <button onClick={() => handleLogin(document.getElementById('loginId').value, document.getElementById('loginPwd').value)} className="w-full btn-primary mt-6">Secure Login</button>
+                            </div>
+
+                            {/* Database Diagnostics Badge */}
+                            <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col items-center">
+                                <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                                    <span className={`w-2 h-2 rounded-full ${
+                                        dbDiag.connection_status === 'Connected' ? 'bg-emerald-500' : 'bg-rose-500'
+                                    }`}></span>
+                                    <span>System Database Status:</span>
+                                </div>
+                                <div className="mt-2 text-xs flex flex-wrap justify-center gap-2">
+                                    <span className={`px-2.5 py-0.5 rounded-full font-semibold border ${
+                                        dbDiag.connection_status === 'Connected' 
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                                            : dbDiag.connection_status === 'Checking...'
+                                                ? 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
+                                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                                    }`}>
+                                        <i className={`fas ${dbDiag.database_type === 'PostgreSQL' ? 'fa-database' : 'fa-folder-open'} mr-1`}></i>
+                                        {dbDiag.database_type} ({dbDiag.connection_status})
+                                    </span>
+                                </div>
+                                {dbDiag.connection_error && (
+                                    <div className="mt-2.5 p-2 bg-rose-50 border border-rose-100 rounded-lg text-[10px] text-rose-600 font-semibold text-center max-w-xs break-all">
+                                        Connection Error: {dbDiag.connection_error}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

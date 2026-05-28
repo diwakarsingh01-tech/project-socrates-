@@ -687,6 +687,63 @@ def get_gdrive_status():
         "last_sync": last_sync_str
     })
 
+@app.route('/api/admin/diagnostics', methods=['GET'])
+def get_db_diagnostics():
+    db_url = os.environ.get('DATABASE_URL')
+    db_type = 'SQLite'
+    status = 'Connected'
+    error_msg = None
+    masked_url = 'Not Configured'
+    
+    if db_url:
+        db_type = 'PostgreSQL'
+        try:
+            from urllib.parse import urlparse
+            # Handle standard "postgres://" to "postgresql://" url schemes
+            if db_url.startswith("postgres://"):
+                db_url = db_url.replace("postgres://", "postgresql://", 1)
+                
+            url = urlparse(db_url)
+            hostname = url.hostname or 'Unknown'
+            port = url.port or 5432
+            masked_url = f"postgresql://***@{hostname}:{port}{url.path}"
+            
+            import pg8000.dbapi
+            from urllib.parse import unquote
+            username = unquote(url.username) if url.username else None
+            password = unquote(url.password) if url.password else None
+            database = url.path[1:]
+            
+            # Attempt a quick direct connection to verify if it works
+            pg_conn = pg8000.dbapi.connect(
+                user=username,
+                password=password,
+                host=hostname,
+                database=database,
+                port=port,
+                timeout=5  # Short timeout to avoid hanging the Gunicorn worker thread
+            )
+            pg_conn.close()
+        except Exception as e:
+            status = 'Failed'
+            error_msg = str(e)
+    else:
+        # Check SQLite sanity
+        try:
+            conn = sqlite3.connect(DB_FILE)
+            conn.execute("SELECT 1").close()
+            conn.close()
+        except Exception as e:
+            status = 'Failed'
+            error_msg = str(e)
+            
+    return jsonify({
+        "database_type": db_type,
+        "connection_status": status,
+        "connection_error": error_msg,
+        "database_url": masked_url
+    })
+
 @app.route('/api/admin/reset-database', methods=['POST'])
 def reset_database():
     conn = get_db_connection()
