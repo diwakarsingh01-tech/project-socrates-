@@ -128,9 +128,77 @@ def run_audit():
     except Exception as save_err:
         print(f"\n[AUDITOR] Error saving report file: {str(save_err)}")
         
+    # Send automatic Gmail notification
+    send_email_report(report_content)
+        
     if overall_status != "HEALTHY":
         sys.exit(1)
     sys.exit(0)
+
+def send_email_report(report_content):
+    import os
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    sender_email = os.environ.get("SENDER_EMAIL", "diwakar.singh01@gmail.com")
+    receiver_email = "diwakar.singh01@gmail.com"
+    app_password = os.environ.get("SENDER_APP_PASSWORD")
+    
+    if not app_password:
+        print("\n[EMAIL-ALERT] Skipped sending Gmail alert: 'SENDER_APP_PASSWORD' environment variable is not configured.")
+        print("[EMAIL-ALERT] To enable automatic Gmail alerts, add 'SENDER_APP_PASSWORD' to environment variables.")
+        return
+        
+    try:
+        print(f"\n[EMAIL-ALERT] Attempting to send daily audit email to: {receiver_email}...")
+        
+        # HTML formatting for the email
+        html_content = f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333333; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #fafafa;">
+            <div style="background-color: #2563eb; color: #ffffff; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+                <h2 style="margin: 0; font-size: 20px;">Socrates Live System Daily Audit</h2>
+                <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.9;">Audit timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S IST')}</p>
+            </div>
+            <div style="padding: 20px; background-color: #ffffff; border-radius: 0 0 8px 8px; border: 1px solid #e2e8f0; border-top: none;">
+                <p>Hello Trainer,</p>
+                <p>Here is your daily Socrates system status report generated before business opening:</p>
+                
+                <hr style="border: none; border-top: 1.5px solid #f1f5f9; margin: 20px 0;" />
+                
+                <pre style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 15px; font-family: monospace; white-space: pre-wrap; font-size: 13px; color: #334155;">
+{report_content}
+                </pre>
+                
+                <hr style="border: none; border-top: 1.5px solid #f1f5f9; margin: 20px 0;" />
+                
+                <p style="font-size: 12px; color: #64748b; text-align: center; margin-top: 20px;">
+                    This is an automated system health report. Secure cloud connections are active.
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"🎯 Socrates Live Daily Audit Report: {datetime.now().strftime('%Y-%m-%d')}"
+        msg["From"] = sender_email
+        msg["To"] = receiver_email
+        
+        part1 = MIMEText(report_content, "plain")
+        part2 = MIMEText(html_content, "html")
+        msg.attach(part1)
+        msg.attach(part2)
+        
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(sender_email, app_password)
+            server.sendmail(sender_email, receiver_email, msg.as_string())
+            
+        print("[EMAIL-ALERT] Gmail audit report successfully sent!")
+    except Exception as e:
+        print(f"[EMAIL-ALERT] Error sending Gmail notification: {str(e)}")
 
 if __name__ == "__main__":
     run_audit()
