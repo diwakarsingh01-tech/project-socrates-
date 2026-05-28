@@ -429,6 +429,7 @@
                 service_account_email: "Loading...",
                 last_sync: "Loading..."
             });
+            const [hideSyncWarnings, setHideSyncWarnings] = useState(() => localStorage.getItem('socrates_hide_sync_warnings') === 'true');
             const [stats, setStats] = useState({
                 sessions_count: 12,
                 branches_visited: 4,
@@ -560,8 +561,15 @@
                                     </p>
                                 </div>
                             )
-                        ) : !syncStatus.configured ? (
+                        ) : (!syncStatus.configured && !hideSyncWarnings) ? (
                             <div className="card p-6 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-l-4 border-l-amber-500 relative overflow-hidden group shadow-sm rounded-2xl">
+                                <button 
+                                    onClick={() => { localStorage.setItem('socrates_hide_sync_warnings', 'true'); setHideSyncWarnings(true); }} 
+                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/30 w-6 h-6 rounded-full flex items-center justify-center transition-colors z-20"
+                                    title="Dismiss Warning"
+                                >
+                                    <i className="fas fa-times text-[10px]"></i>
+                                </button>
                                 <div className="absolute right-4 top-4 w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shadow-sm border border-amber-100/50"><i className="fas fa-exclamation-triangle"></i></div>
                                 <h3 className="font-bold text-slate-800 text-sm md:text-base tracking-tight mb-1 flex items-center gap-2">
                                     <span className="relative flex h-2.5 w-2.5 shrink-0">
@@ -583,8 +591,15 @@
                                     </code>
                                 </div>
                             </div>
-                        ) : !syncStatus.connected ? (
+                        ) : (!syncStatus.connected && !hideSyncWarnings) ? (
                             <div className="card p-6 bg-gradient-to-r from-red-500/10 to-pink-500/5 border-l-4 border-l-red-500 relative overflow-hidden group shadow-sm rounded-2xl">
+                                <button 
+                                    onClick={() => { localStorage.setItem('socrates_hide_sync_warnings', 'true'); setHideSyncWarnings(true); }} 
+                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/30 w-6 h-6 rounded-full flex items-center justify-center transition-colors z-20"
+                                    title="Dismiss Warning"
+                                >
+                                    <i className="fas fa-times text-[10px]"></i>
+                                </button>
                                 <div className="absolute right-4 top-4 w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-xl shadow-sm border border-red-100/50"><i className="fas fa-exclamation-circle"></i></div>
                                 <h3 className="font-bold text-slate-800 text-sm md:text-base tracking-tight mb-1 flex items-center gap-2">
                                     <span className="relative flex h-2.5 w-2.5 shrink-0">
@@ -606,7 +621,7 @@
                                     </code>
                                 </div>
                             </div>
-                        ) : (
+                        ) : (syncStatus.configured && syncStatus.connected) ? (
                             <div className="card p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border-l-4 border-l-emerald-500 relative overflow-hidden group shadow-sm rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                 <div className="flex items-start gap-4 min-w-0">
                                     <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg border border-emerald-100 shadow-sm shrink-0"><i className="fas fa-cloud-check"></i></div>
@@ -628,7 +643,7 @@
                                     <span>Last Sync: <span className="text-slate-800">{syncStatus.last_sync}</span></span>
                                 </div>
                             </div>
-                        )}
+                        ) : null}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 animate-fade-in">
@@ -3973,6 +3988,9 @@
             const [leaderboard, setLeaderboard] = useState([]);
             const [showPodium, setShowPodium] = useState(false);
             
+            // Mobile layout active segment toggle state
+            const [mobileTab, setMobileTab] = useState('controls'); // 'controls' or 'display'
+            
             const totalVotes = Object.values(votes).reduce((a,b) => a+b, 0);
 
             useEffect(() => {
@@ -4135,7 +4153,7 @@
             };
             
             return (
-                <div className="card mx-auto max-w-6xl w-full h-auto lg:h-[calc(100vh-160px)] flex flex-col border-2 border-socrates-primary shadow-xl overflow-y-auto lg:overflow-hidden relative animate-fade-in">
+                <div className="card mx-auto max-w-5xl w-full h-auto min-h-[500px] lg:h-[calc(100vh-170px)] flex flex-col border-2 border-socrates-primary shadow-xl overflow-y-auto lg:overflow-hidden relative animate-fade-in">
                     
                     {/* FULL-SCREEN CONFETTI PODIUM CELEBRATION OVERLAY */}
                     {showPodium && (
@@ -4283,8 +4301,34 @@
                         <button onClick={onClose} className="btn-outline bg-white text-[10px] sm:text-xs text-red-600 border-red-200 hover:bg-red-50 py-1.5 px-2.5 sm:py-2 sm:px-4 shrink-0 shadow-sm flex items-center gap-1.5"><i className="fas fa-power-off"></i> <span className="hidden sm:inline">End Session</span></button>
                     </div>
                     
+                    {/* Premium Mobile Tab Navigation Bar - Visible only on mobile/tablet */}
+                    <div className="lg:hidden flex border-b border-slate-200 bg-slate-50 p-1.5 gap-2 shrink-0">
+                        <button 
+                            type="button"
+                            onClick={() => setMobileTab('controls')} 
+                            className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm border ${
+                                mobileTab === 'controls' 
+                                    ? 'bg-white text-socrates-primary border-slate-200 font-extrabold shadow-sm' 
+                                    : 'bg-transparent text-slate-500 border-transparent hover:text-slate-700'
+                            }`}
+                        >
+                            <i className="fas fa-sliders-h"></i> Control Deck
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={() => setMobileTab('display')} 
+                            className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm border ${
+                                mobileTab === 'display' 
+                                    ? 'bg-white text-socrates-primary border-slate-200 font-extrabold shadow-sm' 
+                                    : 'bg-transparent text-slate-500 border-transparent hover:text-slate-700'
+                            }`}
+                        >
+                            <i className="fas fa-desktop"></i> Screen View
+                        </button>
+                    </div>
+                    
                     <div className="flex-grow flex flex-col lg:flex-row overflow-visible lg:overflow-hidden">
-                        <div className="flex-1 border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col items-center justify-center p-4 sm:p-8 text-center bg-slate-50 relative overflow-y-auto w-full min-h-[300px] lg:min-h-0">
+                        <div className={`flex-1 border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col items-center justify-center p-4 sm:p-6 text-center bg-slate-50 relative overflow-y-auto w-full min-h-[300px] lg:min-h-0 ${mobileTab === 'display' ? 'flex' : 'hidden lg:flex'}`}>
                             
                             {/* waiting stage */}
                             {stage === 'waiting' && (
@@ -4506,14 +4550,14 @@
                                     <h3 className="text-3xl font-extrabold mb-4 text-socrates-dark tracking-tight">Socratic Gap Analysis</h3>
                                     <p className="text-slate-500 font-medium text-sm leading-relaxed mb-6">Review the Pre-Test answers with the trainees. Engage them in dialogue regarding key criteria before initiating the Post-Test.</p>
                                     <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-left text-xs text-amber-800 font-medium leading-relaxed">
-                                        <i className="fas fa-lightbulb mr-1"></i> <strong>Socratic Tip:</strong> Ask executives why incorrect options were chosen rather than simply stating the correct one.
+                                        <i className="fas fa-lightbulb mr-1.5 text-amber-600"></i> <strong>Socratic Tip:</strong> Ask executives why incorrect options were chosen rather than simply stating the correct one.
                                     </div>
                                 </div>
                             )}
                         </div>
                         
                         {/* SIDEBAR MASTER CONTROL */}
-                        <div className="w-full lg:w-80 flex flex-col bg-white border-t lg:border-t-0 shadow-[0_-4px_12px_rgba(0,0,0,0.03)] lg:shadow-none overflow-visible lg:overflow-y-auto">
+                        <div className={`w-full lg:w-80 flex flex-col bg-white border-t lg:border-t-0 shadow-[0_-4px_12px_rgba(0,0,0,0.03)] lg:shadow-none overflow-y-auto ${mobileTab === 'controls' ? 'flex' : 'hidden lg:flex'}`}>
                             <div className="p-6 border-b border-slate-200 bg-slate-50">
                                 <h4 className="font-bold text-xs mb-4 uppercase text-slate-500 tracking-widest flex items-center gap-2"><i className="fas fa-gamepad text-socrates-primary"></i> Master Control</h4>
                                 
@@ -4558,38 +4602,31 @@
 
                                 {activeModule && (
                                     <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm animate-fade-in">
-                                        <label className="block text-[10px] font-extrabold text-slate-500 mb-2.5 uppercase tracking-widest flex items-center gap-1">
-                                            <i className="fas fa-language text-blue-600"></i> Force Student Language
+                                        <label className="block text-[10px] font-extrabold text-slate-500 mb-2.5 uppercase tracking-widest flex items-center gap-1.5">
+                                            <i className="fas fa-globe text-blue-600"></i> Force Trainee Language
                                         </label>
-                                        <div className="grid grid-cols-2 gap-1.5">
-                                            {[
-                                                { id: 'en', label: 'English' },
-                                                { id: 'hindi', label: 'हिन्दी (Hindi)' },
-                                                { id: 'hinglish', label: 'Hinglish' },
-                                                { id: 'punjabi', label: 'ਪੰਜਾਬੀ (Punjabi)' },
-                                                { id: 'bengali', label: 'বাংলা (Bengali)' },
-                                                { id: 'marathi', label: 'मराठी (Marathi)' },
-                                                { id: 'telugu', label: 'తెలుగు (Telugu)' },
-                                                { id: 'tamil', label: 'தமிழ் (Tamil)' },
-                                                { id: 'gujarati', label: 'ગુજરાતી (Gujarati)' },
-                                                { id: 'kannada', label: 'ಕನ್ನಡ (Kannada)' }
-                                            ].map(lang => {
-                                                const isActive = selectedLanguageOverride === lang.id;
-                                                return (
-                                                    <button
-                                                        key={lang.id}
-                                                        type="button"
-                                                        onClick={() => broadcastLanguageOverride(lang.id)}
-                                                        className={`py-1.5 px-1 rounded-lg text-[9px] font-bold border transition-all flex flex-col items-center justify-center ${
-                                                            isActive
-                                                                ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
-                                                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                                        }`}
-                                                    >
-                                                        <span>{lang.label}</span>
-                                                    </button>
-                                                );
-                                            })}
+                                        <div className="relative flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-inner focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                                            <i className="fas fa-language text-slate-400 text-sm mr-2 shrink-0"></i>
+                                            <select 
+                                                value={selectedLanguageOverride}
+                                                onChange={(e) => broadcastLanguageOverride(e.target.value)}
+                                                className="w-full bg-transparent border-none outline-none font-bold text-xs text-slate-700 cursor-pointer py-0.5"
+                                            >
+                                                {[
+                                                    { id: 'en', label: 'English' },
+                                                    { id: 'hindi', label: 'हिन्दी (Hindi)' },
+                                                    { id: 'hinglish', label: 'Hinglish' },
+                                                    { id: 'punjabi', label: 'ਪੰਜਾਬੀ (Punjabi)' },
+                                                    { id: 'bengali', label: 'বাংলা (Bengali)' },
+                                                    { id: 'marathi', label: 'मराठी (Marathi)' },
+                                                    { id: 'telugu', label: 'తెలుగు (Telugu)' },
+                                                    { id: 'tamil', label: 'தமிழ் (Tamil)' },
+                                                    { id: 'gujarati', label: 'ગુજરાતી (Gujarati)' },
+                                                    { id: 'kannada', label: 'ਕನ್ನಡ (Kannada)' }
+                                                ].map(lang => (
+                                                    <option key={lang.id} value={lang.id} className="text-slate-800 font-bold">{lang.label}</option>
+                                                ))}
+                                            </select>
                                         </div>
                                     </div>
                                 )}
