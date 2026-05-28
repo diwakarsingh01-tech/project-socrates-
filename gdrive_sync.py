@@ -286,6 +286,9 @@ def get_gdrive_service():
     Initializes and returns the Google Drive API service using Google Service Account credentials.
     Returns None if variables are missing or initialization fails.
     """
+    if os.environ.get('DATABASE_URL'):
+        return None
+
     if not GOOGLE_LIBS_AVAILABLE:
         print("[GDRIVE-SYNC] Warning: Google API client libraries are not available.")
         return None

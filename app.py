@@ -676,6 +676,15 @@ def get_metadata():
 
 @app.route('/api/gdrive/status', methods=['GET'])
 def get_gdrive_status():
+    if os.environ.get('DATABASE_URL'):
+        return jsonify({
+            "configured": False,
+            "connected": False,
+            "folder_id": "Not Configured",
+            "service_account_email": "Not Configured",
+            "last_sync": "Never"
+        })
+
     from gdrive_sync import get_gdrive_service, LAST_BACKUP_TIME, load_sa_json
     
     folder_id = os.environ.get('GD_FOLDER_ID')
