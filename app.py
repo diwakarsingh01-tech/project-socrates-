@@ -3369,5 +3369,124 @@ def verify_visit():
     })
 
 
+@app.route('/api/visits/export', methods=['GET'])
+def export_visits():
+    curr_user = session.get('user')
+    if not curr_user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    if curr_user['role'] == 'SuperAdmin':
+        cursor.execute('''
+            SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
+                   v.planned_date, v.purpose, v.key_contacts, v.status, v.checkin_time, 
+                   v.checkin_latitude, v.checkin_longitude, v.co_presence_count, v.verification_time
+            FROM field_visits v
+            JOIN trainers t ON v.trainer_id = t.trainer_id
+            JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
+            ORDER BY v.planned_date DESC
+        ''')
+    else:
+        cursor.execute('''
+            SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
+                   v.planned_date, v.purpose, v.key_contacts, v.status, v.checkin_time, 
+                   v.checkin_latitude, v.checkin_longitude, v.co_presence_count, v.verification_time
+            FROM field_visits v
+            JOIN trainers t ON v.trainer_id = t.trainer_id
+            JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
+            WHERE v.trainer_id = ?
+            ORDER BY v.planned_date DESC
+        ''', (curr_user['trainer_id'],))
+        
+    rows = cursor.fetchall()
+    
+    # Query branch delta scores (post_test - pre_test average growth)
+    cursor.execute('''
+        SELECT ts.branch_name, AVG(ar.post_test_score - ar.pre_test_score)
+        FROM assessment_results ar
+        JOIN training_sessions ts ON ar.session_id = ts.session_id
+        GROUP BY ts.branch_name
+    ''')
+    deltas = {row[0]: round(row[1], 1) if row[1] is not None else 0.0 for row in cursor.fetchall()}
+    conn.close()
+    
+    import io
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Visit ID", "Trainer ID", "Trainer Name", "Branch Name", "Zone", "Division",
+        "Planned Date", "Purpose", "Key Contacts", "Status", "Checkin Time",
+        "Checkin Latitude", "Checkin Longitude", "Co-Presence Count", "Verification Time", "Socratic Delta"
+    ])
+    
+    for r in rows:
+        writer.writerow([
+            r[0], r[1], r[2], r[3], r[4], r[5],
+            r[6], r[7], r[8], r[9], r[10],
+            r[11] if r[11] is not None else "",
+            r[12] if r[12] is not None else "",
+            r[13], r[14] if r[14] is not None else "",
+            deltas.get(r[3], 0.0)
+        ])
+        
+    from flask import make_response
+    response = make_response(output.getvalue())
+    response.headers["Content-Disposition"] = "attachment; filename=socrates_field_visits.csv"
+    response.headers["Content-type"] = "text/csv"
+    return response
+
+
+@app.route('/api/visits/compliance-stats', methods=['GET'])
+def get_visits_compliance_stats():
+    curr_user = session.get('user')
+    if not curr_user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    month = request.args.get('month')
+    if not month:
+        month = datetime.datetime.now().strftime("%Y-%m")
+        
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # 1. Get all active trainers
+    cursor.execute('''
+        SELECT trainer_id, name 
+        FROM trainers 
+        WHERE status = 'Active' AND role = 'Trainer'
+    ''')
+    all_trainers = [{"trainer_id": r[0], "name": r[1]} for r in cursor.fetchall()]
+    
+    # 2. Get trainers who have planned visits in this month
+    cursor.execute('''
+        SELECT DISTINCT trainer_id 
+        FROM field_visits 
+        WHERE strftime('%Y-%m', planned_date) = ?
+    ''', (month,))
+    updated_trainer_ids = {r[0] for r in cursor.fetchall()}
+    conn.close()
+    
+    updated_trainers = []
+    not_updated_trainers = []
+    
+    for t in all_trainers:
+        if t['trainer_id'] in updated_trainer_ids:
+            updated_trainers.append(t)
+        else:
+            not_updated_trainers.append(t)
+            
+    return jsonify({
+        "month": month,
+        "total_active_trainers": len(all_trainers),
+        "updated_count": len(updated_trainers),
+        "not_updated_count": len(not_updated_trainers),
+        "updated_trainers": updated_trainers,
+        "not_updated_trainers": not_updated_trainers
+    })
+
+
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5050, host='0.0.0.0', allow_unsafe_werkzeug=True)
+

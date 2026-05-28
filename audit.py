@@ -928,5 +928,65 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
             cursor.execute("DELETE FROM trainers WHERE trainer_id='TEST-TR-1'")
             self.conn.commit()
 
+    def test_visits_export_endpoint(self):
+        """Audit 22: Verify that /api/visits/export successfully streams CSV data"""
+        cursor = self.conn.cursor()
+        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('TEST-TR-1', 'Test Trainer', 'All', 'password123', 'Trainer', 'Active')")
+        cursor.execute("INSERT INTO field_visits (trainer_id, branch_name, planned_date, purpose) VALUES ('TEST-TR-1', 'DELHI RF', '2026-06-03', 'Training')")
+        self.conn.commit()
+        
+        try:
+            # Login trainer
+            self.client.post('/api/admin/login', json={"trainer_id": "TEST-TR-1", "password": "password123"})
+            
+            # Request CSV Export
+            res = self.client.get('/api/visits/export')
+            self.assertEqual(res.status_code, 200)
+            self.assertEqual(res.headers.get('Content-type'), 'text/csv')
+            self.assertIn('socrates_field_visits.csv', res.headers.get('Content-Disposition'))
+            csv_data = res.data.decode('utf-8')
+            self.assertIn('Visit ID,Trainer ID,Trainer Name,Branch Name,Zone,Division', csv_data)
+            self.assertIn('DELHI RF', csv_data)
+            
+        finally:
+            cursor.execute("DELETE FROM field_visits WHERE branch_name='DELHI RF' AND planned_date='2026-06-03'")
+            cursor.execute("DELETE FROM trainers WHERE trainer_id='TEST-TR-1'")
+            self.conn.commit()
+
+    def test_visits_compliance_stats_endpoint(self):
+        """Audit 23: Verify /api/visits/compliance-stats returns correct monthly trainers counters"""
+        cursor = self.conn.cursor()
+        # Seed two active trainers
+        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('TEST-TR-A', 'Trainer A', 'All', 'password123', 'Trainer', 'Active')")
+        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('TEST-TR-B', 'Trainer B', 'All', 'password123', 'Trainer', 'Active')")
+        
+        # Trainer A plans a visit in June 2026
+        cursor.execute("INSERT INTO field_visits (trainer_id, branch_name, planned_date, purpose) VALUES ('TEST-TR-A', 'DELHI RF', '2026-06-10', 'Training')")
+        self.conn.commit()
+        
+        try:
+            # Login Trainer A
+            self.client.post('/api/admin/login', json={"trainer_id": "TEST-TR-A", "password": "password123"})
+            
+            # Fetch stats for June 2026
+            res = self.client.get('/api/visits/compliance-stats?month=2026-06')
+            self.assertEqual(res.status_code, 200)
+            stats = json.loads(res.data)
+            
+            self.assertEqual(stats['month'], '2026-06')
+            # Check updated trainers includes Trainer A
+            updated_ids = [t['trainer_id'] for t in stats['updated_trainers']]
+            not_updated_ids = [t['trainer_id'] for t in stats['not_updated_trainers']]
+            
+            self.assertIn('TEST-TR-A', updated_ids)
+            self.assertIn('TEST-TR-B', not_updated_ids)
+            self.assertEqual(stats['updated_count'], 1)
+            
+        finally:
+            cursor.execute("DELETE FROM field_visits WHERE trainer_id='TEST-TR-A'")
+            cursor.execute("DELETE FROM trainers WHERE trainer_id IN ('TEST-TR-A', 'TEST-TR-B')")
+            self.conn.commit()
+
 if __name__ == '__main__':
     unittest.main()
+
