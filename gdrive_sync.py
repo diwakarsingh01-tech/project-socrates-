@@ -156,12 +156,18 @@ def get_db_connection():
             hostname = url.hostname
             port = url.port or 5432
             
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+            
             pg_conn = pg8000.dbapi.connect(
                 user=username,
                 password=password,
                 host=hostname,
                 database=database,
-                port=port
+                port=port,
+                ssl_context=ssl_context
             )
             return PostgresConnectionWrapper(pg_conn)
         except Exception as e:
