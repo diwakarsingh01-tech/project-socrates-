@@ -161,6 +161,16 @@ def get_db_connection():
                 print("[POSTGRES] Automatically rewriting Supabase pooler port from 5432 to 6543 for Render compatibility.")
                 port = 6543
             
+            # Manual DNS Resolution: Bypasses buggy eventlet green DNS resolution in Gunicorn
+            connection_host = hostname
+            try:
+                import socket
+                resolved_ip = socket.gethostbyname(hostname)
+                print(f"[POSTGRES] Manually resolved {hostname} to IP: {resolved_ip} to bypass eventlet greendns.")
+                connection_host = resolved_ip
+            except Exception as dns_err:
+                print(f"[POSTGRES] DNS manual resolution failed: {str(dns_err)}")
+                
             import ssl
             ssl_context = ssl.create_default_context()
             ssl_context.check_hostname = False
@@ -169,7 +179,7 @@ def get_db_connection():
             pg_conn = pg8000.dbapi.connect(
                 user=username,
                 password=password,
-                host=hostname,
+                host=connection_host,
                 database=database,
                 port=port,
                 ssl_context=ssl_context
@@ -733,7 +743,16 @@ def get_db_diagnostics():
             username = unquote(url.username) if url.username else None
             password = unquote(url.password) if url.password else None
             database = url.path[1:]
-            
+            # Manual DNS Resolution: Bypasses buggy eventlet green DNS resolution in Gunicorn
+            connection_host = hostname
+            try:
+                import socket
+                resolved_ip = socket.gethostbyname(hostname)
+                print(f"[POSTGRES] Manually resolved {hostname} to IP: {resolved_ip} to bypass eventlet greendns.")
+                connection_host = resolved_ip
+            except Exception as dns_err:
+                print(f"[POSTGRES] DNS manual resolution failed: {str(dns_err)}")
+                
             # Attempt a quick direct connection to verify if it works
             import ssl
             ssl_context = ssl.create_default_context()
@@ -743,7 +762,7 @@ def get_db_diagnostics():
             pg_conn = pg8000.dbapi.connect(
                 user=username,
                 password=password,
-                host=hostname,
+                host=connection_host,
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
