@@ -3410,105 +3410,282 @@
                         </div>
                     )}
 
-                    {/* Master Travel Itinerary Table Card */}
-                    <div className="card overflow-hidden border border-socrates-border bg-white shadow-sm">
-                        <div className="px-6 py-5 border-b border-socrates-border bg-white">
-                            <h4 className="font-bold text-socrates-dark text-base font-outfit">Itinerary Tracker & Field Logs</h4>
-                            <p className="text-xs text-slate-500 mt-1">Real-time tracking status of Socratic field training plans.</p>
-                        </div>
-                        <div className="overflow-x-auto">
-                            {loading ? (
-                                <div className="p-12 flex flex-col justify-center items-center gap-3">
-                                    <div className="w-8 h-8 border-3 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
-                                    <span className="text-xs font-bold text-slate-400">Loading travel database...</span>
-                                </div>
-                            ) : visits.length === 0 ? (
-                                <div className="p-12 text-center text-slate-400 text-xs font-bold">
-                                    <i className="fas fa-map-marked-alt text-3xl text-slate-200 mb-2 block"></i>
-                                    No planned branch itineraries logged for this month.
-                                </div>
-                            ) : (
-                                <table className="w-full text-left border-collapse text-xs">
-                                    <thead>
-                                        <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
-                                            <th className="py-3.5 px-6">Branch Name</th>
-                                            <th className="py-3.5 px-6">Planned Date</th>
-                                            <th className="py-3.5 px-6">Trainer</th>
-                                            <th className="py-3.5 px-6">Visit Purpose / Objective</th>
-                                            <th className="py-3.5 px-6">Contacts</th>
-                                            <th className="py-3.5 px-6 text-center">Status</th>
-                                            <th className="py-3.5 px-6 text-center">Co-Presence</th>
-                                            <th className="py-3.5 px-6 text-center">Socratic Delta</th>
-                                            <th className="py-3.5 px-6 text-center">Verification Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100 font-medium">
-                                        {visits.map((visit) => (
-                                            <tr key={visit.id} className="hover:bg-slate-50/50 transition-colors">
-                                                <td className="py-4 px-6">
-                                                    <div className="font-extrabold text-socrates-dark">{visit.branch_name}</div>
-                                                    <div className="text-[10px] text-slate-400 mt-0.5">{visit.zone} • {visit.division}</div>
-                                                </td>
-                                                <td className="py-4 px-6 text-slate-600 font-bold">{visit.planned_date}</td>
-                                                <td className="py-4 px-6 text-slate-500 font-semibold">{visit.trainer_name}</td>
-                                                <td className="py-4 px-6 text-slate-600 max-w-[200px] truncate" title={visit.purpose}>
-                                                    {visit.purpose.includes("Training") && (
-                                                        <span className="inline-block bg-blue-50 text-blue-700 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded mr-1">Training</span>
-                                                    )}
-                                                    {visit.purpose.includes("Business Discussion") && (
-                                                        <span className="inline-block bg-purple-50 text-purple-700 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded mr-1">Discussion</span>
-                                                    )}
-                                                    <span className="text-[11px] text-slate-500 leading-snug">{visit.purpose}</span>
-                                                </td>
-                                                <td className="py-4 px-6 text-slate-500">{visit.key_contacts || 'Roster Team'}</td>
-                                                <td className="py-4 px-6 text-center">
-                                                    <span className={`px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wider border ${
-                                                        visit.status === 'VERIFIED'
-                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                            : visit.status === 'GEOFENCED'
-                                                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                                                : 'bg-blue-50 text-blue-700 border-blue-200'
-                                                    }`}>
-                                                        {visit.status}
-                                                    </span>
-                                                </td>
-                                                <td className="py-4 px-6 text-center text-slate-600 font-bold">{visit.co_presence_count} CSEs</td>
-                                                <td className="py-4 px-6 text-center">
-                                                    <span className={`font-extrabold text-[11px] px-2 py-0.5 rounded-full ${
-                                                        visit.socratic_delta > 0
-                                                            ? 'bg-emerald-50 text-emerald-600'
-                                                            : 'bg-slate-100 text-slate-500'
-                                                    }`}>
-                                                        +{visit.socratic_delta}%
-                                                    </span>
-                                                </td>
-                                                <td className="py-4 px-6 text-center">
-                                                    {visit.status === 'VERIFIED' ? (
-                                                        <span className="text-slate-400 font-semibold text-xs flex items-center justify-center gap-1.5">
-                                                            <i className="fas fa-check-double text-emerald-500"></i> Locked
-                                                        </span>
-                                                    ) : user?.role === 'SuperAdmin' ? (
-                                                        <span className="text-slate-400 italic text-[11px]">Verify (Trainer Only)</span>
-                                                    ) : (
-                                                        <button 
-                                                            onClick={() => setActiveCheckinVisit(visit)}
-                                                            className={`py-1 px-3 text-[10px] font-extrabold uppercase rounded-lg shadow-sm border transition-all ${
-                                                                visit.status === 'GEOFENCED'
-                                                                    ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
-                                                                    : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-700'
-                                                            }`}
-                                                        >
-                                                            {visit.status === 'GEOFENCED' ? 'Input PIN' : 'Start Check-In'}
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
+                    {/* View Selector Tabs */}
+                    <div className="flex border-b border-slate-200 bg-slate-50/50 p-1.5 rounded-xl gap-2 w-fit animate-fade-in">
+                        <button 
+                            type="button"
+                            onClick={() => setActiveTab('calendar')}
+                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 focus:outline-none ${activeTab === 'calendar' ? 'bg-white shadow-sm text-blue-600 border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                            <i className="fas fa-calendar-alt text-sm"></i> Visual Monthly Calendar
+                        </button>
+                        <button 
+                            type="button"
+                            onClick={() => setActiveTab('logs')}
+                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 focus:outline-none ${activeTab === 'logs' ? 'bg-white shadow-sm text-blue-600 border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                            <i className="fas fa-list-alt text-sm"></i> Enterprise Detailed Table
+                        </button>
                     </div>
+
+                    {/* View Switcher Panels */}
+                    {activeTab === 'calendar' ? (() => {
+                        const daysInMonth = getDaysInMonth(currentMonthDate);
+                        const firstDayIndex = getFirstDayOfMonth(currentMonthDate);
+                        const days = [];
+                        for (let i = 0; i < firstDayIndex; i++) days.push(null);
+                        for (let d = 1; d <= daysInMonth; d++) days.push(d);
+
+                        return (
+                            <div className="card border border-socrates-border bg-white shadow-sm rounded-2xl overflow-hidden p-6 space-y-6 animate-fade-in">
+                                <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                    <button 
+                                        type="button"
+                                        onClick={handlePrevMonth}
+                                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-all focus:outline-none"
+                                    >
+                                        <i className="fas fa-chevron-left text-xs"></i>
+                                    </button>
+                                    <h4 className="font-extrabold text-socrates-dark text-sm font-outfit select-none uppercase tracking-wider">
+                                        {currentMonthDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                    </h4>
+                                    <button 
+                                        type="button"
+                                        onClick={handleNextMonth}
+                                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-all focus:outline-none"
+                                    >
+                                        <i className="fas fa-chevron-right text-xs"></i>
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-7 gap-2">
+                                    {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => (
+                                        <div key={day} className="text-center font-bold text-[10px] text-slate-400 uppercase tracking-wider py-2">
+                                            {day.substring(0, 3)}
+                                        </div>
+                                    ))}
+
+                                    {days.map((day, idx) => {
+                                        const isToday = day && 
+                                            new Date().getDate() === day && 
+                                            new Date().getMonth() === currentMonthDate.getMonth() && 
+                                            new Date().getFullYear() === currentMonthDate.getFullYear();
+                                            
+                                        const dayVisits = getVisitsForDay(day);
+
+                                        return (
+                                            <div 
+                                                key={idx} 
+                                                onClick={() => handleDayClick(day)}
+                                                className={`min-h-[105px] border rounded-xl p-2 flex flex-col justify-between transition-all select-none relative group ${
+                                                    day 
+                                                        ? isToday
+                                                            ? 'border-blue-300 bg-blue-50/15 hover:bg-blue-50/30'
+                                                            : 'border-slate-200/80 bg-white hover:bg-slate-50 cursor-pointer'
+                                                        : 'border-transparent bg-slate-50/30 opacity-40 cursor-default'
+                                                }`}
+                                            >
+                                                {day && (
+                                                    <>
+                                                        <div className="flex justify-between items-center">
+                                                            <span className={`text-[11px] font-extrabold font-outfit ${isToday ? 'text-blue-600 bg-blue-100 w-5 h-5 rounded-full flex items-center justify-center' : 'text-slate-600'}`}>
+                                                                {day}
+                                                            </span>
+                                                            {dayVisits.length > 0 && (
+                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
+                                                                    {dayVisits.length}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="space-y-1.5 mt-2 flex-grow overflow-y-auto max-h-[60px] custom-scrollbar">
+                                                            {dayVisits.map((visit) => (
+                                                                <div 
+                                                                    key={visit.id}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setActiveCheckinVisit(visit);
+                                                                    }}
+                                                                    className={`p-1.5 rounded-lg border text-[9px] font-bold flex flex-col justify-center transition-all hover:scale-[1.02] cursor-pointer shadow-sm ${
+                                                                        visit.status === 'VERIFIED'
+                                                                            ? 'bg-emerald-500/10 text-emerald-700 border-emerald-200/60'
+                                                                            : visit.status === 'GEOFENCED'
+                                                                                ? 'bg-amber-500/10 text-amber-700 border-amber-200/60'
+                                                                                : 'bg-blue-500/10 text-blue-700 border-blue-200/60'
+                                                                    }`}
+                                                                >
+                                                                    <div className="flex items-center justify-between gap-1">
+                                                                        <span className="truncate max-w-[55px] uppercase tracking-wide font-extrabold">{visit.branch_name.replace(' RF', '')}</span>
+                                                                        {visit.status === 'VERIFIED' ? (
+                                                                            <i className="fas fa-check-double text-[8px] text-emerald-500 shrink-0"></i>
+                                                                        ) : visit.status === 'GEOFENCED' ? (
+                                                                            <i className="fas fa-fingerprint text-[8px] text-amber-500 shrink-0"></i>
+                                                                        ) : (
+                                                                            <i className="fas fa-satellite text-[8px] text-blue-500 shrink-0"></i>
+                                                                        )}
+                                                                    </div>
+                                                                    <span className="text-[8px] text-slate-400 font-semibold truncate mt-0.5 block">{visit.trainer_name}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        {day && dayVisits.length === 0 && user?.role !== 'SuperAdmin' && (
+                                                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/5 rounded-xl cursor-pointer">
+                                                                <span className="text-[9px] font-bold text-blue-600 bg-white shadow-sm border border-blue-100 px-2 py-1 rounded-lg">
+                                                                    <i className="fas fa-plus text-[8px] mr-1"></i> Plan Visit
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })() : (
+                        <div className="card overflow-hidden border border-socrates-border bg-white shadow-sm rounded-2xl animate-fade-in">
+                            <div className="px-6 py-5 border-b border-socrates-border bg-white flex justify-between items-center">
+                                <div>
+                                    <h4 className="font-bold text-socrates-dark text-base font-outfit">Itinerary Tracker & Field Logs</h4>
+                                    <p className="text-xs text-slate-500 mt-1">Real-time tracking status of Socratic field training plans.</p>
+                                </div>
+                            </div>
+                            <div className="overflow-x-auto">
+                                {loading ? (
+                                    <div className="p-12 flex flex-col justify-center items-center gap-3">
+                                        <div className="w-8 h-8 border-3 border-socrates-primary border-t-transparent rounded-full fa-spin animate-spin"></div>
+                                        <span className="text-xs font-bold text-slate-400">Loading travel database...</span>
+                                    </div>
+                                ) : visits.length === 0 ? (
+                                    <div className="p-12 text-center text-slate-400 text-xs font-bold">
+                                        <i className="fas fa-map-marked-alt text-3xl text-slate-200 mb-2 block"></i>
+                                        No planned branch itineraries logged for this month.
+                                    </div>
+                                ) : (
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
+                                                <th className="py-3.5 px-6">Branch Destination</th>
+                                                <th className="py-3.5 px-6">Schedule Timestamps</th>
+                                                <th className="py-3.5 px-6">Trainer Profile</th>
+                                                <th className="py-3.5 px-6">Visit Objective / Purpose</th>
+                                                <th className="py-3.5 px-6 text-center">Layer 1: GPS Geofence</th>
+                                                <th className="py-3.5 px-6 text-center">Layer 2: Co-Presence</th>
+                                                <th className="py-3.5 px-6 text-center">Layer 3: PIN Lock</th>
+                                                <th className="py-3.5 px-6 text-center">Socratic Delta</th>
+                                                <th className="py-3.5 px-6 text-center">Itinerary Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 font-medium">
+                                            {visits.map((visit) => (
+                                                <tr key={visit.id} className="hover:bg-slate-50/50 transition-colors">
+                                                    {/* Branch Destination */}
+                                                    <td className="py-4 px-6">
+                                                        <div className="font-extrabold text-socrates-dark">{visit.branch_name}</div>
+                                                        <div className="text-[10px] text-slate-400 mt-0.5">{visit.zone} • {visit.division}</div>
+                                                        <div className="text-[9px] text-slate-400 font-mono mt-0.5">Benchmark: {visit.latitude}, {visit.longitude}</div>
+                                                    </td>
+                                                    {/* Schedule Timestamps */}
+                                                    <td className="py-4 px-6 text-slate-600 font-bold">
+                                                        <div>{visit.planned_date}</div>
+                                                        {visit.checkin_time && (
+                                                            <div className="text-[10px] text-emerald-600 mt-0.5">Checked-in: {visit.checkin_time}</div>
+                                                        )}
+                                                        {visit.verification_time && (
+                                                            <div className="text-[10px] text-indigo-600 mt-0.5">Verified: {visit.verification_time}</div>
+                                                        )}
+                                                    </td>
+                                                    {/* Trainer Profile */}
+                                                    <td className="py-4 px-6">
+                                                        <div className="text-slate-700 font-semibold">{visit.trainer_name}</div>
+                                                        <span className="inline-block text-[9px] font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mt-1 font-extrabold uppercase tracking-wide">{visit.trainer_id}</span>
+                                                    </td>
+                                                    {/* Objective / Purpose */}
+                                                    <td className="py-4 px-6 text-slate-600 max-w-[200px] truncate" title={visit.purpose}>
+                                                        <div className="flex flex-wrap gap-1 mb-1">
+                                                            {visit.purpose.includes("Training") && (
+                                                                <span className="inline-block bg-blue-50 text-blue-700 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded">Training</span>
+                                                            )}
+                                                            {visit.purpose.includes("Business Discussion") && (
+                                                                <span className="inline-block bg-purple-50 text-purple-700 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded">Discussion</span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[11px] text-slate-500 leading-normal italic">{visit.purpose}</div>
+                                                    </td>
+                                                    {/* Layer 1: GPS Geofence */}
+                                                    <td className="py-4 px-6 text-center">
+                                                        {visit.status === 'VERIFIED' || visit.status === 'GEOFENCED' ? (
+                                                            <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
+                                                                <i className="fas fa-check-circle"></i> Passed (Within 150m)
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
+                                                                <i className="fas fa-satellite"></i> Awaiting Location
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    {/* Layer 2: Co-Presence */}
+                                                    <td className="py-4 px-6 text-center">
+                                                        <span className="inline-block bg-purple-50 text-purple-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-purple-150">
+                                                            {visit.co_presence_count} Trainees Verified
+                                                        </span>
+                                                    </td>
+                                                    {/* Layer 3: PIN Lock */}
+                                                    <td className="py-4 px-6 text-center">
+                                                        {visit.status === 'VERIFIED' ? (
+                                                            <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
+                                                                <i className="fas fa-lock"></i> Locked & Signed Off
+                                                            </span>
+                                                        ) : visit.status === 'GEOFENCED' ? (
+                                                            <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
+                                                                <i className="fas fa-key animate-pulse"></i> Awaiting Manager PIN
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
+                                                                <i className="fas fa-clock"></i> Awaiting Check-In
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    {/* Socratic Delta */}
+                                                    <td className="py-4 px-6 text-center">
+                                                        <span className={`font-extrabold text-[11px] px-2 py-0.5 rounded-full ${
+                                                            visit.socratic_delta > 0
+                                                                ? 'bg-emerald-50 text-emerald-600'
+                                                                : 'bg-slate-100 text-slate-500'
+                                                        }`}>
+                                                            +{visit.socratic_delta}%
+                                                        </span>
+                                                    </td>
+                                                    {/* Itinerary Actions */}
+                                                    <td className="py-4 px-6 text-center">
+                                                        {visit.status === 'VERIFIED' ? (
+                                                            <span className="text-slate-400 font-semibold text-xs flex items-center justify-center gap-1.5">
+                                                                <i className="fas fa-check-double text-emerald-500"></i> Completed
+                                                            </span>
+                                                        ) : user?.role === 'SuperAdmin' ? (
+                                                            <span className="text-slate-400 italic text-[11px]">Verify (Trainer Only)</span>
+                                                        ) : (
+                                                            <button 
+                                                                type="button"
+                                                                onClick={() => setActiveCheckinVisit(visit)}
+                                                                className={`py-1 px-3 text-[10px] font-extrabold uppercase rounded-lg shadow-sm border transition-all ${
+                                                                    visit.status === 'GEOFENCED'
+                                                                        ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
+                                                                        : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-700'
+                                                                }`}
+                                                            >
+                                                                {visit.status === 'GEOFENCED' ? 'Input PIN' : 'Start Check-In'}
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
