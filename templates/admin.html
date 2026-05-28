@@ -2793,6 +2793,101 @@
             const [loadingCompliance, setLoadingCompliance] = useState(false);
             const [showComplianceDetailModal, setShowComplianceDetailModal] = useState(false);
 
+            // Visual Monthly Calendar & Tabs states
+            const [activeTab, setActiveTab] = useState('calendar'); // 'calendar' or 'logs'
+            const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
+
+            // Dynamic Report Filters states
+            const [filterPeriod, setFilterPeriod] = useState('ALL'); // 'ALL', 'MTD', 'YTD', 'MONTH', 'YEAR'
+            const [filterYear, setFilterYear] = useState(new Date().getFullYear().toString());
+            const [filterMonth, setFilterMonth] = useState(new Date().toISOString().substring(0, 7)); // YYYY-MM
+            const [filterZone, setFilterZone] = useState('');
+            const [filterDivision, setFilterDivision] = useState('');
+            const [filterBranch, setFilterBranch] = useState('');
+            const [filterTrainer, setFilterTrainer] = useState('');
+            const [filterStatus, setFilterStatus] = useState('');
+
+            const getDaysInMonth = (date) => {
+                const year = date.getFullYear();
+                const month = date.getMonth();
+                return new Date(year, month + 1, 0).getDate();
+            };
+
+            const getFirstDayOfMonth = (date) => {
+                const year = date.getFullYear();
+                const month = date.getMonth();
+                return new Date(year, month, 1).getDay(); // 0 = Sun, 6 = Sat
+            };
+
+            const handlePrevMonth = () => {
+                setCurrentMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+            };
+
+            const handleNextMonth = () => {
+                setCurrentMonthDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+            };
+
+            const getFilteredVisits = () => {
+                return visits.filter(v => {
+                    // 1. Period filter
+                    const visitDate = new Date(v.planned_date);
+                    const today = new Date();
+                    
+                    if (filterPeriod === 'MTD') {
+                        const isCurrentMonth = visitDate.getMonth() === today.getMonth() && visitDate.getFullYear() === today.getFullYear();
+                        const isUpToToday = visitDate.getDate() <= today.getDate();
+                        if (!isCurrentMonth || !isUpToToday) return false;
+                    } else if (filterPeriod === 'YTD') {
+                        const isCurrentYear = visitDate.getFullYear() === today.getFullYear();
+                        const isUpToToday = visitDate <= today;
+                        if (!isCurrentYear || !isUpToToday) return false;
+                    } else if (filterPeriod === 'MONTH') {
+                        const monthStr = v.planned_date.substring(0, 7);
+                        if (monthStr !== filterMonth) return false;
+                    } else if (filterPeriod === 'YEAR') {
+                        const yearStr = v.planned_date.substring(0, 4);
+                        if (yearStr !== filterYear) return false;
+                    }
+
+                    // 2. Zone filter
+                    if (filterZone && v.zone !== filterZone) return false;
+
+                    // 3. Division filter
+                    if (filterDivision && v.division !== filterDivision) return false;
+
+                    // 4. Branch filter
+                    if (filterBranch && v.branch_name !== filterBranch) return false;
+
+                    // 5. Trainer filter
+                    if (filterTrainer && v.trainer_name !== filterTrainer) return false;
+
+                    // 6. Status filter
+                    if (filterStatus && v.status !== filterStatus) return false;
+
+                    return true;
+                });
+            };
+
+            const getVisitsForDay = (day) => {
+                if (!day) return [];
+                const yearStr = currentMonthDate.getFullYear();
+                const monthStr = String(currentMonthDate.getMonth() + 1).padStart(2, '0');
+                const dayStr = String(day).padStart(2, '0');
+                const dateKey = `${yearStr}-${monthStr}-${dayStr}`;
+                return getFilteredVisits().filter(v => v.planned_date === dateKey);
+            };
+
+            const handleDayClick = (day) => {
+                if (!day) return;
+                if (user?.role === 'SuperAdmin') return; // Read-only for SuperAdmins
+                const yearStr = currentMonthDate.getFullYear();
+                const monthStr = String(currentMonthDate.getMonth() + 1).padStart(2, '0');
+                const dayStr = String(day).padStart(2, '0');
+                const dateKey = `${yearStr}-${monthStr}-${dayStr}`;
+                setPlannedDate(dateKey);
+                setShowPlanModal(true);
+            };
+
             const loadVisits = () => {
                 setLoading(true);
                 fetch('/api/visits')
@@ -2822,7 +2917,15 @@
             };
 
             const handleExportCalendar = () => {
-                window.open('/api/visits/export', '_blank');
+                let url = `/api/visits/export?period=${filterPeriod}`;
+                if (filterPeriod === 'MONTH' && filterMonth) url += `&month=${filterMonth}`;
+                if (filterPeriod === 'YEAR' && filterYear) url += `&year=${filterYear}`;
+                if (filterZone) url += `&zone=${encodeURIComponent(filterZone)}`;
+                if (filterDivision) url += `&division=${encodeURIComponent(filterDivision)}`;
+                if (filterBranch) url += `&branch=${encodeURIComponent(filterBranch)}`;
+                if (filterTrainer) url += `&trainer=${encodeURIComponent(filterTrainer)}`;
+                if (filterStatus) url += `&status=${encodeURIComponent(filterStatus)}`;
+                window.open(url, '_blank');
             };
 
             useEffect(() => {
@@ -2978,10 +3081,18 @@
                 .catch(err => console.error("Error verifying PIN:", err));
             };
 
-            // Calculate overall compliance (Plan vs Actual)
-            const verifiedCount = visits.filter(v => v.status === 'VERIFIED').length;
-            const geofencedCount = visits.filter(v => v.status === 'GEOFENCED').length;
-            const totalPlanned = visits.length;
+            // Derived filter options based on visits list
+            const uniqueZones = [...new Set(visits.map(v => v.zone))].filter(Boolean);
+            const uniqueDivisions = [...new Set(visits.map(v => v.division))].filter(Boolean);
+            const uniqueBranches = [...new Set(visits.map(v => v.branch_name))].filter(Boolean);
+            const uniqueTrainers = [...new Set(visits.map(v => v.trainer_name))].filter(Boolean);
+            const uniqueYears = [...new Set(visits.map(v => v.planned_date ? v.planned_date.substring(0, 4) : ''))].filter(Boolean).sort().reverse();
+
+            // Calculate overall compliance (Plan vs Actual) from filtered list
+            const filteredVisits = getFilteredVisits();
+            const verifiedCount = filteredVisits.filter(v => v.status === 'VERIFIED').length;
+            const geofencedCount = filteredVisits.filter(v => v.status === 'GEOFENCED').length;
+            const totalPlanned = filteredVisits.length;
             const complianceRate = totalPlanned > 0 ? ((verifiedCount / totalPlanned) * 100).toFixed(1) : '0.0';
 
             return (
@@ -3232,6 +3343,153 @@
                             </div>
                         </div>
                     )}
+
+                    {/* Dynamic Report Filter Console */}
+                    <div className="card p-6 border border-socrates-border bg-white shadow-sm rounded-2xl space-y-4 animate-fade-in">
+                        <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                            <i className="fas fa-filter text-blue-600 text-sm"></i>
+                            <h4 className="font-extrabold text-socrates-dark text-xs uppercase tracking-wider font-outfit">Report Filtering Console</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-end">
+                            {/* Time Period Presets */}
+                            <div className="space-y-1.5">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Time Horizon</label>
+                                <select 
+                                    value={filterPeriod} 
+                                    onChange={e => setFilterPeriod(e.target.value)} 
+                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
+                                >
+                                    <option value="ALL">Show All Time</option>
+                                    <option value="MTD">Month-to-Date (MTD)</option>
+                                    <option value="YTD">Year-to-Date (YTD)</option>
+                                    <option value="MONTH">Specific Month</option>
+                                    <option value="YEAR">Specific Year</option>
+                                </select>
+                            </div>
+
+                            {/* Specific Month (if selected) */}
+                            {filterPeriod === 'MONTH' && (
+                                <div className="space-y-1.5 animate-fade-in">
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Choose Month</label>
+                                    <input 
+                                        type="month" 
+                                        value={filterMonth} 
+                                        onChange={e => setFilterMonth(e.target.value)} 
+                                        className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer" 
+                                    />
+                                </div>
+                            )}
+
+                            {/* Specific Year (if selected) */}
+                            {filterPeriod === 'YEAR' && (
+                                <div className="space-y-1.5 animate-fade-in">
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Choose Year</label>
+                                    <select 
+                                        value={filterYear} 
+                                        onChange={e => setFilterYear(e.target.value)} 
+                                        className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
+                                    >
+                                        {uniqueYears.map(yr => (
+                                            <option key={yr} value={yr}>{yr}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            {/* Trainer select */}
+                            <div className="space-y-1.5">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Trainer Profile</label>
+                                <select 
+                                    value={filterTrainer} 
+                                    onChange={e => setFilterTrainer(e.target.value)} 
+                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
+                                >
+                                    <option value="">All Trainers</option>
+                                    {uniqueTrainers.map(tr => (
+                                        <option key={tr} value={tr}>{tr}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Status select */}
+                            <div className="space-y-1.5">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Verification Status</label>
+                                <select 
+                                    value={filterStatus} 
+                                    onChange={e => setFilterStatus(e.target.value)} 
+                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
+                                >
+                                    <option value="">All Statuses</option>
+                                    <option value="PLANNED">PLANNED</option>
+                                    <option value="GEOFENCED">GEOFENCED</option>
+                                    <option value="VERIFIED">VERIFIED</option>
+                                </select>
+                            </div>
+
+                            {/* Zone select */}
+                            <div className="space-y-1.5">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Zone Scope</label>
+                                <select 
+                                    value={filterZone} 
+                                    onChange={e => setFilterZone(e.target.value)} 
+                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
+                                >
+                                    <option value="">All Zones</option>
+                                    {uniqueZones.map(zn => (
+                                        <option key={zn} value={zn}>{zn}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Division select */}
+                            <div className="space-y-1.5">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Division Scope</label>
+                                <select 
+                                    value={filterDivision} 
+                                    onChange={e => setFilterDivision(e.target.value)} 
+                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
+                                >
+                                    <option value="">All Divisions</option>
+                                    {uniqueDivisions.map(div => (
+                                        <option key={div} value={div}>{div}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Branch select */}
+                            <div className="space-y-1.5">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Branch Target</label>
+                                <select 
+                                    value={filterBranch} 
+                                    onChange={e => setFilterBranch(e.target.value)} 
+                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
+                                >
+                                    <option value="">All Branches</option>
+                                    {uniqueBranches.map(br => (
+                                        <option key={br} value={br}>{br}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Reset Filters button */}
+                            <div className="flex">
+                                <button 
+                                    type="button"
+                                    onClick={() => {
+                                        setFilterPeriod('ALL');
+                                        setFilterZone('');
+                                        setFilterDivision('');
+                                        setFilterBranch('');
+                                        setFilterTrainer('');
+                                        setFilterStatus('');
+                                    }}
+                                    className="w-full btn-outline border-slate-200 hover:bg-slate-50 text-slate-600 font-bold py-2.5 px-4 text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all"
+                                >
+                                    <i className="fas fa-undo"></i> Reset Filters
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
                     {/* Zonal Compliance Summary stats */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -3577,7 +3835,7 @@
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 font-medium">
-                                            {visits.map((visit) => (
+                                            {filteredVisits.map((visit) => (
                                                 <tr key={visit.id} className="hover:bg-slate-50/50 transition-colors">
                                                     {/* Branch Destination */}
                                                     <td className="py-4 px-6">

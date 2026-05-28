@@ -3378,28 +3378,76 @@ def export_visits():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    if curr_user['role'] == 'SuperAdmin':
-        cursor.execute('''
-            SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
-                   v.planned_date, v.purpose, v.key_contacts, v.status, v.checkin_time, 
-                   v.checkin_latitude, v.checkin_longitude, v.co_presence_count, v.verification_time
-            FROM field_visits v
-            JOIN trainers t ON v.trainer_id = t.trainer_id
-            JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
-            ORDER BY v.planned_date DESC
-        ''')
-    else:
-        cursor.execute('''
-            SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
-                   v.planned_date, v.purpose, v.key_contacts, v.status, v.checkin_time, 
-                   v.checkin_latitude, v.checkin_longitude, v.co_presence_count, v.verification_time
-            FROM field_visits v
-            JOIN trainers t ON v.trainer_id = t.trainer_id
-            JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
-            WHERE v.trainer_id = ?
-            ORDER BY v.planned_date DESC
-        ''', (curr_user['trainer_id'],))
+    period = request.args.get('period', 'ALL')
+    month = request.args.get('month')
+    year = request.args.get('year')
+    zone = request.args.get('zone')
+    division = request.args.get('division')
+    branch = request.args.get('branch')
+    trainer = request.args.get('trainer')
+    status = request.args.get('status')
+    
+    query = '''
+        SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
+               v.planned_date, v.purpose, v.key_contacts, v.status, v.checkin_time, 
+               v.checkin_latitude, v.checkin_longitude, v.co_presence_count, v.verification_time
+        FROM field_visits v
+        JOIN trainers t ON v.trainer_id = t.trainer_id
+        JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
+        WHERE 1=1
+    '''
+    params = []
+    
+    # Role-based restriction
+    if curr_user['role'] != 'SuperAdmin':
+        query += " AND v.trainer_id = ?"
+        params.append(curr_user['trainer_id'])
         
+    # Filters
+    if period == 'MTD':
+        # current month up to today
+        today_str = datetime.date.today().strftime('%Y-%m-%d')
+        start_of_month = datetime.date.today().replace(day=1).strftime('%Y-%m-%d')
+        query += " AND v.planned_date >= ? AND v.planned_date <= ?"
+        params.extend([start_of_month, today_str])
+    elif period == 'YTD':
+        # current year up to today
+        today_str = datetime.date.today().strftime('%Y-%m-%d')
+        start_of_year = datetime.date.today().replace(month=1, day=1).strftime('%Y-%m-%d')
+        query += " AND v.planned_date >= ? AND v.planned_date <= ?"
+        params.extend([start_of_year, today_str])
+    elif period == 'MONTH' and month:
+        # month as YYYY-MM
+        query += " AND v.planned_date LIKE ?"
+        params.append(f"{month}%")
+    elif period == 'YEAR' and year:
+        # year as YYYY
+        query += " AND v.planned_date LIKE ?"
+        params.append(f"{year}%")
+        
+    if zone:
+        query += " AND bc.zone = ?"
+        params.append(zone)
+        
+    if division:
+        query += " AND bc.division = ?"
+        params.append(division)
+        
+    if branch:
+        query += " AND v.branch_name = ?"
+        params.append(branch)
+        
+    if trainer:
+        query += " AND t.name = ?"
+        params.append(trainer)
+        
+    if status:
+        query += " AND v.status = ?"
+        params.append(status)
+        
+    query += " ORDER BY v.planned_date DESC"
+    cursor.execute(query, params)
+    
     rows = cursor.fetchall()
     
     # Query branch delta scores (post_test - pre_test average growth)
