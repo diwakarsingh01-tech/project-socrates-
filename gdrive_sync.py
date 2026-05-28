@@ -166,10 +166,19 @@ def get_db_connection():
             # Manual DNS Resolution: Bypasses buggy eventlet green DNS resolution in Gunicorn
             connection_host = hostname
             try:
-                import socket
-                resolved_ip = socket.gethostbyname(hostname)
-                print(f"[POSTGRES] Manually resolved {hostname} to IP: {resolved_ip} to bypass eventlet greendns.")
-                connection_host = resolved_ip
+                # First try using eventlet's unmonkeypatched original socket if eventlet is active
+                try:
+                    from eventlet.patcher import original
+                    orig_socket = original('socket')
+                    resolved_ip = orig_socket.gethostbyname(hostname)
+                    print(f"[POSTGRES] Eventlet original socket resolved {hostname} to IP: {resolved_ip}")
+                    connection_host = resolved_ip
+                except Exception:
+                    # Fallback to standard socket
+                    import socket
+                    resolved_ip = socket.gethostbyname(hostname)
+                    print(f"[POSTGRES] Standard socket resolved {hostname} to IP: {resolved_ip}")
+                    connection_host = resolved_ip
             except Exception as dns_err:
                 print(f"[POSTGRES] DNS manual resolution failed: {str(dns_err)}")
                 
@@ -184,7 +193,8 @@ def get_db_connection():
                 host=connection_host,
                 database=database,
                 port=port,
-                ssl_context=ssl_context
+                ssl_context=ssl_context,
+                timeout=10  # Explicit connection timeout to prevent hangs
             )
             return PostgresConnectionWrapper(pg_conn)
         except Exception as e:
