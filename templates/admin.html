@@ -5509,7 +5509,7 @@
             );
         };
 
-        const LiveSession = ({onClose, user}) => {
+                const LiveSession = ({onClose, user}) => {
             const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [stage, setStage] = useState('waiting');
             const [users, setUsers] = useState([]);
@@ -5518,43 +5518,32 @@
             const [assignmentDay, setAssignmentDay] = useState('zero day');
             const [activeModule, setActiveModule] = useState(null);
             const [activeQIdx, setActiveQIdx] = useState(0);
-            const [selectedLanguageOverride, setSelectedLanguageOverride] = useState('en'); // 'en', 'easy', 'hindi', 'hinglish'
+            const [selectedLanguageOverride, setSelectedLanguageOverride] = useState('en');
             
-            // Gamification & Leaderboard States
-            const [activeTab, setActiveTab] = useState('chart'); // chart or leaderboard
+            const [activeTab, setActiveTab] = useState('chart'); 
             const [leaderboard, setLeaderboard] = useState([]);
             const [showPodium, setShowPodium] = useState(false);
-            
-            // Mobile layout active segment toggle state
-            const [mobileTab, setMobileTab] = useState('controls'); // 'controls' or 'display'
+            const [mobileTab, setMobileTab] = useState('controls'); 
             
             const totalVotes = Object.values(votes).reduce((a,b) => a+b, 0);
 
             useEffect(() => {
                 const stored = localStorage.getItem('socrates_active_module');
                 if (stored) {
-                    try {
-                        setActiveModule(JSON.parse(stored));
-                    } catch(e) {
-                        console.error("Error parsing stored active module:", e);
-                    }
+                    try { setActiveModule(JSON.parse(stored)); } catch(e) {}
                     localStorage.removeItem('socrates_active_module');
                 }
 
                 const pin = Math.floor(1000 + Math.random() * 9000).toString();
                 setSessionId(pin);
-                
-                // Join room via Socket.IO
                 socket.emit('join_session', {pin: pin, emp_id: 'TRAINER'});
                 
-                // Listen to employee connections
                 socket.on('user_connected', (data) => {
                     if (data.emp_id && data.emp_id !== 'TRAINER') {
                         setUsers(prev => [...new Set([...prev, data.emp_id])]);
                     }
                 });
 
-                // Listen to employee vote submissions
                 socket.on('vote_update', (data) => {
                     setVotes(prev => ({
                         ...prev, 
@@ -5562,17 +5551,8 @@
                     }));
                 });
 
-                // Listen to real-time leaderboard broadcasts
-                socket.on('leaderboard_update', (data) => {
-                    setLeaderboard(data.leaderboard || []);
-                });
-
-                // Listen to global presenter command synchronizer
-                socket.on('client_command', (data) => {
-                    if (data.command === 'show_podium') {
-                        setShowPodium(true);
-                    }
-                });
+                socket.on('leaderboard_update', (data) => setLeaderboard(data.leaderboard || []));
+                socket.on('client_command', (data) => { if (data.command === 'show_podium') setShowPodium(true); });
 
                 return () => {
                     socket.off('user_connected');
@@ -5584,14 +5564,11 @@
 
             const broadcastLanguageOverride = (lang) => {
                 setSelectedLanguageOverride(lang);
-                socket.emit('trainer_broadcast', {
-                    pin: sessionId,
-                    forceLanguage: lang
-                });
+                socket.emit('trainer_broadcast', { pin: sessionId, forceLanguage: lang });
             };
 
             const getActiveQuestionData = () => {
-                if (activeModule && activeModule.questions && activeModule.questions.length > 0) {
+                if (activeModule?.questions?.length > 0) {
                     const q = activeModule.questions[activeQIdx];
                     return {
                         question: q.question_text,
@@ -5615,7 +5592,7 @@
 
             const pushView = (viewName) => {
                 if (!activeModule) {
-                    alert("⚠️ No training module is currently active! Please select a module from the Module Library dashboard before starting.");
+                    alert("⚠️ No training module is currently active!");
                     return;
                 }
                 setStage(viewName);
@@ -5625,7 +5602,6 @@
                     setVotes({0:0, 1:0, 2:0, 3:0});
                     setActiveQIdx(0);
                     setActiveTab('chart');
-                    
                     const q = activeModule.questions[0];
                     qData = {
                         question: q.question_text,
@@ -5645,7 +5621,7 @@
                 socket.emit('trainer_broadcast', {
                     pin: sessionId,
                     view: viewName,
-                    assignment_day: `${activeModule.title} module creator ${activeModule.creator_name || activeModule.created_by || 'Super Admin'}`,
+                    assignment_day: `${activeModule.title} module by ${activeModule.creator_name || activeModule.created_by || 'Admin'}`,
                     question: cleanQuestionText(qData.question),
                     options: qData.options.map(cleanOptionText),
                     correctIndex: qData.correctIndex,
@@ -5655,573 +5631,386 @@
             };
 
             const navigateToQuestion = (newIdx) => {
-                if (newIdx < 0) return;
-                if (!activeModule || !activeModule.questions || activeModule.questions.length === 0) return;
-                
-                const total = activeModule.questions.length;
-                if (newIdx >= total) return;
+                if (newIdx < 0 || !activeModule?.questions || newIdx >= activeModule.questions.length) return;
                 
                 setActiveQIdx(newIdx);
                 setVotes({0:0, 1:0, 2:0, 3:0});
                 setActiveTab('chart');
                 
                 const q = activeModule.questions[newIdx];
-                const nextQ = {
-                    question: q.question_text,
-                    options: [q.option_a, q.option_b, q.option_c, q.option_d],
-                    correctIndex: q.correct_index,
-                    translations: q.translations
-                };
-                
                 socket.emit('trainer_broadcast', {
                     pin: sessionId,
                     view: stage,
-                    assignment_day: `${activeModule.title} module creator ${activeModule.creator_name || activeModule.created_by || 'Super Admin'}`,
-                    question: cleanQuestionText(nextQ.question),
-                    options: nextQ.options.map(cleanOptionText),
-                    correctIndex: nextQ.correctIndex,
-                    translations: nextQ.translations,
+                    assignment_day: `${activeModule.title} module by ${activeModule.creator_name || activeModule.created_by || 'Admin'}`,
+                    question: cleanQuestionText(q.question_text),
+                    options: [q.option_a, q.option_b, q.option_c, q.option_d].map(cleanOptionText),
+                    correctIndex: q.correct_index,
+                    translations: q.translations,
                     forceLanguage: selectedLanguageOverride
                 });
             };
 
-            const triggerFinalPodium = () => {
-                socket.emit('trainer_command', { pin: sessionId, command: 'show_podium' });
-            };
-            
+            const triggerFinalPodium = () => socket.emit('trainer_command', { pin: sessionId, command: 'show_podium' });
+
             return (
-                <div className="card mx-auto max-w-5xl w-full h-auto min-h-[500px] lg:h-[calc(100vh-170px)] flex flex-col border-2 border-socrates-primary shadow-xl overflow-y-auto lg:overflow-hidden relative animate-fade-in">
+                <div className="flex flex-col h-full max-w-7xl mx-auto w-full bg-slate-50 overflow-hidden lg:rounded-3xl lg:shadow-2xl border border-slate-200 animate-fade-in font-outfit">
                     
-                    {/* FULL-SCREEN CONFETTI PODIUM CELEBRATION OVERLAY */}
+                    {/* PODIUM OVERLAY (Same functionality, polished UI) */}
                     {showPodium && (
-                        <div className="absolute inset-0 bg-slate-900 z-50 flex flex-col justify-between p-4 sm:p-10 text-center animate-fade-in overflow-y-auto no-scrollbar">
+                        <div className="fixed inset-0 bg-slate-900 z-[100] flex flex-col p-6 text-center animate-fade-in overflow-y-auto">
                             <Confetti />
-                            
-                            <div className="z-10 mt-6 animate-bounce shrink-0">
-                                <span className="text-xs font-bold bg-amber-500/10 border border-amber-500/30 text-amber-400 px-4 py-1.5 rounded-full tracking-widest uppercase"><i className="fas fa-crown mr-1.5"></i> Training Championship</span>
-                                <h2 className="text-2xl sm:text-4xl font-extrabold text-white mt-4 tracking-tight drop-shadow-md">Socrates Live Podium</h2>
-                                <p className="text-slate-400 text-xs sm:text-sm font-medium mt-1">Socratic learning curves finalized. Congratulations, champions!</p>
-                            </div>
-                            
-                            {/* Horizontal Podium Layout */}
-                            <div className="z-10 flex flex-col sm:flex-row justify-center items-center sm:items-end gap-4 sm:gap-6 max-w-3xl mx-auto w-full flex-1 mb-6 sm:mb-10 min-h-[250px] shrink-0">
-                                
-                                {/* 2nd Place Podium */}
-                                {leaderboard.length > 1 && (
-                                    <div className="flex-1 flex flex-col items-center animate-fade-in" style={{ animationDelay: '0.4s' }}>
-                                        <div className="w-16 h-16 rounded-full bg-slate-700 border-2 border-slate-400 flex items-center justify-center text-xl text-white font-extrabold shadow-lg mb-3">🥈</div>
-                                        <div className="font-bold text-base text-slate-200 truncate max-w-[150px]">{leaderboard[1].emp_name}</div>
-                                        <div className="text-xs text-slate-400 font-semibold mb-3">{leaderboard[1].emp_code}</div>
-                                        <div className="w-full bg-slate-700 border-t-2 border-slate-400 h-20 sm:h-28 rounded-t-xl flex flex-col justify-center items-center shadow-lg transform transition-transform duration-500 hover:scale-105">
-                                            <span className="text-xs text-slate-300 font-bold uppercase tracking-wider">2nd Place</span>
-                                            <span className="text-xl font-extrabold text-white mt-1">{leaderboard[1].score} pts</span>
-                                        </div>
-                                        <div className="flex gap-2 mt-3 z-20">
-                                            <button 
-                                                onClick={() => {
-                                                    const text = `🥈 *SOCRATES ACADEMY: AGILITY EXCELLENCE AWARD* 🌟\n\nBrilliant performance! ⚡️\nCongratulations *${leaderboard[1].emp_name} (${leaderboard[1].emp_code})* on securing *2nd Place*!\n\n🎯 Score: *${leaderboard[1].score} pts*\n🥈 Rank: *2nd Place*\n🧠 Status: *Socratic Policy Elite*\n\n*"Speed and precision at its best."* Keep pushing boundaries! ⚡️`;
-                                                    navigator.clipboard.writeText(text);
-                                                    alert(`Second Place badge card copied for ${leaderboard[1].emp_name}!`);
-                                                }}
-                                                className="px-2.5 py-1 text-[10px] bg-slate-600/35 hover:bg-slate-600/50 text-slate-300 font-extrabold border border-slate-500/40 rounded-full flex items-center gap-1 transition-all"
-                                                title="Copy 2nd Place badge"
-                                            >
-                                                <i className="fas fa-copy"></i> Copy
-                                            </button>
-                                            <a 
-                                                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`🥈 *SOCRATES ACADEMY: AGILITY EXCELLENCE AWARD* 🌟\n\nBrilliant performance! ⚡️\nCongratulations *${leaderboard[1].emp_name} (${leaderboard[1].emp_code})* on securing *2nd Place*!\n\n🎯 Score: *${leaderboard[1].score} pts*\n🥈 Rank: *2nd Place*\n🧠 Status: *Socratic Policy Elite*\n\n*"Speed and precision at its best."* Keep pushing boundaries! ⚡️`)}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="px-2.5 py-1 text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-400 font-extrabold border border-emerald-500/30 rounded-full flex items-center gap-1 transition-all"
-                                                title="Share badge on WhatsApp"
-                                            >
-                                                <i className="fab fa-whatsapp"></i> Share
-                                            </a>
-                                        </div>
+                            <div className="my-auto space-y-12">
+                                <div className="animate-bounce">
+                                    <div className="inline-flex items-center gap-2 bg-amber-500/20 border border-amber-500/40 px-4 py-2 rounded-full text-amber-400 text-xs font-black uppercase tracking-widest shadow-[0_0_20px_rgba(245,158,11,0.2)]">
+                                        <i className="fas fa-crown"></i> Grand Finale
                                     </div>
-                                )}
+                                    <h2 className="text-4xl md:text-6xl font-black text-white mt-6 tracking-tight drop-shadow-lg">Socratic Champions</h2>
+                                </div>
 
-                                {/* 1st Place Podium */}
-                                {leaderboard.length > 0 && (
-                                    <div className="flex-1 flex flex-col items-center animate-fade-in">
-                                        <div className="w-20 h-20 rounded-full bg-amber-500 border-4 border-amber-300 flex items-center justify-center text-3xl text-white font-extrabold shadow-2xl mb-3 animate-pulse">👑</div>
-                                        <div className="font-black text-lg text-white truncate max-w-[180px]">{leaderboard[0].emp_name}</div>
-                                        <div className="text-xs text-amber-400 font-bold mb-3">{leaderboard[0].emp_code}</div>
-                                        <div className="w-full bg-gradient-to-t from-amber-600 to-amber-500 border-t-4 border-amber-300 h-28 sm:h-40 rounded-t-2xl flex flex-col justify-center items-center shadow-2xl transform transition-transform duration-500 hover:scale-105">
-                                            <span className="text-xs text-amber-100 font-bold uppercase tracking-wider">1st Champion</span>
-                                            <span className="text-2xl font-black text-white mt-1 drop-shadow">{leaderboard[0].score} pts</span>
+                                <div className="flex flex-col md:flex-row items-center md:items-end justify-center gap-6 md:gap-12 px-4 max-w-5xl mx-auto w-full">
+                                    {/* 2nd Place */}
+                                    {leaderboard.length > 1 && (
+                                        <div className="order-2 md:order-1 flex flex-col items-center w-full md:w-64">
+                                            <div className="w-16 h-16 rounded-full bg-slate-700 border-2 border-slate-400 flex items-center justify-center text-xl shadow-lg mb-4">🥈</div>
+                                            <div className="text-slate-200 font-bold mb-4 truncate w-full">{leaderboard[1].emp_name}</div>
+                                            <div className="w-full bg-slate-800 border-t-2 border-slate-600 h-24 md:h-32 rounded-t-2xl shadow-xl flex flex-col items-center justify-center">
+                                                <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Runner Up</span>
+                                                <span className="text-xl font-black text-white mt-1">{leaderboard[1].score} pts</span>
+                                            </div>
                                         </div>
-                                        <div className="flex gap-2 mt-3 z-20">
-                                            <button 
-                                                onClick={() => {
-                                                    const text = `🏆 *SOCRATES ACADEMY: CHAMPION AWARD* 👑\n\nOutstanding achievement! 🌟\nCongratulations *${leaderboard[0].emp_name} (${leaderboard[0].emp_code})* on securing *1st Place (Session Champion)*!\n\n🎯 Score: *${leaderboard[0].score} pts*\n🥇 Rank: *1st Place*\n🧠 Status: *Socratic Policy Champion*\n\n*"Knowledge is speed and precision combined."* Keep inspiring! ⚡️`;
-                                                    navigator.clipboard.writeText(text);
-                                                    alert(`First Place badge card copied for ${leaderboard[0].emp_name}!`);
-                                                }}
-                                                className="px-2.5 py-1 text-[10px] bg-amber-500/20 hover:bg-amber-500/35 text-amber-300 font-extrabold border border-amber-500/30 rounded-full flex items-center gap-1 transition-all"
-                                                title="Copy 1st Place badge"
-                                            >
-                                                <i className="fas fa-copy"></i> Copy
-                                            </button>
-                                            <a 
-                                                href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`🏆 *SOCRATES ACADEMY: CHAMPION AWARD* 👑\n\nOutstanding achievement! 🌟\nCongratulations *${leaderboard[0].emp_name} (${leaderboard[0].emp_code})* on securing *1st Place (Session Champion)*!\n\n🎯 Score: *${leaderboard[0].score} pts*\n🥇 Rank: *1st Place*\n🧠 Status: *Socratic Policy Champion*\n\n*"Knowledge is speed and precision combined."* Keep inspiring! ⚡️`)}`}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="px-2.5 py-1 text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-400 font-extrabold border border-emerald-500/30 rounded-full flex items-center gap-1 transition-all"
-                                                title="Share badge on WhatsApp"
-                                            >
-                                                <i className="fab fa-whatsapp"></i> Share
-                                            </a>
+                                    )}
+                                    {/* 1st Place */}
+                                    {leaderboard.length > 0 && (
+                                        <div className="order-1 md:order-2 flex flex-col items-center w-full md:w-80 scale-110">
+                                            <div className="w-24 h-24 rounded-full bg-amber-500 border-4 border-amber-300 flex items-center justify-center text-4xl shadow-[0_0_40px_rgba(245,158,11,0.4)] mb-4 animate-pulse">👑</div>
+                                            <div className="text-white text-xl font-black mb-4 truncate w-full">{leaderboard[0].emp_name}</div>
+                                            <div className="w-full bg-gradient-to-t from-amber-600 to-amber-500 border-t-4 border-amber-300 h-32 md:h-48 rounded-t-3xl shadow-2xl flex flex-col items-center justify-center">
+                                                <span className="text-xs text-amber-100 font-black uppercase tracking-widest">Grand Champion</span>
+                                                <span className="text-3xl font-black text-white mt-1 drop-shadow">{leaderboard[0].score} pts</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
+                                    )}
+                                    {/* 3rd Place */}
+                                    {leaderboard.length > 2 && (
+                                        <div className="order-3 flex flex-col items-center w-full md:w-64">
+                                            <div className="w-14 h-14 rounded-full bg-orange-900 border-2 border-orange-700 flex items-center justify-center text-lg shadow-lg mb-4">🥉</div>
+                                            <div className="text-slate-300 font-bold mb-4 truncate w-full">{leaderboard[2].emp_name}</div>
+                                            <div className="w-full bg-orange-950/80 border-t-2 border-orange-800 h-16 md:h-24 rounded-t-xl shadow-xl flex flex-col items-center justify-center">
+                                                <span className="text-[10px] text-orange-400 font-black uppercase tracking-widest">3rd Elite</span>
+                                                <span className="text-lg font-black text-white mt-1">{leaderboard[2].score} pts</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
 
-                                {/* 3rd Place Podium */}
-                                {leaderboard.length > 2 && (
-                                    <div className="flex-1 flex flex-col items-center animate-fade-in" style={{ animationDelay: '0.8s' }}>
-                                        <div className="w-14 h-14 rounded-full bg-amber-700 border-2 border-amber-600 flex items-center justify-center text-lg text-white font-extrabold shadow-lg mb-3">🥉</div>
-                                        <div className="font-bold text-sm text-slate-300 truncate max-w-[140px]">{leaderboard[2].emp_name}</div>
-                                        <div className="text-xs text-slate-400 font-semibold mb-3">{leaderboard[2].emp_code}</div>
-                                        <div className="w-full bg-amber-800 border-t-2 border-amber-600 h-16 sm:h-20 rounded-t-lg flex flex-col justify-center items-center shadow-lg transform transition-transform duration-500 hover:scale-105">
-                                            <span className="text-[10px] text-amber-200 font-bold uppercase tracking-wider">3rd Place</span>
-                                            <span className="text-lg font-extrabold text-white mt-0.5">{leaderboard[2].score} pts</span>
-                                        </div>
-                                        <div className="flex gap-2 mt-3 z-20">
-                                            <button 
-                                                onClick={() => {
-                                                    const text = `🥉 *SOCRATES ACADEMY: POLICY MASTERY AWARD* 🌟\n\nSuperb effort! 🚀\nCongratulations *${leaderboard[2].emp_name} (${leaderboard[2].emp_code})* on securing *3rd Place*!\n\n🎯 Score: *${leaderboard[2].score} pts*\n🥉 Rank: *3rd Place*\n🧠 Status: *Socratic Policy Specialist*\n\n*"Consistency builds perfection."* Way to go! ⚡️`;
-                                                    navigator.clipboard.writeText(text);
-                                                    alert(`Third Place badge card copied for ${leaderboard[2].emp_name}!`);
-                                                }}
-                                                className="px-2.5 py-1 text-[10px] bg-amber-700/20 hover:bg-amber-700/35 text-amber-400 font-extrabold border border-amber-700/30 rounded-full flex items-center gap-1 transition-all"
-                                                title="Copy 3rd Place badge"
-                                            >
-                                                <i className="fas fa-copy"></i> Copy
-                                              </button>
-                                              <a 
-                                                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(`🥉 *SOCRATES ACADEMY: POLICY MASTERY AWARD* 🌟\n\nSuperb effort! 🚀\nCongratulations *${leaderboard[2].emp_name} (${leaderboard[2].emp_code})* on securing *3rd Place*!\n\n🎯 Score: *${leaderboard[2].score} pts*\n🥉 Rank: *3rd Place*\n🧠 Status: *Socratic Policy Specialist*\n\n*"Consistency builds perfection."* Way to go! ⚡️`)}`}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  className="px-2.5 py-1 text-[10px] bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-400 font-extrabold border border-emerald-500/30 rounded-full flex items-center gap-1 transition-all"
-                                                  title="Share badge on WhatsApp"
-                                              >
-                                                  <i className="fab fa-whatsapp"></i> Share
-                                              </a>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                            
-                            <div className="z-10 flex gap-4 justify-center">
-                                <button onClick={onClose} className="btn-primary bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 px-8 py-3 rounded-full text-base font-bold shadow-lg hover:from-amber-600 hover:to-amber-700">
-                                    <i className="fas fa-sign-out-alt mr-2"></i> Close Broadcast Room
+                                <button onClick={onClose} className="px-10 py-4 bg-white text-slate-900 rounded-full font-black text-lg shadow-xl hover:scale-105 transition-all">
+                                    Exit Broadcast Room
                                 </button>
                             </div>
                         </div>
                     )}
 
-                    <div className="px-4 py-3 sm:px-8 sm:py-4 border-b border-slate-200 flex flex-row justify-between items-center bg-white shadow-sm z-10 gap-2">
-                        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-                            <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.6)] shrink-0"></div>
-                            <div className="min-w-0">
-                                <span className="text-[8px] sm:text-[10px] font-bold text-socrates-primary uppercase tracking-widest block">Live Broadcasting</span>
-                                <h2 className="text-xs sm:text-lg font-bold text-socrates-dark leading-tight flex items-center gap-1.5 sm:gap-2 truncate">
-                                    <span className="hidden sm:inline">Socrates</span> Live Room 
-                                    {activeModule && (
-                                        <span className="text-[9px] sm:text-xs font-bold bg-purple-50 border border-purple-100 text-purple-700 px-1.5 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full shadow-sm truncate max-w-[80px] sm:max-w-none">
-                                            {activeModule.title}
-                                        </span>
-                                    )}
-                                </h2>
+                    {/* HEADER STATUS BAR */}
+                    <div className="bg-white px-6 py-4 flex items-center justify-between border-b border-slate-200 z-30 shrink-0">
+                        <div className="flex items-center gap-4">
+                            <div className="relative flex h-3 w-3">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-3 w-3 bg-red-600"></span>
+                            </div>
+                            <div className="hidden sm:block">
+                                <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">Socrates Live Broadcast</h2>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{activeModule?.title || 'No Module Active'}</p>
                             </div>
                         </div>
-                        <button onClick={onClose} className="btn-outline bg-white text-[10px] sm:text-xs text-red-600 border-red-200 hover:bg-red-50 py-1.5 px-2.5 sm:py-2 sm:px-4 shrink-0 shadow-sm flex items-center gap-1.5"><i className="fas fa-power-off"></i> <span className="hidden sm:inline">End Session</span></button>
+                        <div className="flex items-center gap-4">
+                            <div className="bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 flex items-center gap-2">
+                                <i className="fas fa-users text-slate-400 text-xs"></i>
+                                <span className="text-xs font-black text-slate-700">{users.length} <span className="hidden sm:inline">Connected</span></span>
+                            </div>
+                            <button onClick={onClose} className="p-2.5 bg-red-50 text-red-600 rounded-xl hover:bg-red-100 transition-colors">
+                                <i className="fas fa-power-off text-sm"></i>
+                            </button>
+                        </div>
                     </div>
-                    
-                    {/* Premium Mobile Tab Navigation Bar - Visible only on mobile/tablet */}
-                    <div className="lg:hidden flex border-b border-slate-200 bg-slate-50 p-1.5 gap-2 shrink-0">
-                        <button 
-                            type="button"
-                            onClick={() => setMobileTab('controls')} 
-                            className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm border ${
-                                mobileTab === 'controls' 
-                                    ? 'bg-white text-socrates-primary border-slate-200 font-extrabold shadow-sm' 
-                                    : 'bg-transparent text-slate-500 border-transparent hover:text-slate-700'
-                            }`}
-                        >
-                            <i className="fas fa-sliders-h"></i> Control Deck
-                        </button>
-                        <button 
-                            type="button"
-                            onClick={() => setMobileTab('display')} 
-                            className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-sm border ${
-                                mobileTab === 'display' 
-                                    ? 'bg-white text-socrates-primary border-slate-200 font-extrabold shadow-sm' 
-                                    : 'bg-transparent text-slate-500 border-transparent hover:text-slate-700'
-                            }`}
-                        >
-                            <i className="fas fa-desktop"></i> Screen View
-                        </button>
-                    </div>
-                    
-                    <div className="flex-grow flex flex-col lg:flex-row overflow-visible lg:overflow-hidden">
-                        <div className={`flex-1 border-b lg:border-b-0 lg:border-r border-slate-200 flex flex-col items-center justify-center p-4 sm:p-6 text-center bg-slate-50 relative overflow-y-auto w-full min-h-[300px] lg:min-h-0 ${mobileTab === 'display' ? 'flex' : 'hidden lg:flex'}`}>
-                            
-                            {/* waiting stage */}
-                            {stage === 'waiting' && (
-                                <div className="animate-fade-in flex flex-col items-center w-full max-w-md">
-                                    <div className="bg-white p-8 rounded-3xl shadow-lg border border-slate-100 w-full text-center">
-                                        <h3 className="text-slate-500 mb-4 uppercase tracking-widest font-bold text-sm">Join the Session</h3>
-                                        <div className="text-8xl font-black tracking-widest text-socrates-primary mb-8 font-mono">{sessionId}</div>
-                                        <div className="text-sm font-bold text-slate-400 bg-slate-50 p-2 rounded mb-4">Code generated successfully</div>
-                                        
-                                        {/* Dynamic Join QR Code Card */}
-                                        <div className="my-6 p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col items-center justify-center gap-3">
-                                            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                                                <i className="fas fa-qrcode text-xs text-socrates-primary"></i> Scan QR to Join Instantly
-                                            </div>
-                                            <div className="p-2 bg-white rounded-xl shadow-inner border border-slate-200">
-                                                <img 
-                                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.origin + '/?pin=' + sessionId)}`} 
-                                                    alt="Session Join QR Code" 
-                                                    className="w-40 h-40 object-contain"
-                                                />
-                                            </div>
-                                            <div className="flex gap-2 w-full mt-1">
-                                                <button 
-                                                    onClick={() => {
-                                                        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.origin + '/?pin=' + sessionId)}`;
-                                                        const text = `*Socrates AI Training Session Invite* 🧠\n\n1. *Click to Join Instantly*:\n${window.location.origin}/?pin=${sessionId}\n\n2. *Or Scan QR Code to Join*:\n${qrUrl}\n\n3. *Session PIN*: ${sessionId}`;
-                                                        navigator.clipboard.writeText(text);
-                                                        alert("Session Invite details (Clickable Join Link, QR Code Link, and PIN) successfully copied to clipboard! You can paste and share it in WhatsApp groups.");
-                                                    }}
-                                                    className="btn-outline flex-1 py-2 text-xs font-bold bg-white text-slate-600 border-slate-300 hover:bg-slate-50 shadow-sm flex items-center justify-center gap-1.5"
-                                                    title="Copy join link, QR code, and PIN"
-                                                >
-                                                    <i className="fas fa-copy"></i> Copy Invite
-                                                </button>
-                                                <button 
-                                                    onClick={() => {
-                                                        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(window.location.origin + '/?pin=' + sessionId)}`;
-                                                        const text = `*Socrates AI Training Session Invite* 🧠\n\n1. *Click to Join Instantly*:\n${window.location.origin}/?pin=${sessionId}\n\n2. *Or Scan QR Code to Join*:\n${qrUrl}\n\n3. *Session PIN*: ${sessionId}`;
-                                                        const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
-                                                        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-                                                    }}
-                                                    className="btn-primary py-2 px-4 text-xs font-bold shadow-md hover:bg-emerald-600 bg-emerald-500 border-emerald-600 flex items-center justify-center gap-1.5 text-white"
-                                                    title="Share session invite (Link + QR + PIN) on WhatsApp"
-                                                >
-                                                    <i className="fab fa-whatsapp text-sm"></i> Share PIN
-                                                </button>
-                                            </div>
-                                        </div>
 
-                                        {activeModule ? (
-                                            <div className="text-xs font-bold text-purple-700 bg-purple-50 border border-purple-100 px-3 py-1.5 rounded-xl mb-4">
-                                                Active Quiz: <strong>{activeModule.title}</strong> ({activeModule.questions ? activeModule.questions.length : 0} Qs)
-                                            </div>
-                                        ) : (
-                                            <div className="text-xs font-bold text-rose-700 bg-rose-50 border border-rose-100 px-3 py-3 rounded-xl mb-4 flex flex-col gap-1.5 items-center text-center animate-pulse">
-                                                <span>⚠️ No training module is currently active!</span>
-                                                <span className="text-[10px] text-rose-600 font-semibold normal-case">Please close this live session, select a module from the Module Library, and click "Launch Live Session" to begin.</span>
-                                            </div>
-                                        )}
-                                        <div className="text-xs text-slate-500 font-semibold flex items-center justify-center gap-2">
-                                            <i className="fas fa-spinner fa-spin text-socrates-primary"></i> 
-                                            <span>Executives Connected: {users.length}</span>
+                    {/* MAIN BROADCASTING AREA */}
+                    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+                        
+                        {/* LEFT: BROADCAST CONSOLE (Main Content) */}
+                        <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-slate-50/50 flex flex-col">
+                            
+                            {stage === 'waiting' && (
+                                <div className="m-auto w-full max-w-2xl flex flex-col md:flex-row gap-8 items-center bg-white p-8 md:p-12 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.05)] border border-slate-100 animate-fade-in">
+                                    <div className="flex-1 text-center md:text-left space-y-6">
+                                        <span className="px-4 py-1.5 bg-blue-50 text-blue-600 text-[10px] font-black uppercase tracking-widest rounded-full border border-blue-100">Broadcasting Room Open</span>
+                                        <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-tight">Join the Session</h1>
+                                        <div className="bg-slate-50 p-6 rounded-3xl border-2 border-dashed border-slate-200">
+                                            <div className="text-6xl font-black text-blue-600 tracking-[0.2em] font-mono">{sessionId}</div>
+                                            <p className="text-xs text-slate-400 font-bold mt-4 uppercase tracking-widest">Share this PIN with trainees</p>
                                         </div>
+                                        <div className="flex flex-col sm:flex-row gap-3">
+                                            <button 
+                                                onClick={() => {
+                                                    const text = `*Socrates Session PIN*: ${sessionId}\n*Join Link*: ${window.location.origin}/?pin=${sessionId}`;
+                                                    navigator.clipboard.writeText(text);
+                                                    alert("Session PIN & Link Copied!");
+                                                }}
+                                                className="flex-1 py-3 px-6 bg-slate-900 text-white rounded-2xl font-bold text-xs hover:bg-slate-800 transition-all shadow-lg"
+                                            >
+                                                <i className="fas fa-copy mr-2"></i> Copy Invite
+                                            </button>
+                                            <button 
+                                                onClick={() => {
+                                                    const text = `*Socrates AI Training PIN*: ${sessionId}\nJoin here: ${window.location.origin}/?pin=${sessionId}`;
+                                                    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+                                                }}
+                                                className="flex-1 py-3 px-6 bg-emerald-500 text-white rounded-2xl font-bold text-xs hover:bg-emerald-600 transition-all shadow-lg"
+                                            >
+                                                <i className="fab fa-whatsapp mr-2 text-sm"></i> WhatsApp PIN
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="shrink-0 p-6 bg-slate-50 rounded-[2rem] border border-slate-200 shadow-inner">
+                                        <img 
+                                            src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(window.location.origin + '/?pin=' + sessionId)}`} 
+                                            alt="QR Code" 
+                                            className="w-48 h-48 md:w-56 md:h-56 mix-blend-multiply"
+                                        />
+                                        <p className="text-center text-[10px] font-black text-slate-400 uppercase tracking-widest mt-4">Scan to Join Live</p>
                                     </div>
                                 </div>
                             )}
 
-                            {/* pretest/posttest stage */}
                             {(stage === 'pretest' || stage === 'posttest') && (
-                                <div className="w-full max-w-3xl animate-fade-in flex flex-col">
-                                    
-                                    {/* Active Question Controller Toolbar */}
-                                    <div className="bg-white p-3 sm:p-4 rounded-2xl shadow-md border border-slate-100 flex flex-row justify-between items-center mb-6 w-full animate-fade-in gap-2">
-                                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                                            <span className="w-8 h-8 rounded-full bg-purple-50 text-purple-700 flex items-center justify-center font-bold text-xs border border-purple-100 shadow-sm shrink-0">
-                                                <i className="fas fa-list-ol"></i>
-                                            </span>
-                                            <div className="min-w-0">
-                                                <div className="text-[8px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Active Controller</div>
-                                                <div className="text-xs sm:text-sm font-extrabold text-socrates-dark truncate">Q {activeQIdx + 1} / {currentQ.totalQs}</div>
+                                <div className="max-w-4xl mx-auto w-full space-y-8 animate-fade-in">
+                                    {/* Question Card */}
+                                    <div className="bg-white rounded-[2.5rem] shadow-xl border border-slate-100 overflow-hidden">
+                                        <div className="p-8 md:p-12">
+                                            <div className="flex items-center justify-between mb-8">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="px-3 py-1 bg-purple-50 text-purple-600 text-[10px] font-black uppercase tracking-widest rounded-full border border-purple-100">
+                                                        {stage === 'pretest' ? 'Pre-Test Phase' : 'Post-Test Phase'}
+                                                    </span>
+                                                    <span className="text-xs text-slate-400 font-bold tracking-widest uppercase">Q{activeQIdx + 1} / {currentQ.totalQs}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                                    <span className="text-xs text-slate-500 font-bold uppercase tracking-widest">{totalVotes} Responses</span>
+                                                </div>
                                             </div>
-                                        </div>
-                                        
-                                        <div className="flex gap-1.5 sm:gap-3 shrink-0">
-                                            <button 
-                                                onClick={() => navigateToQuestion(activeQIdx - 1)}
-                                                disabled={activeQIdx === 0}
-                                                className="btn-outline border-slate-200 text-slate-600 hover:bg-slate-50 px-2 sm:px-4 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold flex items-center gap-1 disabled:opacity-40 disabled:hover:bg-transparent"
-                                                title="Back Question"
-                                            >
-                                                <i className="fas fa-chevron-left"></i> <span className="hidden sm:inline">Back Question</span><span className="sm:hidden">Back</span>
-                                            </button>
-                                            
-                                            <button 
-                                                onClick={() => navigateToQuestion(activeQIdx + 1)}
-                                                disabled={activeQIdx >= currentQ.totalQs - 1}
-                                                className="btn-primary bg-gradient-to-r from-socrates-primary to-blue-600 border-none text-white px-3 sm:px-6 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold flex items-center gap-1 shadow-md hover:shadow-lg disabled:opacity-40"
-                                                title="Next Question"
-                                            >
-                                                <span className="hidden sm:inline">Next Question</span><span className="sm:hidden">Next</span> <i className="fas fa-chevron-right"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Tabs for toggling chart vs leaderboard */}
-                                    <div className="flex bg-slate-200/60 p-1 rounded-xl mb-6 self-center border border-slate-200">
-                                        <button 
-                                            onClick={() => setActiveTab('chart')} 
-                                            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-                                                activeTab === 'chart' 
-                                                    ? 'bg-white text-socrates-primary shadow-sm' 
-                                                    : 'text-slate-500 hover:text-slate-800'
-                                            }`}
-                                        >
-                                            <i className="fas fa-chart-bar"></i> Votes Distribution
-                                        </button>
-                                        <button 
-                                            onClick={() => setActiveTab('leaderboard')} 
-                                            className={`px-6 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${
-                                                activeTab === 'leaderboard' 
-                                                    ? 'bg-white text-purple-600 shadow-sm' 
-                                                    : 'text-slate-500 hover:text-slate-800'
-                                            }`}
-                                        >
-                                            <i className="fas fa-list-ol"></i> Live Leaderboard ({leaderboard.length})
-                                        </button>
-                                    </div>
-                                    
-                                    {activeTab === 'chart' ? (
-                                        <div className="bg-white p-4 sm:p-10 rounded-2xl shadow-md border border-slate-100 animate-fade-in w-full text-left">
-                                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4 gap-2">
-                                                <span className="text-[10px] sm:text-xs font-extrabold uppercase text-socrates-primary tracking-widest bg-blue-50 border border-blue-100 px-2 py-1 rounded-md max-w-full truncate">
-                                                    {activeModule ? `${activeModule.title} (Q${activeQIdx + 1})` : `${assignmentDay} (Q${activeQIdx + 1})`} - {stage === 'pretest' ? 'Pre-Test' : 'Post-Test'}
-                                                </span>
-                                                <span className="text-xs font-semibold text-slate-500">Votes: {totalVotes}</span>
-                                            </div>
-                                            <h3 className="text-base sm:text-2xl font-bold text-socrates-dark mb-6 sm:mb-10 leading-tight">
+                                            <h3 className="text-2xl md:text-3xl font-black text-slate-900 leading-tight mb-12">
                                                 {cleanQuestionText(currentQ.question)}
                                             </h3>
-                                            <div className="space-y-4 sm:space-y-6">
+                                            
+                                            <div className="space-y-4">
                                                 {currentQ.options.map((opt, i) => {
                                                     const pct = totalVotes === 0 ? 0 : Math.round((votes[i]/totalVotes)*100);
                                                     const isCorrect = i === currentQ.correctIndex;
-                                                    const cleanedOpt = cleanOptionText(opt);
                                                     return (
-                                                        <div key={i} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-6">
-                                                            <div className={`text-left sm:text-right font-bold text-xs sm:text-sm sm:w-36 shrink-0 ${isCorrect ? 'text-emerald-600 flex items-center gap-1.5 font-extrabold sm:justify-end' : 'text-socrates-dark'}`}>
-                                                                {isCorrect && <i className="fas fa-check-circle text-emerald-500 text-xs shrink-0"></i>}
-                                                                <span className="truncate">{cleanedOpt}</span>
-                                                            </div>
-                                                            <div className={`flex-1 h-10 sm:h-12 bg-slate-100 rounded-md overflow-hidden border ${isCorrect ? 'border-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]' : 'border-slate-200'} shadow-inner relative flex items-center`}>
-                                                                <div className={`h-full ${isCorrect ? 'bg-socrates-accent' : 'bg-socrates-primary'} transition-all duration-700 flex items-center justify-end pr-4 text-white font-bold text-xs`} style={{width: `${pct}%`, minWidth: pct>0?'3rem':'0'}}>
-                                                                    {pct > 5 && `${pct}%`}
+                                                        <div key={i} className="group relative">
+                                                            <div className={`absolute inset-0 bg-slate-100 rounded-2xl transition-all duration-700 ${isCorrect ? 'bg-emerald-50/50' : ''}`} style={{ width: `${pct}%` }}></div>
+                                                            <div className={`relative flex items-center justify-between p-5 rounded-2xl border-2 transition-all ${isCorrect ? 'border-emerald-200' : 'border-slate-100'}`}>
+                                                                <div className="flex items-center gap-4">
+                                                                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm border-2 ${isCorrect ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-white text-slate-400 border-slate-100'}`}>
+                                                                        {String.fromCharCode(65 + i)}
+                                                                    </span>
+                                                                    <span className={`font-bold text-sm ${isCorrect ? 'text-emerald-700' : 'text-slate-600'}`}>{cleanOptionText(opt)}</span>
                                                                 </div>
-                                                                {isCorrect && (
-                                                                    <div className="absolute left-3 text-emerald-600 text-[10px] font-bold bg-white border border-emerald-300 px-1.5 py-0.5 rounded shadow-sm flex items-center gap-1 pointer-events-none">
-                                                                        <i className="fas fa-check text-[8px]"></i> Correct
-                                                                    </div>
-                                                                )}
+                                                                <div className="flex items-center gap-4">
+                                                                    {isCorrect && <i className="fas fa-check-circle text-emerald-500 text-lg"></i>}
+                                                                    <span className="text-sm font-black text-slate-900">{pct}%</span>
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    )
+                                                    );
                                                 })}
                                             </div>
                                         </div>
-                                    ) : (
-                                        <div className="bg-white rounded-2xl shadow-md border border-slate-100 overflow-hidden animate-fade-in w-full text-left">
-                                            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                                                <h4 className="font-bold text-socrates-dark text-sm">Live Accuracy Leaderboard</h4>
-                                                <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded border border-emerald-100">Accuracy Scoring Active</span>
+                                    </div>
+
+                                    {/* Navigation & Controls */}
+                                    <div className="flex flex-col sm:flex-row gap-4 pb-20 lg:pb-0">
+                                        <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-sm flex-1 flex gap-2">
+                                            <button 
+                                                onClick={() => navigateToQuestion(activeQIdx - 1)}
+                                                disabled={activeQIdx === 0}
+                                                className="flex-1 py-3 text-xs font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 rounded-xl disabled:opacity-30 transition-all"
+                                            >
+                                                <i className="fas fa-arrow-left mr-2"></i> Prev
+                                            </button>
+                                            <button 
+                                                onClick={() => navigateToQuestion(activeQIdx + 1)}
+                                                disabled={activeQIdx >= currentQ.totalQs - 1}
+                                                className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 shadow-lg shadow-blue-200 disabled:opacity-30 transition-all"
+                                            >
+                                                Next <i className="fas fa-arrow-right mr-2"></i>
+                                            </button>
+                                        </div>
+                                        <button 
+                                            onClick={() => setActiveTab(activeTab === 'chart' ? 'leaderboard' : 'chart')}
+                                            className="px-8 py-3 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-slate-800 transition-all"
+                                        >
+                                            {activeTab === 'chart' ? <><i className="fas fa-list-ol mr-2"></i> Show Leaderboard</> : <><i className="fas fa-chart-bar mr-2"></i> Show Chart</>}
+                                        </button>
+                                    </div>
+                                    
+                                    {activeTab === 'leaderboard' && (
+                                        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden animate-slide-up pb-20 lg:pb-0">
+                                            <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center">
+                                                <h4 className="font-black text-slate-900 text-sm uppercase tracking-wider">Live Ranking</h4>
+                                                <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full uppercase">Real-time sync</span>
                                             </div>
-                                            <div className="max-h-[380px] overflow-y-auto divide-y divide-slate-100">
-                                                {leaderboard.length === 0 ? (
-                                                    <div className="py-12 text-center text-xs text-slate-400 italic">No responses recorded yet for this question round.</div>
-                                                ) : (
-                                                    leaderboard.map((tr, idx) => {
-                                                        const isTop3 = idx < 3;
-                                                        const badge = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
-                                                        return (
-                                                            <div key={tr.emp_code} className="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
-                                                                <div className="flex items-center gap-4">
-                                                                    <span className={`w-8 h-8 rounded-lg flex items-center justify-center font-black text-sm ${isTop3 ? 'bg-amber-50 text-base shadow-sm border border-amber-200' : 'text-slate-400'}`}>
-                                                                        {badge}
-                                                                    </span>
-                                                                    <div>
-                                                                        <div className="font-bold text-socrates-dark text-sm">{tr.emp_name}</div>
-                                                                        <div className="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">{tr.emp_code}</div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-center gap-6">
-                                                                    <div className="flex gap-2 text-[10px] font-bold">
-                                                                        <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">{tr.correct_count} ✅</span>
-                                                                        <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-100">{tr.wrong_count} ❌</span>
-                                                                    </div>
-                                                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
-                                                                        tr.last_correct
-                                                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                                                            : 'bg-red-50 text-red-600 border border-red-200'
-                                                                    }`}>
-                                                                        {tr.last_correct ? 'Correct' : 'Incorrect'}
-                                                                    </span>
-                                                                    <div className="text-right min-w-[80px]">
-                                                                        <span className="font-extrabold text-socrates-dark text-base font-mono">{tr.correct_count}</span>
-                                                                        <span className="text-[10px] text-slate-400 font-bold ml-1">Correct</span>
-                                                                    </div>
-                                                                </div>
+                                            <div className="max-h-[400px] overflow-y-auto divide-y divide-slate-50">
+                                                {leaderboard.map((tr, idx) => (
+                                                    <div key={idx} className="px-8 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                                                        <div className="flex items-center gap-4">
+                                                            <span className="w-6 h-6 rounded flex items-center justify-center font-black text-xs text-slate-400">{idx + 1}</span>
+                                                            <div>
+                                                                <div className="text-sm font-bold text-slate-800">{tr.emp_name}</div>
+                                                                <div className="text-[10px] text-slate-400 font-bold uppercase">{tr.emp_code}</div>
                                                             </div>
-                                                        )
-                                                    })
-                                                )}
+                                                        </div>
+                                                        <div className="flex items-center gap-6">
+                                                            <div className="flex gap-1.5">
+                                                                <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">{tr.correct_count}</span>
+                                                                <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-100">{tr.wrong_count}</span>
+                                                            </div>
+                                                            <div className="text-right w-16 font-black text-slate-900">{tr.score} <span className="text-[8px] text-slate-400">pts</span></div>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
-
                                     )}
                                 </div>
                             )}
 
-                            {/* Socratic Gap analysis stage */}
                             {stage === 'training' && (
-                                <div className="animate-fade-in max-w-2xl bg-white p-12 rounded-3xl shadow-lg border border-slate-100">
-                                    <div className="w-24 h-24 bg-blue-50 text-socrates-primary rounded-2xl flex items-center justify-center text-4xl mx-auto mb-8 shadow-sm border border-blue-100"><i className="fas fa-chalkboard-teacher"></i></div>
-                                    <h3 className="text-3xl font-extrabold mb-4 text-socrates-dark tracking-tight">Socratic Gap Analysis</h3>
-                                    <p className="text-slate-500 font-medium text-sm leading-relaxed mb-6">Review the Pre-Test answers with the trainees. Engage them in dialogue regarding key criteria before initiating the Post-Test.</p>
-                                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl text-left text-xs text-amber-800 font-medium leading-relaxed">
-                                        <i className="fas fa-lightbulb mr-1.5 text-amber-600"></i> <strong>Socratic Tip:</strong> Ask executives why incorrect options were chosen rather than simply stating the correct one.
+                                <div className="m-auto text-center space-y-8 animate-fade-in">
+                                    <div className="w-24 h-24 bg-white rounded-3xl shadow-2xl flex items-center justify-center text-4xl text-blue-600 mx-auto border border-slate-100">
+                                        <i className="fas fa-lock"></i>
+                                    </div>
+                                    <div>
+                                        <h1 className="text-3xl font-black text-slate-900 tracking-tight">Socratic Dialogue Lock</h1>
+                                        <p className="text-slate-500 font-medium max-w-sm mx-auto mt-3">Pre-Test concluded. Screens are now locked for training dialogue.</p>
+                                    </div>
+                                    <div className="flex items-center justify-center gap-2">
+                                        {[1,2,3].map(i => <div key={i} className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" style={{animationDelay: `${i*0.2}s`}}></div>)}
                                     </div>
                                 </div>
                             )}
                         </div>
-                        
-                        {/* SIDEBAR MASTER CONTROL */}
-                        <div className={`w-full lg:w-80 flex flex-col bg-white border-t lg:border-t-0 shadow-[0_-4px_12px_rgba(0,0,0,0.03)] lg:shadow-none overflow-y-auto ${mobileTab === 'controls' ? 'flex' : 'hidden lg:flex'}`}>
-                            <div className="p-6 border-b border-slate-200 bg-slate-50">
-                                <h4 className="font-bold text-xs mb-4 uppercase text-slate-500 tracking-widest flex items-center gap-2"><i className="fas fa-gamepad text-socrates-primary"></i> Master Control</h4>
-                                
-                                {activeModule && activeModule.questions && activeModule.questions.length > 0 ? (
-                                    <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm animate-fade-in">
-                                        <label className="block text-[10px] font-extrabold text-slate-500 mb-2 uppercase tracking-widest flex items-center gap-1">
-                                            <i className="fas fa-list-ol text-purple-600"></i> Active Question Index
-                                        </label>
-                                        <select 
-                                            value={activeQIdx} 
-                                            onChange={(e) => {
-                                                setActiveQIdx(parseInt(e.target.value));
-                                                setVotes({0:0, 1:0, 2:0, 3:0});
-                                                setActiveTab('chart');
-                                                
-                                                // If already in a quiz stage, auto-broadcast the selected question immediately
-                                                if (stage === 'pretest' || stage === 'posttest') {
-                                                    navigateToQuestion(parseInt(e.target.value));
-                                                }
-                                            }} 
-                                            className="input-field bg-white py-2 text-xs font-bold text-socrates-dark focus:border-purple-600 focus:ring-purple-100 animate-fade-in"
-                                        >
-                                            {activeModule.questions.map((q, idx) => {
-                                                const cleanedQ = cleanQuestionText(q.question_text);
-                                                return (
-                                                    <option key={idx} value={idx}>
-                                                        Q{idx + 1}: {cleanedQ.length > 25 ? `${cleanedQ.substring(0, 25)}...` : cleanedQ}
-                                                    </option>
-                                                );
-                                            })}
-                                        </select>
-                                    </div>
-                                ) : (
-                                    <div className="animate-fade-in text-center p-4 bg-slate-50 border border-slate-200 rounded-xl mb-6 shadow-sm">
-                                        <i className="fas fa-exclamation-circle text-rose-500 text-lg mb-2"></i>
-                                        <div className="text-[10px] font-extrabold text-slate-700 mb-1 uppercase tracking-wider">No Module Active</div>
-                                        <p className="text-[9px] text-slate-400 font-semibold leading-relaxed">
-                                            Please select a module from the library first. Fallback milestone questions have been disabled.
-                                        </p>
-                                    </div>
-                                )}
 
-                                {activeModule && (
-                                    <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200 shadow-sm animate-fade-in">
-                                        <label className="block text-[10px] font-extrabold text-slate-500 mb-2.5 uppercase tracking-widest flex items-center gap-1.5">
-                                            <i className="fas fa-globe text-blue-600"></i> Force Trainee Language
-                                        </label>
-                                        <div className="relative flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-inner focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-                                            <i className="fas fa-language text-slate-400 text-sm mr-2 shrink-0"></i>
-                                            <select 
-                                                value={selectedLanguageOverride}
-                                                onChange={(e) => broadcastLanguageOverride(e.target.value)}
-                                                className="w-full bg-transparent border-none outline-none font-bold text-xs text-slate-700 cursor-pointer py-0.5"
-                                            >
-                                                {[
-                                                    { id: 'en', label: 'English' },
-                                                    { id: 'hindi', label: 'हिन्दी (Hindi)' },
-                                                    { id: 'hinglish', label: 'Hinglish' },
-                                                    { id: 'punjabi', label: 'ਪੰਜਾਬੀ (Punjabi)' },
-                                                    { id: 'bengali', label: 'বাংলা (Bengali)' },
-                                                    { id: 'marathi', label: 'मराठी (Marathi)' },
-                                                    { id: 'telugu', label: 'తెలుగు (Telugu)' },
-                                                    { id: 'tamil', label: 'தமிழ் (Tamil)' },
-                                                    { id: 'gujarati', label: 'ગુજરાતી (Gujarati)' },
-                                                    { id: 'kannada', label: 'ਕನ್ನಡ (Kannada)' }
-                                                ].map(lang => (
-                                                    <option key={lang.id} value={lang.id} className="text-slate-800 font-bold">{lang.label}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-                                )}
-                                
-                                <div className="space-y-3">
-                                    <button 
-                                        disabled={!activeModule} 
-                                        onClick={() => pushView('pretest')} 
-                                        className={`w-full py-3 shadow-sm ${stage==='pretest'?'btn-primary':'btn-outline'} disabled:opacity-40`}
-                                    >
-                                        1. Push Pre-Test
-                                    </button>
-                                    <button 
-                                        disabled={!activeModule} 
-                                        onClick={() => pushView('training')} 
-                                        className={`w-full py-3 shadow-sm ${stage==='training'?'btn-primary':'btn-outline'} disabled:opacity-40`}
-                                    >
-                                        2. Training Lock Screen
-                                    </button>
-                                    <button 
-                                        disabled={!activeModule} 
-                                        onClick={() => pushView('posttest')} 
-                                        className={`w-full py-3 shadow-sm ${stage==='posttest'?'btn-primary':'btn-outline'} disabled:opacity-40`}
-                                    >
-                                        3. Push Post-Test
-                                    </button>
-                                    <div className="pt-2 border-t border-slate-200 mt-2">
-                                        <button 
-                                            disabled={!activeModule} 
-                                            onClick={triggerFinalPodium} 
-                                            className="w-full btn-primary bg-gradient-to-r from-amber-500 to-amber-600 border-amber-400 py-3 shadow-md flex items-center justify-center gap-1.5 hover:from-amber-600 hover:to-amber-700 disabled:opacity-40"
-                                        >
-                                            <i className="fas fa-crown"></i> 4. Show Final Podium
+                        {/* RIGHT: MASTER CONTROL CONSOLE (Desktop) */}
+                        <div className="hidden lg:flex w-96 bg-white border-l border-slate-200 flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.02)] z-20">
+                            <div className="p-8 space-y-8 overflow-y-auto">
+                                <div className="space-y-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <i className="fas fa-sliders-h text-blue-600"></i> Mission Control
+                                    </h4>
+                                    
+                                    <div className="space-y-3">
+                                        <button onClick={() => pushView('pretest')} className={`w-full group relative overflow-hidden flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${stage === 'pretest' ? 'border-blue-600 bg-blue-50 shadow-md' : 'border-slate-100 hover:border-blue-200'}`}>
+                                            <div className="text-left">
+                                                <div className={`text-[10px] font-black uppercase tracking-widest ${stage === 'pretest' ? 'text-blue-600' : 'text-slate-400'}`}>Phase 01</div>
+                                                <div className={`text-sm font-black ${stage === 'pretest' ? 'text-blue-700' : 'text-slate-700'}`}>Push Pre-Test</div>
+                                            </div>
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stage === 'pretest' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600'}`}>
+                                                <i className="fas fa-paper-plane text-xs"></i>
+                                            </div>
+                                        </button>
+
+                                        <button onClick={() => pushView('training')} className={`w-full group relative overflow-hidden flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${stage === 'training' ? 'border-amber-500 bg-amber-50 shadow-md' : 'border-slate-100 hover:border-amber-200'}`}>
+                                            <div className="text-left">
+                                                <div className={`text-[10px] font-black uppercase tracking-widest ${stage === 'training' ? 'text-amber-600' : 'text-slate-400'}`}>Phase 02</div>
+                                                <div className={`text-sm font-black ${stage === 'training' ? 'text-amber-700' : 'text-slate-700'}`}>Lock Screens</div>
+                                            </div>
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stage === 'training' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-amber-100 group-hover:text-amber-600'}`}>
+                                                <i className="fas fa-lock text-xs"></i>
+                                            </div>
+                                        </button>
+
+                                        <button onClick={() => pushView('posttest')} className={`w-full group relative overflow-hidden flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${stage === 'posttest' ? 'border-emerald-600 bg-emerald-50 shadow-md' : 'border-slate-100 hover:border-emerald-200'}`}>
+                                            <div className="text-left">
+                                                <div className={`text-[10px] font-black uppercase tracking-widest ${stage === 'posttest' ? 'text-emerald-600' : 'text-slate-400'}`}>Phase 03</div>
+                                                <div className={`text-sm font-black ${stage === 'posttest' ? 'text-emerald-700' : 'text-slate-700'}`}>Push Post-Test</div>
+                                            </div>
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${stage === 'posttest' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-400 group-hover:bg-emerald-100 group-hover:text-emerald-600'}`}>
+                                                <i className="fas fa-bolt text-xs"></i>
+                                            </div>
+                                        </button>
+
+                                        <button onClick={triggerFinalPodium} className="w-full mt-4 p-4 bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-amber-200 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3">
+                                            <i className="fas fa-crown"></i> Launch Podium
                                         </button>
                                     </div>
                                 </div>
-                            </div>
-                            
-                            <div className="p-6 flex-1 overflow-y-auto divide-y divide-slate-100">
-                                <h5 className="font-bold text-xs text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-1.5"><i className="fas fa-users text-slate-400"></i> Trainees Joined ({users.length})</h5>
-                                {users.map(u => (
-                                    <div key={u} className="py-2.5 flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-socrates-accent shadow-[0_0_6px_rgba(16,185,129,0.5)]"></span>
-                                        <span className="text-xs font-bold text-slate-700">{u}</span>
+
+                                <div className="space-y-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                                        <i className="fas fa-language text-purple-600"></i> Broadcast Language
+                                    </h4>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {[
+                                            {id:'en', label:'English'}, {id:'hindi', label:'हिन्दी'},
+                                            {id:'hinglish', label:'Hinglish'}, {id:'marathi', label:'मराठी'},
+                                            {id:'telugu', label:'తెలుగు'}, {id:'tamil', label:'தமிழ்'}
+                                        ].map(lang => (
+                                            <button 
+                                                key={lang.id}
+                                                onClick={() => broadcastLanguageOverride(lang.id)}
+                                                className={`py-2 px-3 rounded-xl border text-[10px] font-bold transition-all ${selectedLanguageOverride === lang.id ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}
+                                            >
+                                                {lang.label}
+                                            </button>
+                                        ))}
                                     </div>
-                                ))}
-                                {users.length === 0 && (
-                                    <p className="text-xs text-slate-400 py-4 italic">Waiting for trainees to connect...</p>
-                                )}
+                                </div>
+
+                                <div className="space-y-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
+                                        <span><i className="fas fa-users-class text-emerald-600 mr-2"></i> Connected Trainees</span>
+                                        <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{users.length}</span>
+                                    </h4>
+                                    <div className="max-h-60 overflow-y-auto pr-2 space-y-2 no-scrollbar">
+                                        {users.length > 0 ? users.map((u, idx) => (
+                                            <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center font-bold text-[10px] text-slate-600 border border-slate-200">{u.substring(0,2)}</div>
+                                                <div className="text-[11px] font-bold text-slate-800">{u}</div>
+                                                <div className="ml-auto w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
+                                            </div>
+                                        )) : (
+                                            <p className="text-center text-[10px] text-slate-400 font-bold italic py-8">Waiting for joiners...</p>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
+                        </div>
+
+                        {/* MOBILE TAB BAR (Controls for small screens) */}
+                        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 flex gap-4 z-[50] shadow-[0_-10px_30px_rgba(0,0,0,0.1)]">
+                            <button onClick={() => pushView('pretest')} className={`flex-1 flex flex-col items-center py-2 rounded-2xl ${stage === 'pretest' ? 'text-blue-600 bg-blue-50' : 'text-slate-400'}`}>
+                                <i className="fas fa-paper-plane mb-1 text-sm"></i>
+                                <span className="text-[8px] font-black uppercase tracking-widest">Pre-Test</span>
+                            </button>
+                            <button onClick={() => pushView('training')} className={`flex-1 flex flex-col items-center py-2 rounded-2xl ${stage === 'training' ? 'text-amber-500 bg-amber-50' : 'text-slate-400'}`}>
+                                <i className="fas fa-lock mb-1 text-sm"></i>
+                                <span className="text-[8px] font-black uppercase tracking-widest">Lock</span>
+                            </button>
+                            <button onClick={() => pushView('posttest')} className={`flex-1 flex flex-col items-center py-2 rounded-2xl ${stage === 'posttest' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'}`}>
+                                <i className="fas fa-bolt mb-1 text-sm"></i>
+                                <span className="text-[8px] font-black uppercase tracking-widest">Post-Test</span>
+                            </button>
+                            <button onClick={triggerFinalPodium} className="flex-1 flex flex-col items-center py-2 rounded-2xl text-amber-600 bg-amber-50 border border-amber-200 shadow-sm">
+                                <i className="fas fa-crown mb-1 text-sm"></i>
+                                <span className="text-[8px] font-black uppercase tracking-widest">Podium</span>
+                            </button>
                         </div>
                     </div>
                 </div>
             );
         };
+
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
