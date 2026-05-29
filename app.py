@@ -396,13 +396,16 @@ def init_db():
     cursor.execute("SELECT COUNT(*) FROM branch_coordinates")
     if cursor.fetchone()[0] == 0:
         seed_data = [
-            ('DELHI RF', 'North Zone', 'Delhi Division', 28.6139, 77.2090, '1234'),
-            ('AHMEDABAD RF', 'West Zone', 'Gujarat Division', 23.0225, 72.5714, '1234'),
-            ('CHANDIGARH RF', 'North Zone', 'Punjab Division', 30.7333, 76.7794, '1234'),
-            ('KOLKATA RF', 'East Zone', 'Bengal Division', 22.5726, 88.3639, '1234'),
-            ('MUMBAI RF', 'West Zone', 'Mumbai Division', 19.0760, 72.8777, '1234')
+            ('DELHI RF', 'NORTH ZONE', 'DELHI DIVISION', 28.6139, 77.2090, '1234'),
+            ('AHMEDABAD RF', 'WEST ZONE', 'GUJARAT DIVISION', 23.0225, 72.5714, '1234'),
+            ('CHANDIGARH RF', 'NORTH ZONE', 'PUNJAB DIVISION', 30.7333, 76.7794, '1234'),
+            ('KOLKATA RF', 'EAST ZONE', 'BENGAL DIVISION', 22.5726, 88.3639, '1234'),
+            ('MUMBAI RF', 'WEST ZONE', 'MUMBAI DIVISION', 19.0760, 72.8777, '1234')
         ]
         cursor.executemany("INSERT INTO branch_coordinates VALUES (?, ?, ?, ?, ?, ?)", seed_data)
+    else:
+        cursor.execute("UPDATE branch_coordinates SET zone = UPPER(zone), division = UPPER(division)")
+        cursor.execute("UPDATE employees SET zone = UPPER(zone), division = UPPER(division)")
         
     conn.commit()
     conn.close()
@@ -1069,6 +1072,60 @@ def get_roster_filters():
         "branches_meta": branches_meta
     })
 
+def normalize_enums(zone, division, branch):
+    ZONE_MAPPING = {
+        'NORTH': 'NORTH ZONE', 'NORTH ZONE': 'NORTH ZONE', 'DEL_BU': 'NORTH ZONE', 'CH_BU': 'NORTH ZONE',
+        'WEST': 'WEST ZONE', 'WEST ZONE': 'WEST ZONE', 'AMD_BU': 'WEST ZONE',
+        'EAST': 'EAST ZONE', 'EAST ZONE': 'EAST ZONE', 'KOL_BU': 'EAST ZONE',
+        'HQ': 'NORTH ZONE'
+    }
+
+    DIVISION_MAPPING = {
+        'DELHI': 'DELHI DIVISION', 'DELHI DIVISION': 'DELHI DIVISION',
+        'GUJARAT': 'GUJARAT DIVISION', 'GUJARAT DIVISION': 'GUJARAT DIVISION',
+        'PUNJAB': 'PUNJAB DIVISION', 'PUNJAB DIVISION': 'PUNJAB DIVISION',
+        'BENGAL': 'BENGAL DIVISION', 'BENGAL DIVISION': 'BENGAL DIVISION',
+        'WEST BENGAL': 'BENGAL DIVISION',
+        'MUMBAI': 'MUMBAI DIVISION', 'MUMBAI DIVISION': 'MUMBAI DIVISION',
+        'HQ DIV': 'DELHI DIVISION'
+    }
+
+    BRANCH_MAPPING = {
+        'DELHI': 'DELHI RF', 'DELHI RF': 'DELHI RF',
+        'AHMEDABAD': 'AHMEDABAD RF', 'AHMEDABAD RF': 'AHMEDABAD RF',
+        'CHANDIGARH': 'CHANDIGARH RF', 'CHANDIGARH RF': 'CHANDIGARH RF',
+        'KOLKATA': 'KOLKATA RF', 'KOLKATA RF': 'KOLKATA RF',
+        'MUMBAI': 'MUMBAI RF', 'MUMBAI RF': 'MUMBAI RF',
+        'HQ': 'DELHI RF'
+    }
+    
+    z_upper = (zone or "").strip().upper()
+    d_upper = (division or "").strip().upper()
+    b_upper = (branch or "").strip().upper()
+    
+    norm_zone = ZONE_MAPPING.get(z_upper)
+    if not norm_zone:
+        for k, v in ZONE_MAPPING.items():
+            if k in z_upper:
+                norm_zone = v
+                break
+                
+    norm_div = DIVISION_MAPPING.get(d_upper)
+    if not norm_div:
+        for k, v in DIVISION_MAPPING.items():
+            if k in d_upper:
+                norm_div = v
+                break
+                
+    norm_br = BRANCH_MAPPING.get(b_upper)
+    if not norm_br:
+        for k, v in BRANCH_MAPPING.items():
+            if k in b_upper:
+                norm_br = v
+                break
+                
+    return norm_zone, norm_div, norm_br
+
 def normalize_employee_data(branch_name, business_unit, product_name, division=None):
     b_name = (branch_name or "").strip().upper()
     bu_name = (business_unit or "").strip()
@@ -1157,33 +1214,6 @@ def upload_roster():
             # Map columns by index
             hdr_indices = {h: headers.index(h) for h in headers}
             
-            # Setup Standard Normalizations
-            ZONE_MAPPING = {
-                'NORTH': 'North Zone', 'NORTH ZONE': 'North Zone', 'DEL_BU': 'North Zone', 'CH_BU': 'North Zone',
-                'WEST': 'West Zone', 'WEST ZONE': 'West Zone', 'AMD_BU': 'West Zone',
-                'EAST': 'East Zone', 'EAST ZONE': 'East Zone', 'KOL_BU': 'East Zone',
-                'HQ': 'North Zone'
-            }
-
-            DIVISION_MAPPING = {
-                'DELHI': 'Delhi Division', 'DELHI DIVISION': 'Delhi Division',
-                'GUJARAT': 'Gujarat Division', 'GUJARAT DIVISION': 'Gujarat Division',
-                'PUNJAB': 'Punjab Division', 'PUNJAB DIVISION': 'Punjab Division',
-                'BENGAL': 'Bengal Division', 'BENGAL DIVISION': 'Bengal Division',
-                'WEST BENGAL': 'Bengal Division',
-                'MUMBAI': 'Mumbai Division', 'MUMBAI DIVISION': 'Mumbai Division',
-                'HQ DIV': 'Delhi Division'
-            }
-
-            BRANCH_MAPPING = {
-                'DELHI': 'DELHI RF', 'DELHI RF': 'DELHI RF',
-                'AHMEDABAD': 'AHMEDABAD RF', 'AHMEDABAD RF': 'AHMEDABAD RF',
-                'CHANDIGARH': 'CHANDIGARH RF', 'CHANDIGARH RF': 'CHANDIGARH RF',
-                'KOLKATA': 'KOLKATA RF', 'KOLKATA RF': 'KOLKATA RF',
-                'MUMBAI': 'MUMBAI RF', 'MUMBAI RF': 'MUMBAI RF',
-                'HQ': 'DELHI RF'
-            }
-            
             formatting_errors = []
             final_rows = []
             
@@ -1212,45 +1242,27 @@ def upload_roster():
                 elif len(emp_name) < 2:
                     formatting_errors.append(f"Row {row_idx}: Employee Name '{emp_name}' is too short.")
                     
-                # 3. Zone normalisation & validation
-                norm_zone = None
-                if zone_val in ZONE_MAPPING:
-                    norm_zone = ZONE_MAPPING[zone_val]
-                else:
-                    # check containing keywords
-                    for k, v in ZONE_MAPPING.items():
-                        if k in zone_val:
-                            norm_zone = v
-                            break
-                if not norm_zone:
-                    formatting_errors.append(f"Row {row_idx}: Invalid Zone '{row_data['Zone']}'. Must be North Zone, West Zone, or East Zone.")
+                # Standardize using the normalize_enums helper
+                norm_zone, norm_div, norm_br = normalize_enums(zone_val, div_val, br_val)
+                
+                VALID_ZONES = {'NORTH ZONE', 'WEST ZONE', 'EAST ZONE'}
+                VALID_DIVISIONS = {'DELHI DIVISION', 'GUJARAT DIVISION', 'PUNJAB DIVISION', 'BENGAL DIVISION', 'MUMBAI DIVISION'}
+                VALID_BRANCHES = {'DELHI RF', 'AHMEDABAD RF', 'CHANDIGARH RF', 'KOLKATA RF', 'MUMBAI RF'}
+                
+                # 3. Zone validation
+                if norm_zone not in VALID_ZONES:
+                    formatting_errors.append(f"Row {row_idx}: Invalid Zone '{row_data['Zone']}'. Must be NORTH ZONE, WEST ZONE, or EAST ZONE.")
                 else:
                     row_data['Zone'] = norm_zone
                     
-                # 4. Division normalisation & validation
-                norm_div = None
-                if div_val in DIVISION_MAPPING:
-                    norm_div = DIVISION_MAPPING[div_val]
-                else:
-                    for k, v in DIVISION_MAPPING.items():
-                        if k in div_val:
-                            norm_div = v
-                            break
-                if not norm_div:
-                    formatting_errors.append(f"Row {row_idx}: Invalid Division '{row_data['Division']}'. Must be Delhi Division, Gujarat Division, Punjab Division, Bengal Division, or Mumbai Division.")
+                # 4. Division validation
+                if norm_div not in VALID_DIVISIONS:
+                    formatting_errors.append(f"Row {row_idx}: Invalid Division '{row_data['Division']}'. Must be DELHI DIVISION, GUJARAT DIVISION, PUNJAB DIVISION, BENGAL DIVISION, or MUMBAI DIVISION.")
                 else:
                     row_data['Division'] = norm_div
                     
-                # 5. Branch normalisation & validation
-                norm_br = None
-                if br_val in BRANCH_MAPPING:
-                    norm_br = BRANCH_MAPPING[br_val]
-                else:
-                    for k, v in BRANCH_MAPPING.items():
-                        if k in br_val:
-                            norm_br = v
-                            break
-                if not norm_br:
+                # 5. Branch validation
+                if norm_br not in VALID_BRANCHES:
                     formatting_errors.append(f"Row {row_idx}: Invalid Branch '{row_data['Branch Name']}'. Must be DELHI RF, AHMEDABAD RF, CHANDIGARH RF, KOLKATA RF, or MUMBAI RF.")
                 else:
                     row_data['Branch Name'] = norm_br
@@ -1511,7 +1523,8 @@ def add_roster_manual():
     product_name = data.get('product_name', '').strip().upper()
     change_detail = data.get('change_detail', '').strip().upper()
     
-    # Normalize employee fields
+    # Normalize employee fields and enums to UPPERCASE enums
+    zone, division, branch_name = normalize_enums(zone, division, branch_name)
     branch_name, business_unit, product_name = normalize_employee_data(
         branch_name, business_unit, product_name, division
     )
@@ -1606,7 +1619,8 @@ def handle_single_roster_item(emp_code):
         status = data.get('status', 'ACTIVE').strip().upper()
         change_detail = data.get('change_detail', '').strip().upper()
         
-        # Normalize employee fields
+        # Normalize employee fields and enums to UPPERCASE enums
+        zone, division, branch_name = normalize_enums(zone, division, branch_name)
         branch_name, business_unit, product_name = normalize_employee_data(
             branch_name, business_unit, product_name, division
         )

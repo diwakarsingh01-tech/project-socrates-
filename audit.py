@@ -821,7 +821,7 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         cursor.execute("SELECT * FROM branch_coordinates WHERE branch_name='DELHI RF'")
         row = cursor.fetchone()
         self.assertIsNotNone(row)
-        self.assertEqual(row[1], 'North Zone')
+        self.assertEqual(row[1], 'NORTH ZONE')
         self.assertEqual(row[3], 28.6139)
         self.assertEqual(row[4], 77.2090)
 
@@ -1009,13 +1009,13 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
             cursor = self.conn.cursor()
             emp1 = cursor.execute("SELECT branch_name, zone, division FROM employees WHERE emp_code='SF-8881'").fetchone()
             self.assertEqual(emp1[0], 'DELHI RF')
-            self.assertEqual(emp1[1], 'North Zone')
-            self.assertEqual(emp1[2], 'Delhi Division')
+            self.assertEqual(emp1[1], 'NORTH ZONE')
+            self.assertEqual(emp1[2], 'DELHI DIVISION')
             
             emp2 = cursor.execute("SELECT branch_name, zone, division FROM employees WHERE emp_code='SF-8882'").fetchone()
             self.assertEqual(emp2[0], 'AHMEDABAD RF')
-            self.assertEqual(emp2[1], 'West Zone')
-            self.assertEqual(emp2[2], 'Gujarat Division')
+            self.assertEqual(emp2[1], 'WEST ZONE')
+            self.assertEqual(emp2[2], 'GUJARAT DIVISION')
             
         finally:
             os.remove(temp_path)
