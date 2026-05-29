@@ -3219,6 +3219,42 @@
                         </div>
                     </div>
 
+                    {/* Itinerary Density Matrix (Planned Visits) Widget */}
+                    {(() => {
+                        const plannedVisitsByDate = {};
+                        visits.forEach(v => {
+                            const d = v.planned_date;
+                            plannedVisitsByDate[d] = (plannedVisitsByDate[d] || 0) + 1;
+                        });
+                        const sortedPlannedDates = Object.keys(plannedVisitsByDate).sort();
+                        
+                        if (sortedPlannedDates.length === 0) return null;
+                        
+                        return (
+                            <div className="card p-5 bg-gradient-to-br from-blue-50 to-indigo-50/30 border border-blue-100 rounded-2xl shadow-sm animate-fade-in space-y-3.5">
+                                <div className="flex items-center gap-2">
+                                    <i className="fas fa-route text-blue-600 text-base"></i>
+                                    <h4 className="font-extrabold text-xs text-socrates-dark font-outfit uppercase tracking-wider">Itinerary Density Matrix (Planned Visits per Date)</h4>
+                                </div>
+                                <div className="flex flex-wrap gap-3">
+                                    {sortedPlannedDates.map(dateStr => (
+                                        <div key={dateStr} className="bg-white border border-blue-150 px-3.5 py-2 rounded-xl flex items-center gap-3.5 shadow-sm hover:border-blue-300 transition-colors">
+                                            <div className="flex flex-col">
+                                                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-outfit">DATE</span>
+                                                <span className="text-xs font-extrabold text-slate-700 font-mono">{dateStr}</span>
+                                            </div>
+                                            <div className="h-6 w-[1px] bg-slate-200"></div>
+                                            <div className="flex flex-col items-center">
+                                                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-outfit">PLANNED</span>
+                                                <span className="text-xs font-black text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">{plannedVisitsByDate[dateStr]} Visits</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {/* Planning Modal */}
                     {showPlanModal && (
                         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">

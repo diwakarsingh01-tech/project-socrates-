@@ -753,24 +753,51 @@ def get_metadata():
     zones = conn.execute("SELECT DISTINCT zone FROM employees WHERE zone IS NOT NULL AND zone != '' ORDER BY zone").fetchall()
     divisions = conn.execute("SELECT DISTINCT division FROM employees WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()
     branches = conn.execute("SELECT DISTINCT branch_name FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
+    bus_query = conn.execute("SELECT DISTINCT business_unit FROM employees WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit").fetchall()
     conn.close()
     
-    bus = ["2-Wheeler Personal Loan", "Two-Wheeler", "Personal Loan", "Gold Loan", "Commercial Vehicle", "Retail"]
-    
-    branches_list = [r[0] for r in branches]
+    zones_list = []
+    for r in zones:
+        for z in r[0].split(','):
+            z_clean = z.strip().upper()
+            if z_clean and z_clean not in zones_list:
+                zones_list.append(z_clean)
+    zones_list.sort()
+    if not zones_list:
+        zones_list = ["NORTH ZONE", "WEST ZONE", "EAST ZONE"]
+        
+    divisions_list = []
+    for r in divisions:
+        for d in r[0].split(','):
+            d_clean = d.strip().upper()
+            if d_clean and d_clean not in divisions_list:
+                divisions_list.append(d_clean)
+    divisions_list.sort()
+    if not divisions_list:
+        divisions_list = ["DELHI DIVISION", "GUJARAT DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION", "MUMBAI DIVISION"]
+        
+    branches_list = []
+    for r in branches:
+        for b in r[0].split(','):
+            b_clean = b.strip().upper()
+            if b_clean and b_clean not in branches_list:
+                branches_list.append(b_clean)
+    branches_list.sort()
     if not branches_list:
         branches_list = ["AHMEDABAD RF", "DELHI RF", "CHANDIGARH RF", "KOLKATA RF", "MUMBAI RF"]
         
-    zones_list = [r[0] for r in zones]
-    if not zones_list:
-        zones_list = ["AMD_BU", "CH_BU", "DEL_BU", "KOL_BU"]
-        
-    divisions_list = [r[0] for r in divisions]
-    if not divisions_list:
-        divisions_list = ["GUJARAT DIVISION", "DELHI DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION"]
+    bus_list = []
+    for r in bus_query:
+        for bu in r[0].split(','):
+            bu_clean = bu.strip().upper()
+            if bu_clean and bu_clean not in bus_list:
+                bus_list.append(bu_clean)
+    bus_list.sort()
+    if not bus_list:
+        bus_list = ["TWO-WHEELER", "PERSONAL LOAN", "GOLD LOAN", "COMMERCIAL VEHICLE", "RETAIL"]
         
     return jsonify({
-        "business_units": bus,
+        "business_units": bus_list,
         "zones": zones_list,
         "divisions": divisions_list,
         "branches": branches_list
@@ -1087,6 +1114,7 @@ def normalize_enums(zone, division, branch):
         'BENGAL': 'BENGAL DIVISION', 'BENGAL DIVISION': 'BENGAL DIVISION',
         'WEST BENGAL': 'BENGAL DIVISION',
         'MUMBAI': 'MUMBAI DIVISION', 'MUMBAI DIVISION': 'MUMBAI DIVISION',
+        'MAHARASHTRA': 'MUMBAI DIVISION', 'MAHARASHTRA DIVISION': 'MUMBAI DIVISION',
         'HQ DIV': 'DELHI DIVISION'
     }
 
@@ -1103,32 +1131,33 @@ def normalize_enums(zone, division, branch):
     d_upper = (division or "").strip().upper()
     b_upper = (branch or "").strip().upper()
     
-    norm_zone = ZONE_MAPPING.get(z_upper)
-    if not norm_zone:
-        for k, v in ZONE_MAPPING.items():
-            if k in z_upper:
-                norm_zone = v
-                break
-                
-    norm_div = DIVISION_MAPPING.get(d_upper)
-    if not norm_div:
-        for k, v in DIVISION_MAPPING.items():
-            if k in d_upper:
-                norm_div = v
-                break
-                
-    norm_br = BRANCH_MAPPING.get(b_upper)
-    if not norm_br:
-        for k, v in BRANCH_MAPPING.items():
-            if k in b_upper:
-                norm_br = v
-                break
-                
+    def normalize_value(val_str, mapping):
+        if not val_str:
+            return ""
+        items = [x.strip() for x in val_str.split(',') if x.strip()]
+        normalized_items = []
+        for item in items:
+            norm = mapping.get(item)
+            if not norm:
+                # Substring match fallback
+                for k, v in mapping.items():
+                    if k in item:
+                        norm = v
+                        break
+            if not norm:
+                norm = item
+            normalized_items.append(norm)
+        return ", ".join(normalized_items)
+
+    norm_zone = normalize_value(z_upper, ZONE_MAPPING)
+    norm_div = normalize_value(d_upper, DIVISION_MAPPING)
+    norm_br = normalize_value(b_upper, BRANCH_MAPPING)
+    
     return norm_zone, norm_div, norm_br
 
 def normalize_employee_data(branch_name, business_unit, product_name, division=None):
     b_name = (branch_name or "").strip().upper()
-    bu_name = (business_unit or "").strip()
+    bu_name = (business_unit or "").strip().upper()
     p_name = (product_name or "").strip().upper()
     
     # Check if business_unit contains 'RF' or matches refresher centers (e.g. 'AHMEDABAD RF')
@@ -1137,12 +1166,12 @@ def normalize_employee_data(branch_name, business_unit, product_name, division=N
         local_branch = b_name
         
         b_name = refresher_center
-        bu_name = "2-Wheeler Personal Loan"
+        bu_name = "2-WHEELER PERSONAL LOAN"
         p_name = local_branch
         
     # If branch_name is 2-Wheeler Personal Loan or similar, correct it
     if b_name in ["2-WHEELER PERSONAL LOAN", "TWO-WHEELER", "PERSONAL LOAN", "GOLD LOAN", "COMMERCIAL VEHICLE", "RETAIL"]:
-        bu_name = branch_name
+        bu_name = branch_name.upper().strip()
         # Guess branch from division or default
         div_upper = (division or "").strip().upper()
         if "GUJARAT" in div_upper or "AHMEDABAD" in div_upper:
@@ -1159,7 +1188,7 @@ def normalize_employee_data(branch_name, business_unit, product_name, division=N
             b_name = "AHMEDABAD RF" # Default fallback
             
     if not bu_name:
-        bu_name = "2-Wheeler Personal Loan"
+        bu_name = "2-WHEELER PERSONAL LOAN"
         
     if not p_name or p_name == 'N/A':
         p_name = ""
@@ -1250,19 +1279,25 @@ def upload_roster():
                 VALID_BRANCHES = {'DELHI RF', 'AHMEDABAD RF', 'CHANDIGARH RF', 'KOLKATA RF', 'MUMBAI RF'}
                 
                 # 3. Zone validation
-                if norm_zone not in VALID_ZONES:
+                zone_items = [z.strip() for z in (norm_zone or "").split(",") if z.strip()]
+                all_zones_valid = all(z in VALID_ZONES for z in zone_items)
+                if not zone_items or not all_zones_valid:
                     formatting_errors.append(f"Row {row_idx}: Invalid Zone '{row_data['Zone']}'. Must be NORTH ZONE, WEST ZONE, or EAST ZONE.")
                 else:
                     row_data['Zone'] = norm_zone
                     
                 # 4. Division validation
-                if norm_div not in VALID_DIVISIONS:
+                div_items = [d.strip() for d in (norm_div or "").split(",") if d.strip()]
+                all_divs_valid = all(d in VALID_DIVISIONS for d in div_items)
+                if not div_items or not all_divs_valid:
                     formatting_errors.append(f"Row {row_idx}: Invalid Division '{row_data['Division']}'. Must be DELHI DIVISION, GUJARAT DIVISION, PUNJAB DIVISION, BENGAL DIVISION, or MUMBAI DIVISION.")
                 else:
                     row_data['Division'] = norm_div
                     
                 # 5. Branch validation
-                if norm_br not in VALID_BRANCHES:
+                br_items = [b.strip() for b in (norm_br or "").split(",") if b.strip()]
+                all_branches_valid = all(b in VALID_BRANCHES for b in br_items)
+                if not br_items or not all_branches_valid:
                     formatting_errors.append(f"Row {row_idx}: Invalid Branch '{row_data['Branch Name']}'. Must be DELHI RF, AHMEDABAD RF, CHANDIGARH RF, KOLKATA RF, or MUMBAI RF.")
                 else:
                     row_data['Branch Name'] = norm_br

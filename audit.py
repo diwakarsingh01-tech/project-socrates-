@@ -1108,6 +1108,64 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
             cursor.execute("DELETE FROM trainers WHERE trainer_id='TR-HIST-1'")
             self.conn.commit()
 
+    def test_multiple_division_normalization(self):
+        """Audit 26: Verify multiple division normalization (comma-separated, uppercase standard enums)"""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM employees WHERE emp_code='SF-MULTIDIV-1'")
+        self.conn.commit()
+        
+        # 1. Test CSV upload with multiple divisions and mixed case (Should normalize and succeed)
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Employee Code', 'Employee Name', 'Branch Name', 'Zone', 'Division', 'Business Unit', 'Role'])
+            writer.writerow(['SF-MULTIDIV-1', 'Multi Div User', 'delhi rf', 'North Zone', 'delhi division, punjab division', 'Two-Wheeler', 'PL Exe'])
+            temp_path = f.name
+            
+        try:
+            with open(temp_path, 'rb') as f:
+                res = self.client.post('/api/roster/upload', data={'file': (f, 'test_multidiv.csv')})
+                data = json.loads(res.data)
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(data['status'], 'success')
+                
+            # Verify normalized uppercase database values
+            cursor.execute("SELECT zone, division, branch_name, business_unit FROM employees WHERE emp_code='SF-MULTIDIV-1'")
+            row = cursor.fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row['zone'], 'NORTH ZONE')
+            self.assertEqual(row['division'], 'DELHI DIVISION, PUNJAB DIVISION')
+            self.assertEqual(row['branch_name'], 'DELHI RF')
+            self.assertEqual(row['business_unit'], 'TWO-WHEELER')
+            
+        finally:
+            os.remove(temp_path)
+            cursor.execute("DELETE FROM employees WHERE emp_code='SF-MULTIDIV-1'")
+            self.conn.commit()
+
+    def test_dynamic_uppercase_metadata(self):
+        """Audit 27: Verify that /api/metadata dynamically returns uppercase business units directly from roster database"""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM employees WHERE emp_code='SF-METATEST-1'")
+        self.conn.commit()
+        
+        # Add employee with a unique uppercase business unit
+        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role) VALUES ('SF-METATEST-1', 'Meta Test User', 'DELHI RF', 'NORTH ZONE', 'DELHI DIVISION', 'GOLD LOAN', 'PL Exe')")
+        self.conn.commit()
+        
+        try:
+            res = self.client.get('/api/metadata')
+            self.assertEqual(res.status_code, 200)
+            data = json.loads(res.data)
+            
+            self.assertIn('business_units', data)
+            self.assertIn('GOLD LOAN', data['business_units'])
+            # Verify dynamic list does NOT have hardcoded mixed-case "Gold Loan" or "2-Wheeler Personal Loan"
+            self.assertNotIn('Gold Loan', data['business_units'])
+            
+        finally:
+            cursor.execute("DELETE FROM employees WHERE emp_code='SF-METATEST-1'")
+            self.conn.commit()
+
 if __name__ == '__main__':
     unittest.main()
 
