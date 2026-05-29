@@ -2908,6 +2908,7 @@
             const [purposeBusiness, setPurposeBusiness] = useState(false);
             const [businessAgenda, setBusinessAgenda] = useState('');
             const [keyContacts, setKeyContacts] = useState('');
+            const [details, setDetails] = useState('');
             
             // Geofence active tracking states
             const [activeCheckinVisit, setActiveCheckinVisit] = useState(null);
@@ -3011,7 +3012,6 @@
 
             const handleDayClick = (day) => {
                 if (!day) return;
-                if (isSuperAdmin) return; // Read-only for SuperAdmins
                 const yearStr = currentMonthDate.getFullYear();
                 const monthStr = String(currentMonthDate.getMonth() + 1).padStart(2, '0');
                 const dayStr = String(day).padStart(2, '0');
@@ -3067,9 +3067,7 @@
                     .then(res => res.json())
                     .then(data => {
                         if (data.branches_meta) {
-                            // Seeded coordinates are only for these branches, let's filter to coordinate branches
-                            const seedBranches = ['DELHI RF', 'AHMEDABAD RF', 'CHANDIGARH RF', 'KOLKATA RF', 'MUMBAI RF'];
-                            setBranchOptions(data.branches_meta.filter(b => seedBranches.includes(b.name)));
+                            setBranchOptions(data.branches_meta);
                         }
                     })
                     .catch(err => console.error("Error loading roster branches:", err));
@@ -3102,7 +3100,8 @@
                         branch_name: branchName,
                         planned_date: plannedDate,
                         purpose: purposeText,
-                        key_contacts: keyContacts.trim()
+                        key_contacts: keyContacts.trim(),
+                        details: details.trim()
                     })
                 })
                 .then(res => res.json())
@@ -3115,6 +3114,7 @@
                         setPurposeBusiness(false);
                         setBusinessAgenda('');
                         setKeyContacts('');
+                        setDetails('');
                         loadVisits();
                     } else {
                         alert("❌ Error: " + data.message);
@@ -3242,14 +3242,12 @@
                             >
                                 <i className="fas fa-file-download text-sm text-blue-600"></i> Export CSV
                             </button>
-                            {user?.role !== 'SuperAdmin' && (
-                                <button 
-                                    onClick={() => setShowPlanModal(true)}
-                                    className="btn-primary flex items-center gap-2 shadow-md bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2.5 px-4 font-bold text-xs rounded-xl transition-all"
-                                >
-                                    <i className="fas fa-calendar-plus text-sm"></i> Plan Field Visit
-                                </button>
-                            )}
+                            <button 
+                                onClick={() => setShowPlanModal(true)}
+                                className="btn-primary flex items-center gap-2 shadow-md bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2.5 px-4 font-bold text-xs rounded-xl transition-all"
+                            >
+                                <i className="fas fa-calendar-plus text-sm"></i> Plan Field Visit
+                            </button>
                         </div>
                     </div>
 
@@ -3379,6 +3377,17 @@
                                                 onChange={e => setKeyContacts(e.target.value)} 
                                                 placeholder="e.g. Branch Manager, Sales Executive (SF-1002)" 
                                                 className="input-field" 
+                                            />
+                                        </div>
+
+                                        {/* Strategic Details */}
+                                        <div className="space-y-1.5">
+                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Strategic Visit Details / Agenda</label>
+                                            <textarea 
+                                                value={details} 
+                                                onChange={e => setDetails(e.target.value)} 
+                                                placeholder="Enter specific details about the visit goals, previous action items, or focus areas..." 
+                                                className="input-field min-h-[80px] py-3 text-xs leading-relaxed" 
                                             />
                                         </div>
                                     </div>
@@ -3953,7 +3962,7 @@
                                                                 </div>
                                                             ))}
                                                         </div>
-                                                        {day && dayVisits.length === 0 && user?.role !== 'SuperAdmin' && (
+                                                        {day && dayVisits.length === 0 && (
                                                             <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/5 rounded-xl cursor-pointer">
                                                                 <span className="text-[9px] font-bold text-blue-600 bg-white shadow-sm border border-blue-100 px-2 py-1 rounded-lg">
                                                                     <i className="fas fa-plus text-[8px] mr-1"></i> Plan Visit
@@ -4037,6 +4046,11 @@
                                                             )}
                                                         </div>
                                                         <div className="text-[11px] text-slate-500 leading-normal italic">{visit.purpose}</div>
+                                                        {visit.details && (
+                                                            <div className="mt-2 p-2 bg-slate-50 rounded-lg border border-slate-100 text-[10px] text-slate-500 font-medium whitespace-pre-wrap">
+                                                                <i className="fas fa-info-circle text-blue-400 mr-1"></i> {visit.details}
+                                                            </div>
+                                                        )}
                                                     </td>
                                                     {/* Layer 1: GPS Geofence */}
                                                     <td className="py-4 px-6 text-center">

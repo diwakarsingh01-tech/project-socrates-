@@ -3738,7 +3738,7 @@ def get_visits():
             SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
                    bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
                    v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
-                   v.co_presence_count, v.verification_time, bc.manager_pin
+                   v.co_presence_count, v.verification_time, bc.manager_pin, v.details
             FROM field_visits v
             JOIN trainers t ON v.trainer_id = t.trainer_id
             JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
@@ -3749,7 +3749,7 @@ def get_visits():
             SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
                    bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
                    v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
-                   v.co_presence_count, v.verification_time, bc.manager_pin
+                   v.co_presence_count, v.verification_time, bc.manager_pin, v.details
             FROM field_visits v
             JOIN trainers t ON v.trainer_id = t.trainer_id
             JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
@@ -3790,6 +3790,7 @@ def get_visits():
             "co_presence_count": r[15],
             "verification_time": r[16],
             "manager_pin": r[17],
+            "details": r[18] if len(r) > 18 else "",
             "socratic_delta": deltas.get(r[3], 0.0)
         })
         
@@ -3806,6 +3807,7 @@ def plan_visit():
     planned_date = data.get('planned_date', '').strip()
     purpose = data.get('purpose', '').strip()
     key_contacts = data.get('key_contacts', '').strip()
+    details = data.get('details', '').strip()
     
     if not branch_name or not planned_date or not purpose:
         return jsonify({"status": "error", "message": "Branch Name, Planned Date, and Purpose are required."}), 400
@@ -3817,9 +3819,9 @@ def plan_visit():
         return jsonify({"status": "error", "message": f"Branch '{branch_name}' coordinates not registered in geofence benchmark database."}), 400
         
     conn.execute('''
-        INSERT INTO field_visits (trainer_id, branch_name, planned_date, purpose, key_contacts)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (curr_user['trainer_id'], branch_name, planned_date, purpose, key_contacts))
+        INSERT INTO field_visits (trainer_id, branch_name, planned_date, purpose, key_contacts, details)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (curr_user['trainer_id'], branch_name, planned_date, purpose, key_contacts, details))
     conn.commit()
     conn.close()
     
@@ -3988,7 +3990,7 @@ def export_visits():
     query = '''
         SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
                v.planned_date, v.purpose, v.key_contacts, v.status, v.checkin_time, 
-               v.checkin_latitude, v.checkin_longitude, v.co_presence_count, v.verification_time
+               v.checkin_latitude, v.checkin_longitude, v.co_presence_count, v.verification_time, v.details
         FROM field_visits v
         JOIN trainers t ON v.trainer_id = t.trainer_id
         JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
@@ -4064,7 +4066,7 @@ def export_visits():
     writer.writerow([
         "Visit ID", "Trainer ID", "Trainer Name", "Branch Name", "Zone", "Division",
         "Planned Date", "Purpose", "Key Contacts", "Status", "Checkin Time",
-        "Checkin Latitude", "Checkin Longitude", "Co-Presence Count", "Verification Time", "Socratic Delta"
+        "Checkin Latitude", "Checkin Longitude", "Co-Presence Count", "Verification Time", "Strategic Details", "Socratic Delta"
     ])
     
     for r in rows:
@@ -4074,6 +4076,7 @@ def export_visits():
             r[11] if r[11] is not None else "",
             r[12] if r[12] is not None else "",
             r[13], r[14] if r[14] is not None else "",
+            r[15] if len(r) > 15 else "",
             deltas.get(r[3], 0.0)
         ])
         
