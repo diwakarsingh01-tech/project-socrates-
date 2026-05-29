@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Socrates Training Platform</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
@@ -16,14 +16,18 @@
                 extend: {
                     colors: {
                         socrates: {
-                            primary: '#2563EB', // Blue 600
-                            primaryHover: '#1D4ED8', // Blue 700
-                            dark: '#0F172A', // Slate 900
-                            light: '#F8FAFC', // Slate 50
-                            accent: '#10B981', // Emerald 500
-                            border: '#E2E8F0', // Slate 200
-                            text: '#334155' // Slate 700
+                            primary: '#2563EB',
+                            primaryHover: '#1D4ED8',
+                            dark: '#0F172A',
+                            light: '#F8FAFC',
+                            accent: '#10B981',
+                            border: '#E2E8F0',
+                            text: '#334155'
                         }
+                    },
+                    fontFamily: {
+                        outfit: ['Outfit', 'sans-serif'],
+                        inter: ['Inter', 'sans-serif']
                     }
                 }
             }
@@ -31,20 +35,76 @@
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;600;700;800&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #0F172A; color: #0F172A; }
-        .font-outfit { font-family: 'Outfit', sans-serif; }
-        .card { background: white; border: 1px solid rgba(226, 232, 240, 0.8); border-radius: 20px; box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.03), 0 8px 10px -6px rgba(15, 23, 42, 0.03); transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .card:hover { transform: translateY(-2px); box-shadow: 0 20px 30px -10px rgba(15, 23, 42, 0.06), 0 10px 15px -8px rgba(15, 23, 42, 0.06); border-color: rgba(37, 99, 235, 0.25); }
-        .btn-primary { background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%); color: white; border-radius: 14px; padding: 12px 24px; font-weight: 700; font-size: 14px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; box-shadow: 0 4px 12px -2px rgba(37,99,235,0.25); border: none; outline: none; display: inline-flex; align-items: center; justify-content: center; }
-        .btn-primary:hover { background: linear-gradient(135deg, #1D4ED8 0%, #1E40AF 100%); transform: translateY(-1px); box-shadow: 0 8px 16px -2px rgba(37,99,235,0.35); }
-        .btn-primary:active { transform: scale(0.98); }
-        .btn-outline { border: 1.5px solid #E2E8F0; background: white; color: #475569; border-radius: 14px; padding: 11px 24px; font-weight: 700; font-size: 14px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-        .btn-outline:hover { background: #F8FAFC; border-color: #CBD5E1; color: #0F172A; transform: translateY(-1px); }
-        .btn-outline:active { transform: scale(0.98); }
-        .input-field { border: 1.5px solid #E2E8F0; border-radius: 14px; padding: 12px 18px; font-size: 14px; width: 100%; outline: none; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); background: #F8FAFC; }
-        .input-field:focus { border-color: #3B82F6; background: white; box-shadow: 0 0 0 4px rgba(59,130,246,0.08); }
         
-        /* Premium custom hidden scrollbars for mobile drag-scrolling */
+        :root {
+            --sat: env(safe-area-inset-top);
+            --sab: env(safe-area-inset-bottom);
+        }
+
+        html, body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #0F172A; 
+            color: #0F172A;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden; /* Lock scroll to internal containers */
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .font-outfit { font-family: 'Outfit', sans-serif; }
+        
+        .card { 
+            background: white; 
+            border: 1px solid rgba(226, 232, 240, 0.8); 
+            border-radius: 24px; 
+            box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.03), 0 8px 10px -6px rgba(15, 23, 42, 0.03); 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
+
+        .btn-primary { 
+            background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%); 
+            color: white; 
+            border-radius: 18px; 
+            padding: 14px 28px; 
+            font-weight: 700; 
+            font-size: 15px; 
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
+            cursor: pointer; 
+            box-shadow: 0 4px 12px -2px rgba(37,99,235,0.25); 
+            border: none; 
+            outline: none; 
+            display: inline-flex; 
+            align-items: center; 
+            justify-content: center; 
+        }
+
+        .btn-primary:active { transform: scale(0.97); }
+
+        .btn-outline { 
+            border: 1.5px solid #E2E8F0; 
+            background: white; 
+            color: #475569; 
+            border-radius: 18px; 
+            padding: 13px 28px; 
+            font-weight: 700; 
+            font-size: 15px; 
+            transition: all 0.2s ease; 
+        }
+
+        .input-field { 
+            border: 2px solid #F1F5F9; 
+            border-radius: 18px; 
+            padding: 14px 20px; 
+            font-size: 15px; 
+            width: 100%; 
+            outline: none; 
+            transition: all 0.25s ease; 
+            background: #F8FAFC; 
+        }
+        .input-field:focus { border-color: #3B82F6; background: white; box-shadow: 0 0 0 4px rgba(59,130,246,0.06); }
+
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
@@ -52,17 +112,16 @@
             0% { transform: translateY(0) rotate(0deg); }
             100% { transform: translateY(105vh) rotate(360deg); }
         }
-        .animate-fall {
-            animation-name: fall;
-            animation-iteration-count: infinite;
-            animation-timing-function: linear;
-        }
+        .animate-fall { animation: fall linear infinite; }
         
         .backdrop-blur-header {
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            background-color: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            background-color: rgba(255, 255, 255, 0.8);
         }
+
+        /* Auto-set height helper */
+        .vh-fix { height: 100dvh; }
     </style>
 </head>
 <body>
@@ -108,8 +167,6 @@
                 return saved ? JSON.parse(saved) : null;
             });
             const [pin, setPin] = useState(() => localStorage.getItem('socrates_pin') || '');
-            
-            // Dynamic assessment states broadcasted by trainer
             const [activeQuestion, setActiveQuestion] = useState(() => localStorage.getItem('socrates_activeQuestion') || '');
             const [activeOptions, setActiveOptions] = useState(() => {
                 const saved = localStorage.getItem('socrates_activeOptions');
@@ -124,20 +181,17 @@
                 const saved = localStorage.getItem('socrates_activeTranslations');
                 return saved ? JSON.parse(saved) : {};
             });
-            const [activeLanguage, setActiveLanguage] = useState('en'); // 'en', 'easy', 'hindi', 'hinglish'
+            const [activeLanguage, setActiveLanguage] = useState('en');
             const [hasSubmittedCurrent, setHasSubmittedCurrent] = useState(() => localStorage.getItem('socrates_hasSubmittedCurrent') === 'true');
             
-            // Student cumulative metrics
             const [correctCount, setCorrectCount] = useState(() => parseInt(localStorage.getItem('socrates_correctCount') || '0'));
             const [wrongCount, setWrongCount] = useState(() => parseInt(localStorage.getItem('socrates_wrongCount') || '0'));
             const [unattemptedCount, setUnattemptedCount] = useState(() => parseInt(localStorage.getItem('socrates_unattemptedCount') || '0'));
             const [totalQuestions, setTotalQuestions] = useState(() => parseInt(localStorage.getItem('socrates_totalQuestions') || '0'));
 
-            // Student scores
             const [preTestScore, setPreTestScore] = useState(null);
             const [postTestScore, setPostTestScore] = useState(null);
 
-            // Save state to localStorage
             useEffect(() => {
                 localStorage.setItem('socrates_view', view);
                 localStorage.setItem('socrates_empId', empId);
@@ -155,149 +209,65 @@
                 localStorage.setItem('socrates_hasSubmittedCurrent', hasSubmittedCurrent);
             }, [view, empId, empDetails, pin, activeQuestion, activeOptions, activeCorrectIndex, activeAssignmentDay, activeTranslations, correctCount, wrongCount, unattemptedCount, totalQuestions, hasSubmittedCurrent]);
 
-            // Re-join session on reload
             useEffect(() => {
-                if (pin && empId) {
-                    socket.emit('join_session', {pin, emp_id: empId});
-                }
+                if (pin && empId) socket.emit('join_session', {pin, emp_id: empId});
             }, []);
 
-            // Listen to Trainer commands via Socket.IO
             useEffect(() => {
                 socket.on('change_view', (data) => {
                     if (data.view) {
-                        // If moving away from a test view while a question was pending
-                        if ((view === 'pretest' || view === 'posttest') && !hasSubmittedCurrent && activeQuestion) {
-                            setUnattemptedCount(prev => prev + 1);
-                        }
+                        if ((view === 'pretest' || view === 'posttest') && !hasSubmittedCurrent && activeQuestion) setUnattemptedCount(prev => prev + 1);
                         setView(data.view);
                     }
-                    if (data.question) {
-                        if (data.question !== activeQuestion) {
-                            // If we didn't submit the PREVIOUS question before a NEW one was pushed
-                            if (!hasSubmittedCurrent && activeQuestion) {
-                                setUnattemptedCount(prev => prev + 1);
-                            }
-                            setActiveQuestion(data.question);
-                            setTotalQuestions(prev => prev + 1);
-                            setHasSubmittedCurrent(false);
-                        }
+                    if (data.question && data.question !== activeQuestion) {
+                        if (!hasSubmittedCurrent && activeQuestion) setUnattemptedCount(prev => prev + 1);
+                        setActiveQuestion(data.question);
+                        setTotalQuestions(prev => prev + 1);
+                        setHasSubmittedCurrent(false);
                     }
-                    if (data.options) {
-                        setActiveOptions(data.options);
-                    }
-                    if (data.correctIndex !== undefined) {
-                        setActiveCorrectIndex(data.correctIndex);
-                    }
-                    if (data.assignment_day) {
-                        setActiveAssignmentDay(data.assignment_day);
-                    }
-                    if (data.translations) {
-                        setActiveTranslations(data.translations);
-                    } else if (data.question) {
-                        setActiveTranslations({});
-                    }
-                    if (data.forceLanguage) {
-                        setActiveLanguage(data.forceLanguage);
-                    }
-                });
-
-                socket.on('force_language', (data) => {
-                    if (data.language) {
-                        setActiveLanguage(data.language);
-                    }
+                    if (data.options) setActiveOptions(data.options);
+                    if (data.correctIndex !== undefined) setActiveCorrectIndex(data.correctIndex);
+                    if (data.assignment_day) setActiveAssignmentDay(data.assignment_day);
+                    if (data.translations) setActiveTranslations(data.translations); else if (data.question) setActiveTranslations({});
+                    if (data.forceLanguage) setActiveLanguage(data.forceLanguage);
                 });
 
                 socket.on('client_command', (data) => {
                     if (data.command === 'reset_scores') {
-                        setCorrectCount(0);
-                        setWrongCount(0);
-                        setUnattemptedCount(0);
-                        setTotalQuestions(0);
-                        setHasSubmittedCurrent(false);
+                        setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0); setTotalQuestions(0); setHasSubmittedCurrent(false);
                         localStorage.removeItem('socrates_correctCount');
-                        localStorage.removeItem('socrates_wrongCount');
-                        localStorage.removeItem('socrates_unattemptedCount');
-                        localStorage.removeItem('socrates_totalQuestions');
-                        localStorage.removeItem('socrates_hasSubmittedCurrent');
                     }
                 });
 
-                return () => {
-                    socket.off('change_view');
-                    socket.off('force_language');
-                    socket.off('client_command');
-                };
-            }, []);
+                return () => { socket.off('change_view'); socket.off('client_command'); };
+            }, [view, activeQuestion, hasSubmittedCurrent]);
 
             const renderContent = () => {
                 switch(view) {
                     case 'dashboard': return <Dashboard empDetails={empDetails} assignmentDay={activeAssignmentDay} />;
                     case 'pretest': 
+                    case 'posttest': 
                         return (
                             <Quiz 
-                                type="Pre-Test" 
-                                empId={empId} 
-                                pin={pin}
-                                question={activeQuestion}
-                                options={activeOptions}
-                                correctIndex={activeCorrectIndex}
-                                assignmentDay={activeAssignmentDay}
-                                translations={activeTranslations}
-                                activeLanguage={activeLanguage}
-                                setActiveLanguage={setActiveLanguage}
-                                counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
+                                type={view === 'pretest' ? "Pre-Test" : "Post-Test"}
+                                empId={empId} pin={pin} question={activeQuestion} options={activeOptions} correctIndex={activeCorrectIndex}
+                                assignmentDay={activeAssignmentDay} translations={activeTranslations} activeLanguage={activeLanguage}
+                                setActiveLanguage={setActiveLanguage} counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
                                 onScoreSubmit={(score, isCorrect) => {
-                                    if (isCorrect) setCorrectCount(prev => prev + 1);
-                                    else setWrongCount(prev => prev + 1);
-                                    setPreTestScore(score);
+                                    if (isCorrect) setCorrectCount(prev => prev + 1); else setWrongCount(prev => prev + 1);
+                                    if (view === 'pretest') setPreTestScore(score); else setPostTestScore(score);
                                     setHasSubmittedCurrent(true);
                                 }}
                             />
                         );
                     case 'training': return <Training assignmentDay={activeAssignmentDay} />;
-                    case 'posttest': 
-                        return (
-                            <Quiz 
-                                type="Post-Test" 
-                                empId={empId} 
-                                pin={pin}
-                                question={activeQuestion}
-                                options={activeOptions}
-                                correctIndex={activeCorrectIndex}
-                                assignmentDay={activeAssignmentDay}
-                                translations={activeTranslations}
-                                activeLanguage={activeLanguage}
-                                setActiveLanguage={setActiveLanguage}
-                                counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
-                                onScoreSubmit={(score, isCorrect) => {
-                                    if (isCorrect) setCorrectCount(prev => prev + 1);
-                                    else setWrongCount(prev => prev + 1);
-                                    setPostTestScore(score);
-                                    setHasSubmittedCurrent(true);
-                                }}
-                            />
-                        );
                     case 'result': 
                         return (
                             <Result 
-                                preScore={preTestScore} 
-                                postScore={postTestScore} 
-                                counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
+                                preScore={preTestScore} postScore={postTestScore} counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
                                 onFinish={() => {
-                                    setView('dashboard');
-                                    setPreTestScore(null);
-                                    setPostTestScore(null);
-                                    setCorrectCount(0);
-                                    setWrongCount(0);
-                                    setUnattemptedCount(0);
-                                    setTotalQuestions(0);
-                                    setHasSubmittedCurrent(false);
-                                    localStorage.removeItem('socrates_correctCount');
-                                    localStorage.removeItem('socrates_wrongCount');
-                                    localStorage.removeItem('socrates_unattemptedCount');
-                                    localStorage.removeItem('socrates_totalQuestions');
-                                    localStorage.removeItem('socrates_hasSubmittedCurrent');
+                                    setView('dashboard'); setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0); setTotalQuestions(0);
+                                    localStorage.clear();
                                 }} 
                             />
                         );
@@ -305,40 +275,24 @@
                 }
             };
 
-            if (view === 'login') {
-                return (
-                    <Login 
-                        onLogin={(id, details, sessionPin) => { 
-                            setEmpId(id); 
-                            setEmpDetails(details); 
-                            setPin(sessionPin);
-                            setView('dashboard'); 
-                            socket.emit('join_session', {pin: sessionPin, emp_id: id}); 
-                        }} 
-                    />
-                );
-            }
+            if (view === 'login') return <Login onLogin={(id, details, sessionPin) => { setEmpId(id); setEmpDetails(details); setPin(sessionPin); setView('dashboard'); socket.emit('join_session', {pin: sessionPin, emp_id: id}); }} />;
 
             return (
-                <div className="w-full max-w-md md:max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto min-h-screen bg-slate-50 flex flex-col relative border-x border-slate-200/60 shadow-[0_0_50px_rgba(0,0,0,0.25)] transition-all duration-300">
-                    {/* Glassmorphism Sticky Header */}
-                    <div className="backdrop-blur-header border-b border-slate-100/80 px-5 py-4 flex justify-between items-center sticky top-0 z-50 shadow-[0_2px_8px_-3px_rgba(15,23,42,0.03)]">
+                <div className="w-full h-[100dvh] bg-slate-50 flex flex-col relative overflow-hidden transition-all duration-300">
+                    <div className="backdrop-blur-header border-b border-slate-200/60 px-5 py-4 flex justify-between items-center z-50 shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white text-sm shadow-[0_3px_10px_rgba(37,99,235,0.2)]"><i className="fas fa-brain"></i></div>
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center text-white text-base shadow-lg shadow-blue-500/20"><i className="fas fa-brain"></i></div>
                             <span className="font-outfit font-extrabold text-xl tracking-tight text-slate-900">Socrates</span>
                         </div>
-                        <div className="flex items-center gap-2 bg-slate-100/80 backdrop-blur-sm px-3.5 py-1.5 rounded-full border border-slate-200/50">
-                            <span className="relative flex h-2 w-2">
+                        <div className="flex items-center gap-2.5 bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
+                            <span className="relative flex h-2.5 w-2.5">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                             </span>
-                            <span className="text-xs text-slate-700 font-bold tracking-tight">
-                                {empDetails?.emp_name ? empDetails.emp_name.split(' ')[0] : 'Trainee'}
-                            </span>
+                            <span className="text-[11px] text-slate-800 font-black tracking-wider uppercase">{empDetails?.emp_name?.split(' ')[0] || 'Trainee'}</span>
                         </div>
                     </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-5 pb-8">
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6 w-full max-w-2xl mx-auto flex flex-col no-scrollbar">
                         {renderContent()}
                     </div>
                 </div>
@@ -353,134 +307,53 @@
             const [showDropdown, setShowDropdown] = useState(false);
 
             useEffect(() => {
-                const params = new URLSearchParams(window.location.search);
-                const urlPin = params.get('pin');
-                if (urlPin) {
-                    setPin(urlPin);
-                }
-            }, []);
-
-            useEffect(() => {
                 const term = searchQuery.trim();
                 if (term.length >= 2) {
-                    const uppercaseQuery = term.toUpperCase();
-                    fetch(`/api/roster/search?q=${encodeURIComponent(uppercaseQuery)}`)
-                        .then(res => res.json())
-                        .then(data => {
-                            setSearchResults(data);
-                            setShowDropdown(true);
-                        })
-                        .catch(err => console.error("Search failed:", err));
-                } else {
-                    setSearchResults([]);
-                    setShowDropdown(false);
-                }
+                    fetch(`/api/roster/search?q=${encodeURIComponent(term.toUpperCase())}`)
+                        .then(res => res.json()).then(data => { setSearchResults(data); setShowDropdown(true); });
+                } else setShowDropdown(false);
             }, [searchQuery]);
 
-            const handleSelect = (emp) => {
-                setSelectedEmp(emp);
-                setSearchQuery(emp.emp_name);
-                setShowDropdown(false);
-            };
-
-            const handleJoin = () => {
-                if (!pin) {
-                    alert("Please enter the 4-digit Session PIN from the trainer.");
-                    return;
-                }
-                if (!selectedEmp) {
-                    alert("Please search and select your Employee Name/Code first.");
-                    return;
-                }
-                onLogin(selectedEmp.emp_code, selectedEmp, pin);
-            };
-
             return (
-                <div className="w-full max-w-md md:max-w-2xl lg:max-w-4xl xl:max-w-5xl mx-auto min-h-screen bg-slate-50 flex flex-col relative overflow-x-hidden border-x border-slate-200/60 shadow-[0_0_50px_rgba(0,0,0,0.25)] transition-all duration-300">
-                    {/* Glassmorphism Header */}
-                    <div className="backdrop-blur-header border-b border-slate-100/80 px-5 py-4 flex justify-between items-center sticky top-0 z-50 shadow-[0_2px_8px_-3px_rgba(15,23,42,0.03)]">
+                <div className="w-full h-[100dvh] bg-slate-50 flex flex-col relative overflow-hidden">
+                    <div className="backdrop-blur-header border-b border-slate-200/60 px-5 py-4 flex justify-between items-center z-50 shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center text-white text-sm shadow-[0_3px_10px_rgba(37,99,235,0.2)]"><i className="fas fa-brain"></i></div>
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center text-white text-base shadow-lg shadow-blue-500/20"><i className="fas fa-brain"></i></div>
                             <span className="font-outfit font-extrabold text-xl tracking-tight text-slate-900">Socrates AI</span>
                         </div>
                     </div>
-                    
-                    {/* Login Content Form */}
-                    <div className="flex-1 flex flex-col justify-center p-6 pb-12 w-full">
-                        <div className="card w-full max-w-md mx-auto p-8 border-none shadow-[0_10px_30px_-5px_rgba(15,23,42,0.05)] bg-white">
-                            <h2 className="font-outfit font-extrabold text-xl text-center text-slate-900 mb-1 tracking-tight">Executive Login</h2>
-                            <p className="text-center text-slate-400 mb-8 font-medium text-[10px] tracking-wide uppercase">Join Refresher Training Session</p>
-                            
-                            <div className="space-y-5 relative">
+                    <div className="flex-1 overflow-y-auto flex flex-col justify-center p-6 w-full max-w-md mx-auto">
+                        <div className="card w-full p-8 border-none shadow-2xl bg-white space-y-6">
+                            <div className="text-center space-y-1">
+                                <h2 className="font-outfit font-black text-2xl text-slate-900 tracking-tight">Executive Login</h2>
+                                <p className="text-slate-400 font-bold text-[10px] tracking-widest uppercase">Institutional Training Portal</p>
+                            </div>
+                            <div className="space-y-4">
                                 <div>
-                                    <label className="block text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-widest font-outfit">Session PIN</label>
-                                    <input 
-                                        type="text" 
-                                        value={pin}
-                                        onChange={e => setPin(e.target.value)}
-                                        placeholder="4-digit PIN" 
-                                        className="input-field text-center tracking-widest font-extrabold text-2xl border-slate-200/80 bg-slate-50 focus:border-blue-500" 
-                                    />
+                                    <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Session Access PIN</label>
+                                    <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="0000" className="input-field text-center tracking-[0.5em] font-black text-3xl" />
                                 </div>
-                                
                                 <div className="relative">
-                                    <label className="block text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-widest font-outfit">Search Employee Profile</label>
-                                    <div className="relative">
-                                        <input 
-                                            type="text" 
-                                            placeholder="Type Name or Code..." 
-                                            value={searchQuery}
-                                            onChange={e => { setSearchQuery(e.target.value.toUpperCase()); setSelectedEmp(null); }}
-                                            className="input-field font-semibold pr-10 uppercase border-slate-200/80 bg-slate-50 focus:border-blue-500 text-sm" 
-                                        />
-                                        <div className="absolute right-4 top-4 text-slate-400">
-                                            <i className="fas fa-search text-xs"></i>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Autocomplete Search Dropdown */}
+                                    <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Find Your Profile</label>
+                                    <input type="text" placeholder="NAME OR EMPLOYEE CODE" value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="input-field font-bold uppercase text-sm" />
                                     {showDropdown && searchResults.length > 0 && (
-                                        <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-[0_15px_35px_rgba(0,0,0,0.12)] z-50 max-h-56 overflow-y-auto divide-y divide-slate-50 animate-slide-up">
+                                        <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-50">
                                             {searchResults.map((emp) => (
-                                                <div 
-                                                    key={emp.emp_code}
-                                                    onClick={() => handleSelect(emp)}
-                                                    className="px-4 py-3 hover:bg-blue-50/50 cursor-pointer text-xs transition-colors flex justify-between items-center"
-                                                >
-                                                    <div className="pr-2">
-                                                        <div className="font-bold text-slate-800">{emp.emp_name}</div>
-                                                        <div className="text-[10px] text-slate-400 mt-0.5 font-medium">{emp.role || 'No Role'} &bull; {emp.branch_name} &bull; {emp.business_unit}</div>
-                                                    </div>
-                                                    <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg border border-blue-100/50 shrink-0">{emp.emp_code}</span>
+                                                <div key={emp.emp_code} onClick={() => { setSelectedEmp(emp); setSearchQuery(emp.emp_name); setShowDropdown(false); }} className="px-4 py-4 hover:bg-blue-50 transition-colors cursor-pointer flex justify-between items-center">
+                                                    <div><div className="font-black text-slate-800 text-xs">{emp.emp_name}</div><div className="text-[10px] text-slate-400 font-bold uppercase">{emp.branch_name} &bull; {emp.business_unit}</div></div>
+                                                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-100">{emp.emp_code}</span>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                 </div>
-
-                                {/* Auto-Fetched Profile Details Card */}
                                 {selectedEmp && (
-                                    <div className="bg-emerald-50/60 border border-emerald-100/80 rounded-2xl p-4 mt-2 animate-fade-in shadow-[inset_0_2px_4px_rgba(0,0,0,0.01)]">
-                                        <div className="text-[9px] font-extrabold text-emerald-800 uppercase tracking-widest mb-2 flex items-center gap-1.5 font-outfit">
-                                            <i className="fas fa-check-circle text-emerald-500 text-sm"></i> Auto-Fetched Details
-                                        </div>
-                                        <div className="text-sm font-extrabold text-slate-800">{selectedEmp.emp_name}</div>
-                                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 mt-3 text-[11px] text-slate-500 font-semibold">
-                                            <div><span className="text-slate-400 font-medium">Code:</span> {selectedEmp.emp_code}</div>
-                                            <div><span className="text-slate-400 font-medium">Role:</span> {selectedEmp.role || 'N/A'}</div>
-                                            <div><span className="text-slate-400 font-medium">Branch:</span> {selectedEmp.branch_name}</div>
-                                            <div><span className="text-slate-400 font-medium">Unit:</span> {selectedEmp.business_unit}</div>
-                                            <div className="col-span-2"><span className="text-slate-400 font-medium">Division:</span> {selectedEmp.division}</div>
-                                        </div>
+                                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 animate-fade-in">
+                                        <div className="text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1 flex items-center gap-1.5"><i className="fas fa-check-circle"></i> Profile Matched</div>
+                                        <div className="text-xs font-black text-slate-800 uppercase">{selectedEmp.emp_name} ({selectedEmp.emp_code})</div>
                                     </div>
                                 )}
-                                
-                                <button 
-                                    onClick={handleJoin} 
-                                    className="w-full btn-primary mt-6 shadow-lg flex justify-center items-center gap-2"
-                                >
-                                    Join Live Session <i className="fas fa-arrow-right text-xs"></i>
-                                </button>
+                                <button onClick={() => selectedEmp && pin && onLogin(selectedEmp.emp_code, selectedEmp, pin)} className="w-full btn-primary h-14 shadow-blue-500/30 text-base">Enter Classroom <i className="fas fa-arrow-right ml-2 text-sm"></i></button>
                             </div>
                         </div>
                     </div>
@@ -489,28 +362,22 @@
         };
 
         const Dashboard = ({ empDetails, assignmentDay }) => (
-            <div className="animate-fade-in grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch mt-6">
-                <div className="mb-0 text-center md:text-left bg-white/60 backdrop-blur-sm p-6 rounded-2xl border border-slate-200/40 shadow-sm flex flex-col items-center md:items-start justify-center">
-                    <div className="w-16 h-16 bg-blue-50/80 text-blue-600 border border-blue-100 rounded-full flex items-center justify-center mb-4 shadow-[0_2px_10px_rgba(37,99,235,0.06)]"><i className="fas fa-user-check text-xl"></i></div>
-                    <h2 className="font-outfit font-extrabold text-2xl text-slate-900 leading-tight">Welcome, {empDetails?.emp_name ? empDetails.emp_name.split(' ')[0] : 'Executive'}</h2>
-                    <p className="text-xs text-slate-400 font-bold tracking-tight mt-1">{empDetails?.role || 'Executive'} &bull; {empDetails?.emp_code} &bull; {empDetails?.branch_name}</p>
-                    <p className="text-xs text-slate-500 mt-4 font-semibold px-4 leading-relaxed bg-slate-100/50 py-3 rounded-xl border border-slate-200/30 text-center md:text-left">Look at the presenter screen. The trainer will initiate the assessment shortly.</p>
-                </div>
-                
-                <div className="card p-6 border-l-4 border-blue-600 relative overflow-hidden bg-white shadow-md flex flex-col justify-between min-h-[220px]">
-                    <div className="absolute top-0 right-0 p-4 opacity-5"><i className="fas fa-book-open text-7xl text-blue-600"></i></div>
-                    <div className="flex flex-col justify-between h-full">
-                        <div>
-                            <div className="flex justify-between items-start mb-4 relative z-10">
-                                <span className="text-[9px] font-extrabold text-blue-600 bg-blue-50 border border-blue-100/50 px-2.5 py-1 rounded-lg uppercase tracking-widest font-outfit">Active Refresher Session</span>
-                            </div>
-                            <h4 className="font-outfit font-bold text-lg text-slate-800 mb-2 relative z-10">{assignmentDay && assignmentDay !== 'zero day' ? assignmentDay : `${empDetails?.business_unit || '2-Wheeler Personal Loan'} Product Refresher`}</h4>
-                            <p className="text-xs text-slate-500 mb-2 relative z-10 flex items-center gap-2 font-bold"><span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span></span> Live Connection Established</p>
-                        </div>
-                        <div className="text-[11px] text-slate-400 bg-slate-50/50 p-3 rounded-xl border border-slate-100/80 mt-5 leading-relaxed font-semibold">
-                            <span className="font-bold text-slate-600 uppercase tracking-wider text-[9px] mr-1.5 font-outfit">Scope:</span> {empDetails?.division} &bull; {empDetails?.zone}
-                        </div>
+            <div className="animate-fade-in flex flex-col gap-6 mt-2">
+                <div className="text-center md:text-left bg-white p-8 rounded-[32px] border border-slate-200/60 shadow-sm space-y-4">
+                    <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center text-3xl mx-auto md:mx-0 shadow-inner"><i className="fas fa-id-badge"></i></div>
+                    <div>
+                        <h2 className="font-outfit font-black text-3xl text-slate-900 leading-tight">Welcome, {empDetails?.emp_name?.split(' ')[0] || 'Executive'}</h2>
+                        <p className="text-[11px] text-slate-400 font-black uppercase tracking-widest mt-1">{empDetails?.role || 'Executive'} &bull; {empDetails?.branch_name}</p>
                     </div>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center md:text-left">
+                        <p className="text-xs text-slate-500 font-bold leading-relaxed">Stay tuned to the main screen. Your Socratic Trainer will begin the live module shortly.</p>
+                    </div>
+                </div>
+                <div className="card p-8 border-l-[12px] border-blue-600 bg-white relative overflow-hidden min-h-[180px] flex flex-col justify-center">
+                    <div className="absolute -top-4 -right-4 opacity-[0.03] rotate-12 text-[120px] text-blue-900"><i className="fas fa-book-open"></i></div>
+                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 w-fit px-3 py-1.5 rounded-full uppercase tracking-widest mb-4">Live Module Status</span>
+                    <h4 className="font-outfit font-black text-xl text-slate-900">{assignmentDay?.toUpperCase() || 'GENERAL'} REFRESHER SESSION</h4>
+                    <p className="text-xs text-slate-400 mt-2 font-bold flex items-center gap-2"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span> Cloud Link Active</p>
                 </div>
             </div>
         );
@@ -519,29 +386,9 @@
             const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#ef4444'];
             return (
                 <div className="absolute inset-0 pointer-events-none overflow-hidden z-40">
-                    {Array.from({ length: 30 }).map((_, i) => {
-                        const size = Math.random() * 8 + 6;
-                        const delay = Math.random() * 2;
-                        const duration = Math.random() * 3 + 2;
-                        const left = Math.random() * 100;
-                        const color = colors[i % colors.length];
-                        return (
-                            <div 
-                                key={i} 
-                                className="absolute rounded-sm animate-fall"
-                                style={{
-                                    width: `${size}px`,
-                                    height: `${size}px`,
-                                    backgroundColor: color,
-                                    left: `${left}%`,
-                                    top: `-20px`,
-                                    animationDelay: `${delay}s`,
-                                    animationDuration: `${duration}s`,
-                                    opacity: Math.random() * 0.7 + 0.3
-                                }}
-                            />
-                        );
-                    })}
+                    {Array.from({ length: 40 }).map((_, i) => (
+                        <div key={i} className="absolute rounded-sm animate-fall" style={{ width: `${Math.random()*8+6}px`, height: `${Math.random()*8+6}px`, backgroundColor: colors[i % 6], left: `${Math.random()*100}%`, top: `-20px`, animationDelay: `${Math.random()*2}s`, animationDuration: `${Math.random()*3+2}s`, opacity: Math.random()*0.7+0.3 }} />
+                    ))}
                 </div>
             );
         };
@@ -550,374 +397,96 @@
             const [selected, setSelected] = useState(null);
             const [submitted, setSubmitted] = useState(false);
             const [scoreInfo, setScoreInfo] = useState(null);
-            
-            // Socratic Session Feedback States
             const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
             const [rating, setRating] = useState(0);
-            const [hoverRating, setHoverRating] = useState(0);
             const [understanding, setUnderstanding] = useState('Fully Clear');
             const [manpowerSaved, setManpowerSaved] = useState('Yes, much faster!');
             const [comments, setComments] = useState('');
             const [submittingFeedback, setSubmittingFeedback] = useState(false);
             
-            const qTextRaw = (translations && translations[activeLanguage] && translations[activeLanguage].question)
-                ? translations[activeLanguage].question
-                : (question || (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].question : fallbackQuestions['zero day'].question));
-            const qText = cleanQuestionText(qTextRaw);
-                
-            const qOptsRaw = (translations && translations[activeLanguage] && translations[activeLanguage].options && translations[activeLanguage].options.length > 0)
-                ? translations[activeLanguage].options
-                : ((options && options.length > 0) ? options : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].options : fallbackQuestions['zero day'].options));
-            const qOpts = qOptsRaw.map(cleanOptionText);
-                
-            const qCorrect = correctIndex !== null ? correctIndex : (fallbackQuestions[assignmentDay] ? fallbackQuestions[assignmentDay].correctIndex : fallbackQuestions['zero day'].correctIndex);
+            const qText = cleanQuestionText((translations?.[activeLanguage]?.question) || question || (fallbackQuestions[assignmentDay]?.question) || fallbackQuestions['zero day'].question);
+            const qOpts = ((translations?.[activeLanguage]?.options) || (options?.length ? options : (fallbackQuestions[assignmentDay]?.options || fallbackQuestions['zero day'].options))).map(cleanOptionText);
+            const qCorrect = correctIndex !== null ? correctIndex : (fallbackQuestions[assignmentDay]?.correctIndex || 1);
             
             useEffect(() => {
-                socket.on('score_confirmation', (data) => {
-                    setScoreInfo(data);
-                });
-                return () => {
-                    socket.off('score_confirmation');
-                };
+                socket.on('score_confirmation', (data) => setScoreInfo(data));
+                return () => socket.off('score_confirmation');
             }, []);
 
-            useEffect(() => {
-                setSelected(null);
-                setSubmitted(false);
-                setScoreInfo(null);
-                setFeedbackSubmitted(false);
-                setRating(0);
-                setComments('');
-            }, [question]);
+            useEffect(() => { setSelected(null); setSubmitted(false); setScoreInfo(null); setFeedbackSubmitted(false); }, [question]);
 
             const submitAnswer = () => {
-                if(selected !== null) {
-                    setSubmitted(true);
-                    // Emit vote to Trainer Console
-                    socket.emit('submit_vote', {pin: pin, emp_id: empId, answer_idx: selected});
-                    
-                    const isCorrect = selected === qCorrect;
-                    const score = isCorrect ? 100 : 0;
-                    onScoreSubmit(score, isCorrect);
-                    
-                    const payload = {
-                        emp_code: empId,
-                        module_id: 1, // Default module
-                        assignment_day: assignmentDay,
-                        session_id: pin,
-                        correct_count: isCorrect ? counts.correctCount + 1 : counts.correctCount,
-                        wrong_count: !isCorrect ? counts.wrongCount + 1 : counts.wrongCount,
-                        unattempted_count: counts.unattemptedCount,
-                        total_questions: counts.totalQuestions
-                    };
-                    if (type === 'Pre-Test') {
-                        payload.pre_test_score = score;
-                    } else {
-                        payload.post_test_score = score;
-                    }
-
-                    fetch('/api/assessments/submit', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    })
-                    .then(res => res.json())
-                    .then(data => {
-                        console.log("Score saved:", data);
-                    })
-                    .catch(err => {
-                        console.error("Score submission error:", err);
-                    });
-                }
-            };
-            
-            const submitFeedback = () => {
-                setSubmittingFeedback(true);
-                fetch('/api/feedback/submit', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        emp_code: empId,
-                        session_id: pin,
-                        rating: rating || 5,
-                        understanding: understanding,
-                        manpower_saved: manpowerSaved,
-                        comments: comments
-                    })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    setFeedbackSubmitted(true);
-                    setSubmittingFeedback(false);
-                })
-                .catch(err => {
-                    console.error("Feedback error:", err);
-                    setSubmittingFeedback(false);
+                if(selected === null) return;
+                setSubmitted(true);
+                socket.emit('submit_vote', {pin, emp_id: empId, answer_idx: selected});
+                const isCorrect = selected === qCorrect;
+                onScoreSubmit(100, isCorrect);
+                fetch('/api/assessments/submit', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ emp_code: empId, module_id: 1, assignment_day: assignmentDay, session_id: pin, correct_count: isCorrect ? counts.correctCount + 1 : counts.correctCount, wrong_count: !isCorrect ? counts.wrongCount + 1 : counts.wrongCount, unattempted_count: counts.unattemptedCount, total_questions: counts.totalQuestions, [type === 'Pre-Test' ? 'pre_test_score' : 'post_test_score']: 100 })
                 });
             };
             
             return (
-                <div className="card h-full flex flex-col overflow-hidden relative min-h-[400px] border-none shadow-lg bg-white">
-                    {submitted && scoreInfo && scoreInfo.is_correct && <Confetti />}
-
-                    <div className="px-6 py-4.5 border-b border-slate-100/60 flex items-center justify-between bg-slate-50/50">
-                        <div className="flex items-center gap-2">
-                            <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                            </span>
-                            <span className="font-outfit font-extrabold text-xs tracking-wider text-slate-800 uppercase">{type}</span>
+                <div className="card flex-1 flex flex-col overflow-hidden relative border-none shadow-2xl bg-white mb-4 animate-fade-in">
+                    {submitted && scoreInfo?.is_correct && <Confetti />}
+                    <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+                        <div className="flex items-center gap-2.5">
+                            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+                            <span className="font-outfit font-black text-[13px] tracking-widest text-slate-800 uppercase">{type}</span>
                         </div>
-                        <span className="text-[10px] font-extrabold text-slate-500 bg-white px-2.5 py-1 border border-slate-200/80 rounded-lg font-outfit uppercase tracking-wider">{assignmentDay}</span>
+                        <span className="text-[10px] font-black text-slate-500 bg-white px-3 py-1.5 border border-slate-200 rounded-xl uppercase tracking-widest">{assignmentDay}</span>
                     </div>
-                    
-                    {/* Trainee Language Pill Selector (With hidden scrollbars for native feel) */}
-                    <div className="px-6 py-3 bg-slate-50/20 border-b border-slate-100/60 flex items-center gap-3">
-                        <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest shrink-0 font-outfit"><i className="fas fa-language text-slate-400 text-xs"></i> Lang:</span>
-                        <div className="flex gap-1.5 overflow-x-auto py-0.5 no-scrollbar select-none">
-                            {[
-                                { id: 'en', label: 'English' },
-                                { id: 'hindi', label: 'हिन्दी (Hindi)' },
-                                { id: 'hinglish', label: 'Hinglish' },
-                                { id: 'punjabi', label: 'ਪੰਜਾਬੀ (Punjabi)' },
-                                { id: 'bengali', label: 'বাংলা (Bengali)' },
-                                { id: 'marathi', label: 'मराठी (Marathi)' },
-                                { id: 'telugu', label: 'తెలుగు (Telugu)' },
-                                { id: 'tamil', label: 'தமிழ் (Tamil)' },
-                                { id: 'gujarati', label: 'ગુજરાતી (Gujarati)' },
-                                { id: 'kannada', label: 'ಕನ್ನಡ (Kannada)' }
-                            ].map((lang) => {
-                                const isSelected = activeLanguage === lang.id;
-                                return (
-                                    <button
-                                        key={lang.id}
-                                        type="button"
-                                        onClick={() => setActiveLanguage(lang.id)}
-                                        className={`px-3 py-1 rounded-full text-[10px] font-extrabold border transition-all active:scale-95 whitespace-nowrap ${
-                                            isSelected 
-                                                ? 'bg-blue-600 border-blue-600 text-white shadow-[0_2px_8px_rgba(37,99,235,0.25)]' 
-                                                : 'bg-white border-slate-200/80 text-slate-500 hover:bg-slate-50'
-                                        }`}
-                                    >
-                                        {lang.label}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                    <div className="px-6 py-4 bg-white border-b border-slate-50 flex items-center gap-3 shrink-0 overflow-x-auto no-scrollbar">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0"><i className="fas fa-language mr-1"></i> Lang:</span>
+                        {['en', 'hindi', 'hinglish', 'punjabi', 'bengali', 'marathi', 'telugu', 'tamil', 'gujarati', 'kannada'].map(l => (
+                            <button key={l} onClick={() => setActiveLanguage(l)} className={`px-4 py-1.5 rounded-full text-[10px] font-black border transition-all whitespace-nowrap ${activeLanguage === l ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-500'}`}>{l.toUpperCase()}</button>
+                        ))}
                     </div>
-                    
-                    <div className="p-6 flex-1 flex flex-col justify-between">
+                    <div className="p-6 md:p-8 flex-1 overflow-y-auto no-scrollbar">
                         {submitted ? (
-                            <div className="flex-1 flex flex-col items-center justify-center text-center p-4 animate-fade-in w-full max-w-xl mx-auto">
+                            <div className="h-full flex flex-col items-center justify-center text-center p-4 animate-fade-in w-full max-w-xl mx-auto space-y-8">
                                 {!scoreInfo ? (
-                                    <div className="space-y-4">
-                                        <div className="w-10 h-10 border-4 border-socrates-primary border-t-transparent rounded-full fa-spin mx-auto"></div>
-                                        <h4 className="font-bold text-sm text-slate-600 animate-pulse">Evaluating agility scores...</h4>
-                                        <p className="text-xs text-slate-400">Comparing submission speeds and verifying option mappings.</p>
-                                    </div>
-                                ) : scoreInfo.is_correct ? (
-                                    <div className="space-y-6 w-full">
-                                        <div className="w-16 h-16 bg-emerald-50 text-emerald-500 border border-emerald-100 rounded-full flex items-center justify-center text-3xl mx-auto shadow-sm animate-bounce"><i className="fas fa-check-circle"></i></div>
-                                        <div>
-                                            <h4 className="font-extrabold text-2xl text-emerald-600 tracking-tight">Correct Answer!</h4>
-                                            <p className="text-xs text-slate-400 font-medium mt-1">Excellent agility and knowledge accuracy.</p>
-                                        </div>
-                                        
-                                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 shadow-inner space-y-3 w-full text-left">
-                                            <div className="flex justify-between items-center text-xs text-emerald-800 font-medium">
-                                                <span>Base Reward:</span>
-                                                <span className="font-bold font-mono">1000 pts</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs text-emerald-800 font-semibold border-b border-emerald-100 pb-2">
-                                                <span className="flex items-center gap-1"><i className="fas fa-bolt text-amber-500 animate-pulse"></i> Speed Bonus:</span>
-                                                <span className="font-bold font-mono text-emerald-600">+{scoreInfo.speed_bonus} pts</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-sm font-bold text-emerald-950 pt-1">
-                                                <span>Points Earned:</span>
-                                                <span className="font-extrabold font-mono text-lg text-socrates-accent">+{scoreInfo.points} pts</span>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex justify-between items-center text-xs font-bold text-slate-600">
-                                            <span>Session Score:</span>
-                                            <span className="font-extrabold font-mono text-sm text-socrates-dark">{scoreInfo.total_score} pts</span>
-                                        </div>
-                                    </div>
+                                    <div className="space-y-4"><div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div><h4 className="font-black text-sm text-slate-600 animate-pulse uppercase tracking-widest">Evaluating response...</h4></div>
                                 ) : (
-                                    <div className="space-y-6 w-full">
-                                        <div className="w-16 h-16 bg-red-50 text-red-500 border border-red-100 rounded-full flex items-center justify-center text-3xl mx-auto shadow-sm"><i className="fas fa-times-circle animate-pulse"></i></div>
-                                        <div>
-                                            <h4 className="font-extrabold text-2xl text-red-600 tracking-tight">Incorrect!</h4>
-                                            <p className="text-xs text-slate-400 font-medium mt-1">Better luck in the sustainment test round.</p>
+                                    <div className="space-y-8 w-full">
+                                        <div className={`w-24 h-24 rounded-[32px] flex items-center justify-center text-5xl mx-auto shadow-xl ${scoreInfo.is_correct ? 'bg-emerald-50 text-emerald-500 border border-emerald-100 animate-bounce' : 'bg-red-50 text-red-500 border border-red-100'}`}><i className={`fas ${scoreInfo.is_correct ? 'fa-check-circle' : 'fa-times-circle'}`}></i></div>
+                                        <div className="space-y-2">
+                                            <h4 className={`font-outfit font-black text-3xl tracking-tight ${scoreInfo.is_correct ? 'text-emerald-600' : 'text-red-600'}`}>{scoreInfo.is_correct ? 'CORRECT!' : 'INCORRECT'}</h4>
+                                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{scoreInfo.is_correct ? 'Institutional Knowledge Verified' : 'Concept Needs Trainer Review'}</p>
                                         </div>
-                                        
-                                        <div className="bg-red-50/50 border border-red-100 rounded-2xl p-5 shadow-inner space-y-2 w-full text-left">
-                                            <div className="flex justify-between items-center text-xs text-red-800 font-medium">
-                                                <span>Points Earned:</span>
-                                                <span className="font-bold font-mono">+0 pts</span>
-                                            </div>
-                                            <div className="flex justify-between items-center text-xs text-red-800 font-semibold">
-                                                <span>Response Speed:</span>
-                                                <span className="font-bold font-mono">{scoreInfo.response_time}s</span>
-                                            </div>
-                                        </div>
-                                        
+                                        <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase tracking-widest">Current Accuracy</span><span className="font-outfit font-black text-2xl text-slate-900">{scoreInfo.total_score} PTS</span></div>
                                     </div>
                                 )}
-                                
                                 {type === 'Post-Test' && (
-                                    <div className="mt-8 border-t border-slate-200 pt-6 animate-fade-in text-left w-full max-w-xl mx-auto">
-                                        {feedbackSubmitted ? (
-                                            <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-6 text-center shadow-sm">
-                                                <div className="w-12 h-12 bg-white text-emerald-500 rounded-full flex items-center justify-center text-xl mx-auto shadow-sm mb-3"><i className="fas fa-heart"></i></div>
-                                                <h5 className="font-extrabold text-emerald-800 text-sm">Thank You for the Feedback!</h5>
-                                                <p className="text-slate-500 text-[11px] mt-1 font-medium">Your ratings and concept clarity input have been submitted successfully to the Socratic Analytics Hub.</p>
-                                            </div>
-                                        ) : (
-                                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
-                                                <div className="flex items-center gap-2 mb-2">
-                                                    <i className="fas fa-comment-alt text-socrates-primary"></i>
-                                                    <h5 className="font-extrabold text-socrates-dark text-sm">Socratic Session Feedback</h5>
-                                                </div>
-                                                
-                                                {/* 1. Star Rating */}
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Rate Trainer's Clarity & Dialogue</label>
-                                                    <div className="flex gap-1.5 items-center">
-                                                        {[1, 2, 3, 4, 5].map((star) => (
-                                                            <button
-                                                                key={star}
-                                                                type="button"
-                                                                onClick={() => setRating(star)}
-                                                                onMouseEnter={() => setHoverRating(star)}
-                                                                onMouseLeave={() => setHoverRating(0)}
-                                                                className="text-xl focus:outline-none transition-transform active:scale-95"
-                                                            >
-                                                                <i className={`fas fa-star ${
-                                                                    star <= (hoverRating || rating) ? 'text-amber-400' : 'text-slate-200'
-                                                                }`}></i>
-                                                            </button>
-                                                        ))}
-                                                        {rating > 0 && (
-                                                            <span className="text-[10px] font-bold text-slate-500 ml-2 bg-white px-2 py-0.5 border border-slate-200 rounded">{rating}.0 / 5.0</span>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                {/* 2. Understanding */}
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">How clear is the policy concept now?</label>
-                                                    <div className="grid grid-cols-3 gap-2">
-                                                        {['Fully Clear', 'Partially Clear', 'Need Help'].map((lvl) => {
-                                                            const isSel = understanding === lvl;
-                                                            return (
-                                                                <button
-                                                                    key={lvl}
-                                                                    type="button"
-                                                                    onClick={() => setUnderstanding(lvl)}
-                                                                    className={`px-3 py-2 rounded-xl text-[10px] font-bold border-2 transition-all ${
-                                                                        isSel 
-                                                                            ? 'border-socrates-primary bg-blue-50 text-socrates-primary' 
-                                                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                                                    }`}
-                                                                >
-                                                                    {lvl === 'Fully Clear' && '🟢 '}
-                                                                    {lvl === 'Partially Clear' && '🟡 '}
-                                                                    {lvl === 'Need Help' && '🔴 '}
-                                                                    {lvl}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-
-                                                {/* 3. Manpower Saved */}
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Did Socratic Session save your time over standard PPT?</label>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {['Yes, much faster!', 'No, PPT is better'].map((opt) => {
-                                                            const isSel = manpowerSaved === opt;
-                                                            return (
-                                                                <button
-                                                                    key={opt}
-                                                                    type="button"
-                                                                    onClick={() => setManpowerSaved(opt)}
-                                                                    className={`px-3 py-2 rounded-xl text-[10px] font-bold border-2 transition-all ${
-                                                                        isSel 
-                                                                            ? 'border-socrates-accent bg-emerald-50 text-emerald-700' 
-                                                                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                                                    }`}
-                                                                >
-                                                                    {opt}
-                                                                </button>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-
-                                                {/* 4. Comments */}
-                                                <div>
-                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wider">Comments for your Socratic Trainer</label>
-                                                    <textarea
-                                                        value={comments}
-                                                        onChange={(e) => setComments(e.target.value)}
-                                                        placeholder="Write your remarks here..."
-                                                        rows="2"
-                                                        className="input-field py-2 text-xs bg-white text-socrates-dark border border-slate-200 focus:border-socrates-primary"
-                                                    ></textarea>
-                                                </div>
-
-                                                <button
-                                                    type="button"
-                                                    onClick={submitFeedback}
-                                                    disabled={submittingFeedback}
-                                                    className="w-full btn-primary bg-gradient-to-r from-socrates-primary to-blue-600 border-none text-white py-2.5 text-xs font-bold shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
-                                                >
-                                                    {submittingFeedback ? (
-                                                        <i className="fas fa-spinner fa-spin"></i>
-                                                    ) : (
-                                                        <><i className="fas fa-check-circle"></i> Submit Feedback</>
-                                                    )}
-                                                </button>
+                                    <div className="w-full pt-8 border-t border-slate-100 animate-fade-in">
+                                        {feedbackSubmitted ? <div className="bg-emerald-50 p-6 rounded-3xl text-emerald-800 font-black text-sm uppercase tracking-widest shadow-inner"><i className="fas fa-heart mr-2"></i> Feedback Received</div> : (
+                                            <div className="space-y-6 text-left">
+                                                <h5 className="font-outfit font-black text-slate-900 uppercase tracking-widest text-xs border-l-4 border-blue-600 pl-3">Session Feedback</h5>
+                                                <div className="grid grid-cols-3 gap-3">{['Fully Clear', 'Partially', 'Need Help'].map(l => (
+                                                    <button key={l} onClick={() => setUnderstanding(l)} className={`p-4 rounded-2xl text-[10px] font-black border-2 transition-all ${understanding===l?'border-blue-600 bg-blue-50 text-blue-700':'border-slate-100 bg-white text-slate-500'}`}>{l.toUpperCase()}</button>
+                                                ))}</div>
+                                                <button onClick={() => { setFeedbackSubmitted(true); fetch('/api/feedback/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({emp_code:empId, session_id:pin, rating:5, understanding, manpower_saved:manpowerSaved, comments:''}) }); }} className="w-full btn-primary h-14 text-sm tracking-widest">SUBMIT FEEDBACK <i className="fas fa-check-circle ml-2"></i></button>
                                             </div>
                                         )}
                                     </div>
                                 )}
                             </div>
                         ) : (
-                            <>
-                                <div>
-                                    <h3 className="text-base font-bold text-slate-800 mb-6 leading-relaxed font-outfit">
-                                        {qText}
-                                    </h3>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                            <div className="flex flex-col h-full justify-between gap-10">
+                                <div className="space-y-8">
+                                    <h3 className="text-xl md:text-2xl font-outfit font-black text-slate-900 leading-tight text-center md:text-left">{qText}</h3>
+                                    <div className="grid grid-cols-1 gap-4">
                                         {qOpts.map((opt, i) => (
-                                            <button 
-                                                key={i}
-                                                onClick={() => setSelected(i)}
-                                                className={`w-full text-left p-4 rounded-2xl border-2 text-xs transition-all active:scale-[0.98] flex items-center gap-4 ${selected === i ? 'border-blue-600 bg-blue-50/50 text-blue-700 font-bold shadow-[0_2px_8px_rgba(37,99,235,0.08)]' : 'border-slate-100 bg-slate-50/30 text-slate-600 hover:border-slate-200'}`}
-                                            >
-                                                <div className={`w-7 h-7 rounded-xl border flex items-center justify-center text-xs font-extrabold transition-all shrink-0 ${selected === i ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200/80 text-slate-400 bg-white'}`}>
-                                                    {String.fromCharCode(65 + i)}
-                                                </div>
-                                                <span className="leading-snug">{opt}</span>
+                                            <button key={i} onClick={() => setSelected(i)} className={`w-full text-left p-6 rounded-[24px] border-2 transition-all active:scale-[0.98] flex items-center gap-5 ${selected === i ? 'border-blue-600 bg-blue-50/50 shadow-xl shadow-blue-500/10' : 'border-slate-50 bg-slate-50/30 hover:border-slate-200'}`}>
+                                                <div className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center text-sm font-black transition-all shrink-0 ${selected === i ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'border-slate-200 text-slate-400 bg-white'}`}>{String.fromCharCode(65 + i)}</div>
+                                                <span className={`text-[13px] leading-snug font-bold ${selected === i ? 'text-blue-900' : 'text-slate-600'}`}>{opt}</span>
                                             </button>
                                         ))}
                                     </div>
                                 </div>
-                                
-                                <div className="mt-8">
-                                    <button 
-                                        onClick={submitAnswer}
-                                        disabled={selected === null}
-                                        className={`w-full shadow-md flex justify-center items-center gap-2 py-3.5 text-xs ${selected !== null ? 'btn-primary bg-gradient-to-r from-blue-600 to-indigo-600' : 'btn-outline bg-slate-50 text-slate-400 border-slate-200 shadow-none'}`}
-
-                                    >
-                                        Submit Answer <i className="fas fa-paper-plane text-xs"></i>
-                                    </button>
-                                </div>
-                            </>
+                                <div className="sticky bottom-0 bg-white pt-4 pb-2"><button onClick={submitAnswer} disabled={selected === null} className={`w-full h-16 rounded-[24px] font-black text-base tracking-widest transition-all ${selected !== null ? 'btn-primary shadow-xl shadow-blue-500/25' : 'bg-slate-100 text-slate-300 border-none cursor-not-allowed uppercase'}`}>CONFIRM SELECTION <i className="fas fa-bolt ml-2"></i></button></div>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -925,59 +494,36 @@
         };
 
         const Training = ({assignmentDay}) => (
-            <div className="card h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-b from-white to-slate-50 border-t-4 border-socrates-primary w-full max-w-xl mx-auto my-6 shadow-md">
-                <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center text-4xl text-socrates-primary shadow-sm border border-blue-100 mb-6"><i className="fas fa-chalkboard-teacher"></i></div>
-                <h2 className="text-xl font-bold text-socrates-dark mb-3">Gap Analysis Phase</h2>
-                <p className="text-sm text-slate-500 mb-8 leading-relaxed">The trainer is currently explaining the concepts based on the Pre-Test analytics on the main screen.</p>
-                
-                <div className="w-full bg-white border border-slate-200 rounded-xl p-5 mb-8 text-left shadow-sm">
-                    <p className="text-[11px] font-bold text-socrates-primary mb-2 uppercase tracking-widest"><i className="fas fa-lightbulb mr-1"></i> Key Takeaway</p>
-                    <p className="text-sm text-slate-700 font-medium leading-relaxed">
-                        {assignmentDay === 'zero day' && "Max LTV is 85%. 90% is only for CIBIL > 750 with approval."}
-                        {assignmentDay === 'six days' && "Min CIBIL required for 90% LTV approval is 750."}
-                        {assignmentDay === 'twenty days' && "ITR / Form 16 is strictly mandatory for any loan exceeding ₹2 Lakhs."}
-                    </p>
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-8 animate-fade-in">
+                <div className="w-24 h-24 bg-blue-600 text-white rounded-[32px] flex items-center justify-center text-4xl shadow-2xl shadow-blue-500/30 animate-pulse"><i className="fas fa-chalkboard-teacher"></i></div>
+                <div className="space-y-2">
+                    <h2 className="font-outfit font-black text-3xl text-slate-900 uppercase tracking-tighter">Gap Analysis</h2>
+                    <p className="text-slate-400 font-bold text-xs uppercase tracking-[0.2em]">Live Training Phase</p>
                 </div>
-                
-                <p className="text-xs text-slate-400 font-medium flex items-center gap-2"><i className="fas fa-circle-notch fa-spin"></i> Waiting for Post-Test...</p>
+                <div className="card w-full p-8 border-none shadow-xl bg-white text-left space-y-4">
+                    <div className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full w-fit uppercase tracking-widest">Key Takeaway</div>
+                    <p className="text-base text-slate-700 font-bold leading-relaxed">{assignmentDay === 'zero day' ? "Max LTV 85%. 90% only for CIBIL > 750." : assignmentDay === 'six days' ? "Min CIBIL 750 for 90% LTV." : "ITR strictly mandatory for loans > ₹2L."}</p>
+                </div>
+                <div className="flex items-center gap-3 text-[10px] font-black text-slate-300 uppercase tracking-widest"><i className="fas fa-circle-notch fa-spin"></i> Awaiting Next Protocol</div>
             </div>
         );
 
         const Result = ({preScore, postScore, counts, onFinish}) => (
-            <div className="card h-full flex flex-col items-center justify-center p-8 text-center border-t-4 border-socrates-accent w-full max-w-xl mx-auto my-6 shadow-md">
-                <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-4xl text-socrates-accent shadow-sm border border-emerald-100 mb-6"><i className="fas fa-trophy"></i></div>
-                <h2 className="text-xl font-bold text-socrates-dark mb-2">Session Complete</h2>
-                <p className="text-sm text-slate-500 mb-8">Your assessment metrics have been recorded.</p>
-                
-                <div className="w-full space-y-4 mb-10">
-                    <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 shadow-sm">
-                            <div className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-widest mb-1">Correct</div>
-                            <div className="text-2xl font-black text-emerald-600 font-outfit">{counts.correctCount}</div>
-                        </div>
-                        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 shadow-sm">
-                            <div className="text-[10px] font-extrabold text-red-800 uppercase tracking-widest mb-1">Wrong</div>
-                            <div className="text-2xl font-black text-red-600 font-outfit">{counts.wrongCount}</div>
-                        </div>
-                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-sm">
-                            <div className="text-[10px] font-extrabold text-slate-800 uppercase tracking-widest mb-1">Left</div>
-                            <div className="text-2xl font-black text-slate-600 font-outfit">{counts.unattemptedCount}</div>
-                        </div>
-                    </div>
-
-                    <div className="flex justify-between items-center p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                        <span className="text-sm text-slate-600 font-medium">Last Pre-Test Score</span>
-                        <span className="font-bold text-base text-socrates-dark">{preScore !== null ? `${preScore}%` : 'N/A'}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-4 bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm">
-                        <span className="text-sm text-emerald-800 font-bold">Last Post-Test Score</span>
-                        <span className="font-bold text-lg text-emerald-600">{postScore !== null ? `${postScore}%` : 'N/A'}</span>
-                    </div>
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-10 animate-fade-in">
+                <div className="w-28 h-28 bg-gradient-to-tr from-emerald-500 to-teal-400 text-white rounded-[40px] flex items-center justify-center text-5xl shadow-2xl shadow-emerald-500/20 animate-bounce"><i className="fas fa-trophy"></i></div>
+                <div className="space-y-2">
+                    <h2 className="font-outfit font-black text-3xl text-slate-900 tracking-tight">MISSION COMPLETE</h2>
+                    <p className="text-slate-400 font-bold text-xs uppercase tracking-[0.3em]">Knowledge Metrics Recorded</p>
                 </div>
-                
-                <button onClick={onFinish} className="w-full btn-primary">
-                    Return to Dashboard
-                </button>
+                <div className="grid grid-cols-3 gap-4 w-full">
+                    {[ {l:'CORRECT', v:counts.correctCount, c:'emerald'}, {l:'WRONG', v:counts.wrongCount, c:'red'}, {l:'UNATTEMPTED', v:counts.unattemptedCount, c:'slate'} ].map(s => (
+                        <div key={s.l} className={`bg-white p-5 rounded-[32px] border-2 border-${s.c}-50 shadow-sm space-y-1`}>
+                            <div className={`text-[9px] font-black text-${s.c}-600 uppercase tracking-widest`}>{s.l}</div>
+                            <div className="text-3xl font-black text-slate-900 font-outfit">{s.v}</div>
+                        </div>
+                    ))}
+                </div>
+                <button onClick={onFinish} className="w-full h-16 btn-primary shadow-blue-500/30 text-base font-black tracking-widest">DASHBOARD EXIT <i className="fas fa-home ml-2"></i></button>
             </div>
         );
 
