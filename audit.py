@@ -1046,18 +1046,26 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         cursor = self.conn.cursor()
         
         # Seed test employee
-        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role) VALUES ('SF-6601', 'HIST TESTER', 'DELHI RF', 'North Zone', 'Delhi Division', 'Retail', 'CSE')")
+        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role) VALUES ('SF-6601', 'HIST TESTER', 'DELHI RF', 'NORTH ZONE', 'DELHI DIVISION', 'TWO-WHEELER', 'CSE')")
         # Seed test module
         cursor.execute("INSERT OR REPLACE INTO modules (id, title, questions_count) VALUES (99, 'Historical Policy', 5)")
         # Seed trainer
-        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('TR-HIST-1', 'Hist Trainer', 'All', 'password123', 'Trainer', 'Active')")
+        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('TR-HIST-1', 'Hist Trainer', 'NORTH ZONE', 'password123', 'Trainer', 'Active')")
         self.conn.commit()
         
-        # 1. Try uploading with non-existent employee code (Should fail)
+        # 1. Try uploading with invalid Zone value (Should fail and return validation details)
+        headers = [
+            'Employee Code', 'Employee Name', 'Branch Name', 'Zone', 'Division', 'Business Unit', 'Role', 'Product Name',
+            'Trainer ID', 'Trainer Name', 'Date of Visit', 'Module ID',
+            'Zero Day Pre-Test', 'Zero Day Post-Test',
+            'Six Days Pre-Test', 'Six Days Post-Test',
+            'Twenty Days Pre-Test', 'Twenty Days Post-Test'
+        ]
+        
         with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
             writer = csv.writer(f)
-            writer.writerow(['Employee Code', 'Module ID', 'Date', 'Pre-Test Score', 'Post-Test Score'])
-            writer.writerow(['SF-NONEXIST', '99', '2026-03-15', '45', '85'])
+            writer.writerow(headers)
+            writer.writerow(['SF-6601', 'HIST TESTER', 'DELHI RF', 'INVALID ZONE', 'DELHI DIVISION', 'TWO-WHEELER', 'CSE', 'SPLENDOR V2', 'TR-HIST-1', 'Hist Trainer', '2026-03-15', '99', '40.0', '90.0', '55.0', '92.0', '65.0', '98.0'])
             temp_path = f.name
             
         try:
@@ -1067,15 +1075,15 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
                 data = json.loads(res.data)
                 self.assertEqual(res.status_code, 400)
                 self.assertEqual(data['status'], 'error')
-                self.assertIn("not registered in the Master Roster", data['details'][0])
+                self.assertIn("Invalid Zone", data['details'][0])
         finally:
             os.remove(temp_path)
             
-        # 2. Upload valid CSV (Should succeed and auto-generate session)
+        # 2. Upload valid CSV (Should succeed, register dynamically and auto-generate session + calendar field visits)
         with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
             writer = csv.writer(f)
-            writer.writerow(['Employee Code', 'Module ID', 'Date', 'Pre-Test Score', 'Post-Test Score'])
-            writer.writerow(['SF-6601', '99', '2026-03-15', '40.0', '90.0'])
+            writer.writerow(headers)
+            writer.writerow(['SF-6601', 'HIST TESTER', 'DELHI RF', 'NORTH ZONE', 'DELHI DIVISION', 'TWO-WHEELER', 'CSE', 'SPLENDOR V2', 'TR-HIST-1', 'Hist Trainer', '2026-03-15', '99', '40.0', '90.0', '55.0', '92.0', '65.0', '98.0'])
             temp_path = f.name
             
         try:
@@ -1086,27 +1094,52 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
                 self.assertEqual(data['status'], 'success')
                 
             # Verify database rows and session generation
-            ar = cursor.execute("SELECT pre_test_score, post_test_score, completed_at, session_id FROM assessment_results WHERE emp_code='SF-6601' AND module_id=99").fetchone()
-            self.assertEqual(ar[0], 40.0)
-            self.assertEqual(ar[1], 90.0)
-            self.assertEqual(ar[2], '2026-03-15')
+            # ZERO DAY
+            ar_zero = cursor.execute("SELECT pre_test_score, post_test_score, completed_at, session_id FROM assessment_results WHERE emp_code='SF-6601' AND module_id=99 AND assignment_day='ZERO DAY'").fetchone()
+            self.assertIsNotNone(ar_zero)
+            self.assertEqual(ar_zero[0], 40.0)
+            self.assertEqual(ar_zero[1], 90.0)
+            self.assertEqual(ar_zero[2], '2026-03-15')
+            
+            # SIX DAYS
+            ar_six = cursor.execute("SELECT pre_test_score, post_test_score, completed_at FROM assessment_results WHERE emp_code='SF-6601' AND module_id=99 AND assignment_day='SIX DAYS'").fetchone()
+            self.assertIsNotNone(ar_six)
+            self.assertEqual(ar_six[0], 55.0)
+            self.assertEqual(ar_six[1], 92.0)
+            self.assertEqual(ar_six[2], '2026-03-21')
+            
+            # TWENTY DAYS
+            ar_twenty = cursor.execute("SELECT pre_test_score, post_test_score, completed_at FROM assessment_results WHERE emp_code='SF-6601' AND module_id=99 AND assignment_day='TWENTY DAYS'").fetchone()
+            self.assertIsNotNone(ar_twenty)
+            self.assertEqual(ar_twenty[0], 65.0)
+            self.assertEqual(ar_twenty[1], 98.0)
+            self.assertEqual(ar_twenty[2], '2026-04-05')
             
             # Match session auto-generation
-            session_id = ar[3]
+            session_id = ar_zero[3]
             sess = cursor.execute("SELECT module_id, branch_name, date FROM training_sessions WHERE session_id=?", (session_id,)).fetchone()
             self.assertIsNotNone(sess)
             self.assertEqual(sess[0], 99)
             self.assertEqual(sess[1], 'DELHI RF')
             self.assertEqual(sess[2], '2026-03-15')
             
+            # Verify travel log check-in generation for Field Travel Hub visual calendar
+            visit = cursor.execute("SELECT purpose, status, co_presence_count FROM field_visits WHERE trainer_id='TR-HIST-1' AND branch_name='DELHI RF' AND planned_date='2026-03-15'").fetchone()
+            self.assertIsNotNone(visit)
+            self.assertEqual(visit[0], 'Training')
+            self.assertEqual(visit[1], 'VERIFIED')
+            self.assertEqual(visit[2], 1)
+            
         finally:
             os.remove(temp_path)
             cursor.execute("DELETE FROM assessment_results WHERE emp_code='SF-6601' AND module_id=99")
+            cursor.execute("DELETE FROM field_visits WHERE trainer_id='TR-HIST-1' AND branch_name='DELHI RF' AND planned_date='2026-03-15'")
             cursor.execute("DELETE FROM training_sessions WHERE branch_name='DELHI RF' AND date='2026-03-15' AND module_id=99")
             cursor.execute("DELETE FROM employees WHERE emp_code='SF-6601'")
             cursor.execute("DELETE FROM modules WHERE id=99")
             cursor.execute("DELETE FROM trainers WHERE trainer_id='TR-HIST-1'")
             self.conn.commit()
+
 
     def test_multiple_division_normalization(self):
         """Audit 26: Verify multiple division normalization (comma-separated, uppercase standard enums)"""
@@ -1164,6 +1197,45 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
             
         finally:
             cursor.execute("DELETE FROM employees WHERE emp_code='SF-METATEST-1'")
+            self.conn.commit()
+
+    def test_fuzzy_resolver_self_monitoring(self):
+        """Audit 28: Verify fuzzy resolver self-monitoring corrects 80%+ spelling matches on upload"""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM employees WHERE emp_code IN ('SF-FUZZY-1', 'SF-FUZZY-2')")
+        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role) VALUES ('SF-FUZZY-1', 'PRISTINE NAME', 'DELHI RF', 'NORTH ZONE', 'DELHI DIVISION', 'TWO-WHEELER', 'PL Exe')")
+        self.conn.commit()
+        
+        # Test 1: Upload a slightly misspelled name ("PRISTINE NME" -> 90%+ match). Should auto-correct to "PRISTINE NAME" and upsert rather than throw duplicate code error.
+        # Test 2: Upload a slightly misspelled branch ("DELHI R" -> 85%+ match to "DELHI RF") and business unit ("TWO WHELER" -> 90%+ match to "TWO-WHEELER").
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Employee Code', 'Employee Name', 'Branch Name', 'Zone', 'Division', 'Business Unit', 'Role'])
+            writer.writerow(['SF-FUZZY-1', 'PRISTINE NME', 'DELHI R', 'NORTH ZONE', 'DELHI DIVISION', 'TWO WHELER', 'PL Exe'])
+            writer.writerow(['SF-FUZZY-2', 'NEW EXECUTIVE', 'AHMEDABAD R', 'WEST ZONE', 'GUJARAT DIVISION', 'PERSONAL LN', 'CSE'])
+            temp_path = f.name
+            
+        try:
+            with open(temp_path, 'rb') as f:
+                res = self.client.post('/api/roster/upload', data={'file': (f, 'test_fuzzy.csv')})
+                data = json.loads(res.data)
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(data['status'], 'success')
+                
+            # Verify database matches
+            emp1 = cursor.execute("SELECT emp_name, branch_name, business_unit FROM employees WHERE emp_code='SF-FUZZY-1'").fetchone()
+            self.assertEqual(emp1[0], 'PRISTINE NAME') # Auto-corrected from database existing standard name!
+            self.assertEqual(emp1[1], 'DELHI RF')      # Auto-corrected branch Delhi R -> Delhi RF!
+            self.assertEqual(emp1[2], 'TWO-WHEELER')   # Auto-corrected business unit!
+            
+            emp2 = cursor.execute("SELECT emp_name, branch_name, business_unit FROM employees WHERE emp_code='SF-FUZZY-2'").fetchone()
+            self.assertEqual(emp2[0], 'NEW EXECUTIVE')
+            self.assertEqual(emp2[1], 'AHMEDABAD RF')  # Auto-corrected branch Ahmedabad R -> Ahmedabad RF!
+            self.assertEqual(emp2[2], 'PERSONAL LOAN')  # Auto-corrected business unit Personal LN -> Personal Loan!
+            
+        finally:
+            os.remove(temp_path)
+            cursor.execute("DELETE FROM employees WHERE emp_code IN ('SF-FUZZY-1', 'SF-FUZZY-2')")
             self.conn.commit()
 
 if __name__ == '__main__':

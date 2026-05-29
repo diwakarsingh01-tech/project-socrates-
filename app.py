@@ -92,6 +92,7 @@ class PostgresCursorWrapper:
                     self._lastrowid = row[0]
             except Exception:
                 pass
+        return self
 
     def executemany(self, query, params_list):
         query = query.replace('?', '%s')
@@ -448,11 +449,10 @@ def enforce_authentication():
         if 'user' not in session:
             return jsonify({"status": "error", "message": "Unauthorized. Please log in first."}), 401
             
-        # Role-based restriction: Access Management, Diagnostics, DB Reset, Roster Upload/Modifications are SuperAdmin only!
+        # Role-based restriction: Access Management, DB Reset, Roster Upload/Modifications are SuperAdmin only!
         superadmin_routes = [
             '/api/trainers',
             '/api/trainers/upload',
-            '/api/admin/diagnostics',
             '/api/admin/reset-database'
         ]
         
@@ -1048,11 +1048,11 @@ def get_roster_filters():
     
     zones_list = [r[0] for r in zones]
     if not zones_list:
-        zones_list = ["AMD_BU", "CH_BU", "DEL_BU", "KOL_BU"]
+        zones_list = ["NORTH ZONE", "WEST ZONE", "EAST ZONE"]
         
     divisions_list = [r[0] for r in divisions]
     # Always ensure default divisions are present
-    default_divs = ["GUJARAT DIVISION", "DELHI DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION", "MAHARASHTRA DIVISION"]
+    default_divs = ["GUJARAT DIVISION", "DELHI DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION", "MAHARASHTRA DIVISION", "MUMBAI DIVISION"]
     for div in default_divs:
         if div not in divisions_list:
             divisions_list.append(div)
@@ -1072,7 +1072,7 @@ def get_roster_filters():
         "DELHI RF": "DELHI DIVISION",
         "CHANDIGARH RF": "PUNJAB DIVISION",
         "KOLKATA RF": "BENGAL DIVISION",
-        "MUMBAI RF": "MAHARASHTRA DIVISION"
+        "MUMBAI RF": "MUMBAI DIVISION"
     }
     for rf in default_rfs:
         if rf not in existing_meta_names:
@@ -1081,11 +1081,12 @@ def get_roster_filters():
     divisions_meta = [{"name": r[0], "zone": r[1]} for r in divisions]
     existing_div_names = {d["name"] for d in divisions_meta}
     div_zone_mapping = {
-        "GUJARAT DIVISION": "AMD_BU",
-        "DELHI DIVISION": "DEL_BU",
-        "PUNJAB DIVISION": "CH_BU",
-        "BENGAL DIVISION": "KOL_BU",
-        "MAHARASHTRA DIVISION": "AMD_BU"
+        "GUJARAT DIVISION": "WEST ZONE",
+        "DELHI DIVISION": "NORTH ZONE",
+        "PUNJAB DIVISION": "NORTH ZONE",
+        "BENGAL DIVISION": "EAST ZONE",
+        "MAHARASHTRA DIVISION": "WEST ZONE",
+        "MUMBAI DIVISION": "WEST ZONE"
     }
     for div in divisions_list:
         if div not in existing_div_names and div in div_zone_mapping:
@@ -1145,6 +1146,19 @@ def normalize_enums(zone, division, branch):
                         norm = v
                         break
             if not norm:
+                # Fuzzy sequence matching (SequenceMatcher ratio >= 0.8)
+                import difflib
+                best_match = None
+                best_ratio = 0.0
+                unique_values = list(set(mapping.values()))
+                for val in unique_values:
+                    ratio = difflib.SequenceMatcher(None, item, val).ratio()
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_match = val
+                if best_ratio >= 0.8:
+                    norm = best_match
+            if not norm:
                 norm = item
             normalized_items.append(norm)
         return ", ".join(normalized_items)
@@ -1160,17 +1174,34 @@ def normalize_employee_data(branch_name, business_unit, product_name, division=N
     bu_name = (business_unit or "").strip().upper()
     p_name = (product_name or "").strip().upper()
     
+    VALID_BUS = ['TWO-WHEELER', 'PERSONAL LOAN', 'GOLD LOAN', 'COMMERCIAL VEHICLE', 'RETAIL']
+    
+    # Fuzzy resolve business unit from standard options
+    if "2-WHEELER" in bu_name or "TWO" in bu_name:
+        bu_name = "TWO-WHEELER"
+    elif bu_name:
+        import difflib
+        best_bu = None
+        best_bu_ratio = 0.0
+        for bu in VALID_BUS:
+            ratio = difflib.SequenceMatcher(None, bu_name, bu).ratio()
+            if ratio > best_bu_ratio:
+                best_bu_ratio = ratio
+                best_bu = bu
+        if best_bu_ratio >= 0.8:
+            bu_name = best_bu
+            
     # Check if business_unit contains 'RF' or matches refresher centers (e.g. 'AHMEDABAD RF')
     if any(rf in bu_name.upper() for rf in ['RF', 'AHMEDABAD', 'DELHI', 'CHANDIGARH', 'KOLKATA', 'MUMBAI']):
         refresher_center = bu_name.upper().strip()
         local_branch = b_name
         
         b_name = refresher_center
-        bu_name = "2-WHEELER PERSONAL LOAN"
+        bu_name = "TWO-WHEELER"
         p_name = local_branch
         
-    # If branch_name is 2-Wheeler Personal Loan or similar, correct it
-    if b_name in ["2-WHEELER PERSONAL LOAN", "TWO-WHEELER", "PERSONAL LOAN", "GOLD LOAN", "COMMERCIAL VEHICLE", "RETAIL"]:
+    # If branch_name is a Business Unit or similar, swap it correctly
+    if b_name in ["TWO-WHEELER", "PERSONAL LOAN", "GOLD LOAN", "COMMERCIAL VEHICLE", "RETAIL"]:
         bu_name = branch_name.upper().strip()
         # Guess branch from division or default
         div_upper = (division or "").strip().upper()
@@ -1188,7 +1219,7 @@ def normalize_employee_data(branch_name, business_unit, product_name, division=N
             b_name = "AHMEDABAD RF" # Default fallback
             
     if not bu_name:
-        bu_name = "2-WHEELER PERSONAL LOAN"
+        bu_name = "TWO-WHEELER"
         
     if not p_name or p_name == 'N/A':
         p_name = ""
@@ -1335,7 +1366,15 @@ def upload_roster():
             # Duplication check against SQLite database
             db_match = conn.execute("SELECT emp_name FROM employees WHERE emp_code=?", (code,)).fetchone()
             if db_match:
-                duplicates.append(f"Row {idx}: Employee Code '{code}' ({row['Employee Name']}) already exists in the database as '{db_match['emp_name']}'.")
+                import difflib
+                db_name = db_match['emp_name'].strip().upper()
+                input_name = row['Employee Name'].strip().upper()
+                ratio = difflib.SequenceMatcher(None, input_name, db_name).ratio()
+                if ratio >= 0.8:
+                    # Auto-correct to match the master database name to avoid duplicate confusion
+                    row['Employee Name'] = db_name
+                else:
+                    duplicates.append(f"Row {idx}: Employee Code '{code}' ({row['Employee Name']}) already exists in the database as '{db_match['emp_name']}'.")
         
         if duplicates:
             conn.close()
@@ -1345,7 +1384,7 @@ def upload_roster():
                 "details": duplicates
             }), 400
             
-        # Insert records if no duplicates found
+        # Insert or replace records if no duplicates found
         now_str = datetime.datetime.now().strftime("%Y-%m-%d")
         for _, row in rows:
             try:
@@ -1356,7 +1395,7 @@ def upload_roster():
                     row.get('Division', '')
                 )
                 conn.execute(
-                    "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
+                    "INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
                     (row['Employee Code'].upper(), row['Employee Name'].upper(), b_name, row['Zone'], row['Division'], bu_name, row['Role'].upper(), p_name, f"UPLOADED VIA CSV ON {now_str}")
                 )
             except Exception as e:
@@ -1394,7 +1433,15 @@ def upload_historical_assessments():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        REQUIRED_HEADERS = ['Employee Code', 'Module ID', 'Date', 'Pre-Test Score', 'Post-Test Score']
+        # Unified template complete headers
+        REQUIRED_HEADERS = [
+            'Employee Code', 'Employee Name', 'Branch Name', 'Zone', 'Division', 'Business Unit', 'Role', 'Product Name',
+            'Trainer ID', 'Trainer Name', 'Date of Visit', 'Module ID',
+            'Zero Day Pre-Test', 'Zero Day Post-Test',
+            'Six Days Pre-Test', 'Six Days Post-Test',
+            'Twenty Days Pre-Test', 'Twenty Days Post-Test'
+        ]
+
         
         rows = []
         headers = []
@@ -1421,43 +1468,93 @@ def upload_historical_assessments():
             if missing_headers:
                 return jsonify({
                     "status": "error", 
-                    "message": f"Invalid CSV format. Missing column headers: {', '.join(missing_headers)}"
+                    "message": f"Invalid CSV format. Missing required columns: {', '.join(missing_headers)}"
                 }), 400
                 
             hdr_indices = {h: headers.index(h) for h in headers}
             
-            # Formatting and structural validation
             errors = []
             final_rows = []
             conn = get_db_connection()
             
+            import re
+            
+            # Validation sets
+            VALID_ZONES = {'NORTH ZONE', 'WEST ZONE', 'EAST ZONE'}
+            VALID_DIVISIONS = {'DELHI DIVISION', 'GUJARAT DIVISION', 'PUNJAB DIVISION', 'BENGAL DIVISION', 'MUMBAI DIVISION'}
+            VALID_BRANCHES = {'DELHI RF', 'AHMEDABAD RF', 'CHANDIGARH RF', 'KOLKATA RF', 'MUMBAI RF'}
+            
             for row_idx, r in rows:
-                row_data = {h: r[hdr_indices[h]].strip() for h in REQUIRED_HEADERS}
-                emp_code = row_data['Employee Code'].upper()
-                module_id = row_data['Module ID']
-                date_val = row_data['Date']
-                pre_score_str = row_data['Pre-Test Score']
-                post_score_str = row_data['Post-Test Score']
+                def get_cell(header_name, fallback=''):
+                    return r[hdr_indices[header_name]].strip() if header_name in hdr_indices else fallback
                 
-                # 1. Validate employee exists in roster
-                emp_match = conn.execute("SELECT branch_name FROM employees WHERE emp_code=?", (emp_code,)).fetchone()
-                if not emp_match:
-                    errors.append(f"Row {row_idx}: Employee Code '{emp_code}' is not registered in the Master Roster. Please upload the Roster CSV first.")
-                    continue
+                emp_code = get_cell('Employee Code').upper()
+                emp_name = get_cell('Employee Name').upper()
+                branch_name_raw = get_cell('Branch Name')
+                zone_raw = get_cell('Zone')
+                division_raw = get_cell('Division')
+                business_unit_raw = get_cell('Business Unit')
+                role = get_cell('Role').upper()
+                product_name_raw = get_cell('Product Name', 'N/A')
+                
+                trainer_id = get_cell('Trainer ID').upper()
+                trainer_name = get_cell('Trainer Name')
+                date_val = get_cell('Date of Visit')
+                module_id_str = get_cell('Module ID')
+                
+                zero_pre_str = get_cell('Zero Day Pre-Test')
+                zero_post_str = get_cell('Zero Day Post-Test')
+                six_pre_str = get_cell('Six Days Pre-Test')
+                six_post_str = get_cell('Six Days Post-Test')
+                twenty_pre_str = get_cell('Twenty Days Pre-Test')
+                twenty_post_str = get_cell('Twenty Days Post-Test')
+                
+                # 1. Employee validations
+                if not emp_code:
+                    errors.append(f"Row {row_idx}: Employee Code is required.")
+                elif not re.match(r"^[A-Z0-9\-]{3,15}$", emp_code):
+                    errors.append(f"Row {row_idx}: Employee Code '{emp_code}' is invalid.")
+                if not emp_name:
+                    errors.append(f"Row {row_idx}: Employee Name is required.")
+                
+                # Normalize using standard enums & uppercase helpers
+                norm_zone, norm_div, norm_br = normalize_enums(zone_raw, division_raw, branch_name_raw)
+                
+                zone_items = [z.strip() for z in (norm_zone or "").split(",") if z.strip()]
+                all_zones_valid = all(z in VALID_ZONES for z in zone_items)
+                if not zone_items or not all_zones_valid:
+                    errors.append(f"Row {row_idx}: Invalid Zone '{zone_raw}'. Must be NORTH ZONE, WEST ZONE, or EAST ZONE.")
+                
+                div_items = [d.strip() for d in (norm_div or "").split(",") if d.strip()]
+                all_divs_valid = all(d in VALID_DIVISIONS for d in div_items)
+                if not div_items or not all_divs_valid:
+                    errors.append(f"Row {row_idx}: Invalid Division '{division_raw}'. Must be DELHI DIVISION, GUJARAT DIVISION, PUNJAB DIVISION, BENGAL DIVISION, or MUMBAI DIVISION.")
+                
+                br_items = [b.strip() for b in (norm_br or "").split(",") if b.strip()]
+                all_branches_valid = all(b in VALID_BRANCHES for b in br_items)
+                if not br_items or not all_branches_valid:
+                    errors.append(f"Row {row_idx}: Invalid Branch Name '{branch_name_raw}'. Must be DELHI RF, AHMEDABAD RF, CHANDIGARH RF, KOLKATA RF, or MUMBAI RF.")
+                
+                norm_branch, norm_bu, norm_prod = normalize_employee_data(norm_br, business_unit_raw, product_name_raw, norm_div)
+                
+                # 2. Trainer validations
+                if not trainer_id:
+                    errors.append(f"Row {row_idx}: Trainer ID is required.")
+                if not trainer_name:
+                    errors.append(f"Row {row_idx}: Trainer Name is required.")
                     
-                branch_name = emp_match['branch_name']
-                
-                # 2. Validate Module ID
+                # 3. Module validation
                 try:
-                    module_id = int(module_id)
-                    # Check if module exists in DB
+                    module_id = int(module_id_str)
                     mod_match = conn.execute("SELECT id FROM modules WHERE id=?", (module_id,)).fetchone()
                     if not mod_match:
-                        errors.append(f"Row {row_idx}: Module ID '{module_id}' does not exist in the Socratic Library.")
+                        # Auto-create module to be user friendly
+                        conn.execute("INSERT OR REPLACE INTO modules (id, title, questions_count) VALUES (?, 'Historical Policy Refresher', 10)", (module_id,))
+                        conn.commit()
                 except ValueError:
-                    errors.append(f"Row {row_idx}: Module ID must be a numeric integer.")
+                    errors.append(f"Row {row_idx}: Module ID must be an integer.")
                     
-                # 3. Validate Date (YYYY-MM-DD or YYYY-MM)
+                # 4. Date validation
                 parsed_date = None
                 for fmt in ('%Y-%m-%d', '%Y-%m'):
                     try:
@@ -1466,80 +1563,134 @@ def upload_historical_assessments():
                     except ValueError:
                         pass
                 if not parsed_date:
-                    errors.append(f"Row {row_idx}: Date '{date_val}' is invalid. Must be in YYYY-MM-DD or YYYY-MM format.")
+                    errors.append(f"Row {row_idx}: Date of Visit '{date_val}' is invalid. Use YYYY-MM-DD or YYYY-MM.")
                 else:
-                    # Normalize date to YYYY-MM-DD
-                    if len(date_val) == 7:  # YYYY-MM
+                    if len(date_val) == 7:
                         date_val = f"{date_val}-01"
                         
-                # 4. Validate Pre-Test and Post-Test scores
-                try:
-                    pre_score = float(pre_score_str)
-                    if not (0 <= pre_score <= 100):
-                        errors.append(f"Row {row_idx}: Pre-Test Score must be a percentage between 0 and 100.")
-                except ValueError:
-                    errors.append(f"Row {row_idx}: Pre-Test Score '{pre_score_str}' is not a valid number.")
-                    
-                try:
-                    post_score = float(post_score_str)
-                    if not (0 <= post_score <= 100):
-                        errors.append(f"Row {row_idx}: Post-Test Score must be a percentage between 0 and 100.")
-                except ValueError:
-                    errors.append(f"Row {row_idx}: Post-Test Score '{post_score_str}' is not a valid number.")
-                    
+                def parse_score(val_str, name):
+                    if not val_str or val_str.upper() in ('N/A', '', 'NULL'):
+                        return None
+                    try:
+                        score = float(val_str)
+                        if not (0 <= score <= 100):
+                            errors.append(f"Row {row_idx}: {name} score must be between 0 and 100.")
+                            return None
+                        return score
+                    except ValueError:
+                        errors.append(f"Row {row_idx}: {name} score '{val_str}' is invalid.")
+                        return None
+                
+                zero_pre = parse_score(zero_pre_str, "Zero Day Pre-Test")
+                zero_post = parse_score(zero_post_str, "Zero Day Post-Test")
+                six_pre = parse_score(six_pre_str, "Six Days Pre-Test")
+                six_post = parse_score(six_post_str, "Six Days Post-Test")
+                twenty_pre = parse_score(twenty_pre_str, "Twenty Days Pre-Test")
+                twenty_post = parse_score(twenty_post_str, "Twenty Days Post-Test")
+                
                 if not errors:
                     final_rows.append({
                         "emp_code": emp_code,
-                        "module_id": module_id,
+                        "emp_name": emp_name,
+                        "branch_name": norm_branch,
+                        "zone": norm_zone,
+                        "division": norm_div,
+                        "business_unit": norm_bu,
+                        "role": role,
+                        "product_name": norm_prod,
+                        "trainer_id": trainer_id,
+                        "trainer_name": trainer_name,
                         "date": date_val,
-                        "pre_score": pre_score,
-                        "post_score": post_score,
-                        "branch_name": branch_name
+                        "module_id": module_id,
+                        "zero_pre": zero_pre,
+                        "zero_post": zero_post,
+                        "six_pre": six_pre,
+                        "six_post": six_post,
+                        "twenty_pre": twenty_pre,
+                        "twenty_post": twenty_post
                     })
                     
             if errors:
                 conn.close()
                 return jsonify({
                     "status": "error",
-                    "message": "Historical assessments formatting validation failed.",
+                    "message": "Historical data file validation failed.",
                     "details": errors
                 }), 400
                 
-            # If no validation errors, write to DB!
-            trainer_id = curr_user.get('trainer_id', 'SuperAdmin')
+            # If validated successfully, upsert ALL required tables dynamically!
             for row in final_rows:
-                # 1. Generate unique session ID for history
+                # 1. Upsert Employee
+                conn.execute("""
+                    INSERT OR REPLACE INTO employees 
+                    (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', 'HISTORICAL IMPORT')
+                """, (row['emp_code'], row['emp_name'], row['branch_name'], row['zone'], row['division'], row['business_unit'], row['role'], row['product_name']))
+                
+                # 2. Upsert Trainer
+                t_match = conn.execute("SELECT name FROM trainers WHERE trainer_id=?", (row['trainer_id'],)).fetchone()
+                if not t_match:
+                    conn.execute("""
+                        INSERT INTO trainers (trainer_id, name, zone, password, status, role)
+                        VALUES (?, ?, ?, 'password123', 'Active', 'Trainer')
+                    """, (row['trainer_id'], row['trainer_name'], row['zone'].split(',')[0].strip().upper()))
+                    
+                # 3. Create Training Session
                 safe_branch = row['branch_name'].replace(' ', '')
                 session_id = f"HIST-{safe_branch}-{row['module_id']}-{row['date']}"
-                
-                # Check if session exists in training_sessions
                 sess_match = conn.execute("SELECT session_id FROM training_sessions WHERE session_id=?", (session_id,)).fetchone()
                 if not sess_match:
-                    conn.execute(
-                        "INSERT INTO training_sessions (session_id, module_id, branch_name, date, trainer_id) VALUES (?, ?, ?, ?, ?)",
-                        (session_id, row['module_id'], row['branch_name'], row['date'], trainer_id)
-                    )
+                    conn.execute("""
+                        INSERT INTO training_sessions (session_id, module_id, branch_name, date, trainer_id)
+                        VALUES (?, ?, ?, ?, ?)
+                    """, (session_id, row['module_id'], row['branch_name'], row['date'], row['trainer_id']))
                     
-                # 2. Insert into assessment_results
-                conn.execute('''
-                    INSERT OR REPLACE INTO assessment_results 
-                    (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at, session_id)
-                    VALUES (?, ?, 'Day 0', ?, ?, ?, ?)
-                ''', (row['emp_code'], row['module_id'], row['pre_score'], row['post_score'], row['date'], session_id))
-                
+                # 4. Create verified field travel logs for visual calendar
+                v_match = conn.execute("SELECT id FROM field_visits WHERE trainer_id=? AND branch_name=? AND planned_date=?", (row['trainer_id'], row['branch_name'], row['date'])).fetchone()
+                if not v_match:
+                    conn.execute("""
+                        INSERT INTO field_visits 
+                        (trainer_id, branch_name, planned_date, purpose, status, checkin_time, verification_time, co_presence_count)
+                        VALUES (?, ?, ?, 'Training', 'VERIFIED', ?, ?, 1)
+                    """, (row['trainer_id'], row['branch_name'], row['date'], row['date'] + " 10:00", row['date'] + " 11:30"))
+                    
+                # 5. Insert assessment score curves
+                if row['zero_pre'] is not None and row['zero_post'] is not None:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO assessment_results 
+                        (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at, session_id)
+                        VALUES (?, ?, 'ZERO DAY', ?, ?, ?, ?)
+                    """, (row['emp_code'], row['module_id'], row['zero_pre'], row['zero_post'], row['date'], session_id))
+                    
+                if row['six_pre'] is not None and row['six_post'] is not None:
+                    comp_date = (datetime.datetime.strptime(row['date'], '%Y-%m-%d') + datetime.timedelta(days=6)).strftime('%Y-%m-%d')
+                    conn.execute("""
+                        INSERT OR REPLACE INTO assessment_results 
+                        (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at, session_id)
+                        VALUES (?, ?, 'SIX DAYS', ?, ?, ?, ?)
+                    """, (row['emp_code'], row['module_id'], row['six_pre'], row['six_post'], comp_date, session_id))
+                    
+                if row['twenty_pre'] is not None and row['twenty_post'] is not None:
+                    comp_date = (datetime.datetime.strptime(row['date'], '%Y-%m-%d') + datetime.timedelta(days=21)).strftime('%Y-%m-%d')
+                    conn.execute("""
+                        INSERT OR REPLACE INTO assessment_results 
+                        (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at, session_id)
+                        VALUES (?, ?, 'TWENTY DAYS', ?, ?, ?, ?)
+                    """, (row['emp_code'], row['module_id'], row['twenty_pre'], row['twenty_post'], comp_date, session_id))
+                    
             conn.commit()
             conn.close()
             
             # Sync to Google Drive in background thread if configured
             try:
-                from gdrive_sync import sync_database_to_gdrive
-                threading.Thread(target=sync_database_to_gdrive, daemon=True).start()
+                from gdrive_sync import backup_db_to_gdrive
+                threading.Thread(target=backup_db_to_gdrive, daemon=True).start()
             except Exception as e:
                 print(f"[GDRIVE] Historical assessment sync skip: {str(e)}")
                 
             return jsonify({
                 "status": "success",
-                "message": f"Successfully uploaded and processed {len(final_rows)} historical pre/post assessment logs!"
+                "message": f"Successfully processed {len(final_rows)} rows! Unified employee rosters, trainer accounts, field visit calendar plans, and pre/post training delta score curves populated instantly!"
             })
             
         except Exception as e:

@@ -91,6 +91,7 @@ class PostgresCursorWrapper:
                     self._lastrowid = row[0]
             except Exception:
                 pass
+        return self
 
     def executemany(self, query, params_list):
         query = query.replace('?', '%s')

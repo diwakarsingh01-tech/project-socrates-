@@ -183,11 +183,13 @@
             }, []);
 
             useEffect(() => {
-                fetch('/api/admin/diagnostics')
-                    .then(res => res.json())
-                    .then(data => setDbDiag(data))
-                    .catch(err => setDbDiag({ database_type: 'Unknown', connection_status: 'Failed to fetch', connection_error: err.message, database_url: '' }));
-            }, []);
+                if (activeTrainer) {
+                    fetch('/api/admin/diagnostics')
+                        .then(res => res.json())
+                        .then(data => setDbDiag(data))
+                        .catch(err => setDbDiag({ database_type: 'Unknown', connection_status: 'Failed to fetch', connection_error: err.message, database_url: '' }));
+                }
+            }, [activeTrainer]);
 
             useEffect(() => {
                 if (user?.role === 'SuperAdmin') {
@@ -220,7 +222,7 @@
             };
 
             const downloadTemplate = () => {
-                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name\nSF-1001,Rahul Singh,DELHI RF,North Zone,Delhi Division,2-Wheeler Personal Loan,PL Exe,Splendor V2\nSF-1002,Neha Sharma,AHMEDABAD RF,West Zone,Gujarat Division,2-Wheeler Personal Loan,PL Exe,Activa 6G\nSF-1003,Amit Patel,CHANDIGARH RF,North Zone,Punjab Division,2-Wheeler Personal Loan,PL Exe,Activa 6G\nSF-1004,Priya Das,KOLKATA RF,East Zone,Bengal Division,2-Wheeler Personal Loan,PL Exe,Activa 6G";
+                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name\nSF-1001,RAHUL SINGH,DELHI RF,NORTH ZONE,DELHI DIVISION,TWO-WHEELER,PL EXE,SPLENDOR V2\nSF-1002,NEHA SHARMA,AHMEDABAD RF,WEST ZONE,GUJARAT DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G\nSF-1003,AMIT PATEL,CHANDIGARH RF,NORTH ZONE,PUNJAB DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G\nSF-1004,PRIYA DAS,KOLKATA RF,EAST ZONE,BENGAL DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -998,9 +1000,9 @@
             const [empCode, setEmpCode] = useState('');
             const [empName, setEmpName] = useState('');
             const [branchName, setBranchName] = useState('');
-            const [zone, setZone] = useState('AMD_BU');
+            const [zone, setZone] = useState('NORTH ZONE');
             const [division, setDivision] = useState('');
-            const [bu, setBu] = useState('2-Wheeler Personal Loan');
+            const [bu, setBu] = useState('TWO-WHEELER');
             const [role, setRole] = useState('PL Exe');
             const [productName, setProductName] = useState('');
             const [changeDetail, setChangeDetail] = useState('');
@@ -1021,9 +1023,9 @@
             const [editEmpCode, setEditEmpCode] = useState('');
             const [editEmpName, setEditEmpName] = useState('');
             const [editBranchName, setEditBranchName] = useState('');
-            const [editZone, setEditZone] = useState('AMD_BU');
+            const [editZone, setEditZone] = useState('NORTH ZONE');
             const [editDivision, setEditDivision] = useState('');
-            const [editBu, setEditBu] = useState('2-Wheeler Personal Loan');
+            const [editBu, setEditBu] = useState('TWO-WHEELER');
             const [editRole, setEditRole] = useState('PL Exe');
             const [editProductName, setEditProductName] = useState('');
             const [editStatus, setEditStatus] = useState('ACTIVE');
@@ -1159,12 +1161,12 @@
             };
 
             const downloadAssessmentTemplate = () => {
-                const csvData = "Employee Code,Module ID,Date,Pre-Test Score,Post-Test Score\nSF-1001,1,2026-03-15,45.0,85.0\nSF-1002,1,2026-03-16,50.0,90.0\nSF-1003,2,2026-04-10,35.0,75.0\nSF-1004,2,2026-04-11,60.0,95.0";
+                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name,Trainer ID,Trainer Name,Date of Visit,Module ID,Zero Day Pre-Test,Zero Day Post-Test,Six Days Pre-Test,Six Days Post-Test,Twenty Days Pre-Test,Twenty Days Post-Test\nSF-1001,Rahul Singh,DELHI RF,NORTH ZONE,DELHI DIVISION,TWO-WHEELER,PL Exe,SPLENDOR V2,TR-1001,AMIT SHARMA,2026-03-15,1,45.0,85.0,55.0,90.0,60.0,95.0\nSF-1002,Neha Sharma,AHMEDABAD RF,WEST ZONE,GUJARAT DIVISION,TWO-WHEELER,PL Exe,ACTIVA 6G,TR-1002,PRIYA GUPTA,2026-03-16,1,50.0,90.0,N/A,N/A,N/A,N/A";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = 'Socrates_Historical_Assessments_Template.csv';
+                a.download = 'Socrates_Unified_Historical_Import_Template.csv';
                 a.click();
             };
 
@@ -1194,7 +1196,7 @@
                     }
                 })
                 .catch(err => {
-                    setErrorMsg("Server error importing historical assessments. Ensure employee codes exist in Roster.");
+                    setErrorMsg("Server error importing historical dataset. Ensure CSV formatting is valid.");
                 });
             };
 
@@ -1232,7 +1234,7 @@
                         setBranchName('');
                         setDivision('');
                         setRole('PL Exe');
-                        setZone('AMD_BU');
+                        setZone('NORTH ZONE');
                         setProductName('');
                         setChangeDetail('');
                         loadEmps();
@@ -1251,9 +1253,9 @@
                 setEditEmpCode(emp.emp_code);
                 setEditEmpName(emp.emp_name);
                 setEditBranchName(emp.branch_name || '');
-                setEditZone(emp.zone || 'AMD_BU');
+                setEditZone(emp.zone || 'NORTH ZONE');
                 setEditDivision(emp.division || '');
-                setEditBu(emp.business_unit || 'Two-Wheeler');
+                setEditBu(emp.business_unit || 'TWO-WHEELER');
                 setEditRole(emp.role || 'PL Exe');
                 setEditProductName(emp.product_name || '');
                 setEditStatus(emp.status || 'ACTIVE');
@@ -1375,21 +1377,19 @@
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
                                                 <select value={zone} onChange={e => setZone(e.target.value)} className="input-field bg-white">
-                                                    <option value="AMD_BU">AMD_BU</option>
-                                                    <option value="CH_BU">CH_BU</option>
-                                                    <option value="DEL_BU">DEL_BU</option>
-                                                    <option value="KOL_BU">KOL_BU</option>
+                                                    <option value="NORTH ZONE">NORTH ZONE</option>
+                                                    <option value="WEST ZONE">WEST ZONE</option>
+                                                    <option value="EAST ZONE">EAST ZONE</option>
                                                 </select>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
                                                 <select value={bu} onChange={e => setBu(e.target.value)} className="input-field bg-white">
-                                                    <option>2-Wheeler Personal Loan</option>
-                                                    <option>Two-Wheeler</option>
-                                                    <option>Personal Loan</option>
-                                                    <option>Gold Loan</option>
-                                                    <option>Commercial Vehicle</option>
-                                                    <option>Retail</option>
+                                                    <option value="TWO-WHEELER">TWO-WHEELER</option>
+                                                    <option value="PERSONAL LOAN">PERSONAL LOAN</option>
+                                                    <option value="GOLD LOAN">GOLD LOAN</option>
+                                                    <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
+                                                    <option value="RETAIL">RETAIL</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -1459,21 +1459,19 @@
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
                                                 <select value={editZone} onChange={e => setEditZone(e.target.value)} className="input-field bg-white">
-                                                    <option value="AMD_BU">AMD_BU</option>
-                                                    <option value="CH_BU">CH_BU</option>
-                                                    <option value="DEL_BU">DEL_BU</option>
-                                                    <option value="KOL_BU">KOL_BU</option>
+                                                    <option value="NORTH ZONE">NORTH ZONE</option>
+                                                    <option value="WEST ZONE">WEST ZONE</option>
+                                                    <option value="EAST ZONE">EAST ZONE</option>
                                                 </select>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
                                                 <select value={editBu} onChange={e => setEditBu(e.target.value)} className="input-field bg-white">
-                                                    <option>2-Wheeler Personal Loan</option>
-                                                    <option>Two-Wheeler</option>
-                                                    <option>Personal Loan</option>
-                                                    <option>Gold Loan</option>
-                                                    <option>Commercial Vehicle</option>
-                                                    <option>Retail</option>
+                                                    <option value="TWO-WHEELER">TWO-WHEELER</option>
+                                                    <option value="PERSONAL LOAN">PERSONAL LOAN</option>
+                                                    <option value="GOLD LOAN">GOLD LOAN</option>
+                                                    <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
+                                                    <option value="RETAIL">RETAIL</option>
                                                 </select>
                                             </div>
                                         </div>
@@ -2587,7 +2585,7 @@
             };
 
             const downloadTrainerTemplate = () => {
-                const csvData = "Trainer ID,Trainer Name,Password,Business Units,Zones,Divisions,Branches\nTR-1002,AMIT SHARMA,pass123,2-Wheeler Personal Loan,AMD_BU,GUJARAT DIVISION,AHMEDABAD RF\nTR-1003,PRIYA GUPTA,pass456,ALL,ALL,ALL,ALL";
+                const csvData = "Trainer ID,Trainer Name,Password,Business Units,Zones,Divisions,Branches\nTR-1002,AMIT SHARMA,pass123,TWO-WHEELER,WEST ZONE,GUJARAT DIVISION,AHMEDABAD RF\nTR-1003,PRIYA GUPTA,pass456,ALL,ALL,ALL,ALL";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
