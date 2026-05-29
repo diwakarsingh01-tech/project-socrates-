@@ -108,49 +108,17 @@
             return opt.replace(/^(Option\s+[A-D][:.-]?\s*|[A-D][:.-]\s*)/i, '').trim();
         };
 
-        // MOCK OFFLINE DATABASE USING LOCALSTORAGE
+        // PRODUCTION DATABASE HANDLER (LOCALSTORAGE FALLBACK)
         const db = {
             get: (key) => JSON.parse(localStorage.getItem(key) || '[]'),
             set: (key, val) => localStorage.setItem(key, JSON.stringify(val)),
             init: () => {
-                if(!localStorage.getItem('s_trainers')) {
-                    db.set('s_trainers', [
-                        { id: 'TR-1001', name: 'Sanjay Verma', zone: 'North Zone', status: 'Active', password: 'password123' },
-                        { id: 'TR-1002', name: 'Priya Desai', zone: 'West Zone', status: 'Active', password: 'password123' },
-                        { id: 'TR-1003', name: 'Arun Kumar', zone: 'South Zone', status: 'Active', password: 'password123' }
-                    ]);
-                }
-                if(!localStorage.getItem('s_modules')) {
-                    const sampleQuestions = [
-                        "What is the maximum Loan-to-Value (LTV) ratio allowed for Tier 1 cities?",
-                        "Which of the following documents is NOT accepted as valid address proof?",
-                        "What is the minimum CIBIL score required for a standard 2-wheeler loan approval?",
-                        "How many days is the standard grace period for the first EMI payment?",
-                        "Under the new AML policy, transactions above what amount require mandatory PAN card verification?",
-                        "What is the maximum tenure for a commercial vehicle loan?",
-                        "Who is the final approving authority for a loan deviation of 5% in the interest rate?",
-                        "In case of a bounced cheque, what is the standard bounce charge levied on the customer?",
-                        "Is physical verification mandatory for repeat customers with a clean track record?",
-                        "What is the processing fee percentage for two-wheeler loans under the festive offer?",
-                        "Which mobile application should the executive use to upload the customer's KYC documents?",
-                        "What is the maximum allowed gap between the date of invoice and loan disbursement?",
-                        "If a customer requests prepayment within 6 months, what is the foreclosure charge?",
-                        "Which insurance cover is mandatory before disbursing the vehicle loan?",
-                        "What is the TAT (Turn Around Time) for credit approval after complete document submission?"
-                    ];
-                    db.set('s_modules', [
-                        { id: 1, title: 'Two-Wheeler Product Policy V2', questions: 15, date: '2 days ago', qList: [...sampleQuestions] },
-                        { id: 2, title: 'AML & KYC Compliance 2026', questions: 15, date: '1 week ago', qList: [...sampleQuestions] }
-                    ]);
-                }
-                if(!localStorage.getItem('s_roster')) {
-                    db.set('s_roster', [
-                        { emp_code: 'SF-1001', emp_name: 'Rahul Singh', branch_name: 'DELHI RF', zone: 'North Zone', business_unit: '2-Wheeler Personal Loan' },
-                        { emp_code: 'SF-1002', emp_name: 'Neha Sharma', branch_name: 'AHMEDABAD RF', zone: 'West Zone', business_unit: '2-Wheeler Personal Loan' },
-                        { emp_code: 'SF-1003', emp_name: 'Karthik Iyer', branch_name: 'CHANDIGARH RF', zone: 'North Zone', business_unit: '2-Wheeler Personal Loan' },
-                        { emp_code: 'SF-1004', emp_name: 'Amit Patel', branch_name: 'KOLKATA RF', zone: 'East Zone', business_unit: '2-Wheeler Personal Loan' },
-                        { emp_code: 'SF-1005', emp_name: 'Sneha Gupta', branch_name: 'MUMBAI RF', zone: 'West Zone', business_unit: '2-Wheeler Personal Loan' }
-                    ]);
+                // Production: No default mock data.
+                // Clear any legacy demo data from localStorage if exists
+                if (localStorage.getItem('s_trainers') && localStorage.getItem('s_trainers').includes('Sanjay Verma')) {
+                    localStorage.removeItem('s_trainers');
+                    localStorage.removeItem('s_modules');
+                    localStorage.removeItem('s_roster');
                 }
             }
         };
@@ -2850,6 +2818,7 @@
             // Visual Monthly Calendar & Tabs states
             const [activeTab, setActiveTab] = useState('calendar'); // 'calendar' or 'logs'
             const [currentMonthDate, setCurrentMonthDate] = useState(new Date());
+            const [showFilters, setShowFilters] = useState(false);
 
             // Dynamic Report Filters states
             const [filterPeriod, setFilterPeriod] = useState('ALL'); // 'ALL', 'MTD', 'YTD', 'MONTH', 'YEAR'
