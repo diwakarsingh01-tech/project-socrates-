@@ -225,7 +225,7 @@
                     case 'roster': return <RosterView user={activeTrainer} />;
                     case 'library': return <LibraryView user={activeTrainer} />;
                     case 'analytics': return <AnalyticsView user={activeTrainer} />;
-                    case 'access_mgmt': return <AccessMgmtView />;
+                    case 'access_mgmt': return <AccessMgmtView user={activeTrainer} />;
                     case 'travel_hub': return <TravelHubView user={activeTrainer} />;
                     default: return <AdminDashboard onNav={setView} user={activeTrainer} dbDiag={dbDiag} />;
                 }
@@ -492,6 +492,7 @@
         };
 
         const AdminDashboard = ({onNav, user, dbDiag}) => {
+            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [modules, setModules] = useState([]);
             const [selectedModId, setSelectedModId] = useState('');
             const [loading, setLoading] = useState(true);
@@ -1011,6 +1012,7 @@
         };
 
         const RosterView = ({user}) => {
+            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [emps, setEmps] = useState([]);
             const [errorMsg, setErrorMsg] = useState('');
             const [errorDetails, setErrorDetails] = useState([]);
@@ -1738,6 +1740,7 @@
 
 
         const LibraryView = ({user}) => {
+            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [status, setStatus] = useState('idle'); // idle, loading, generating, review
             const [modules, setModules] = useState([]);
             const [title, setTitle] = useState('');
@@ -2400,7 +2403,8 @@
             );
         };
 
-        const AccessMgmtView = () => {
+        const AccessMgmtView = ({user}) => {
+            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [trainers, setTrainers] = useState([]);
             const [tid, setTid] = useState('');
             const [name, setName] = useState('');
@@ -2892,6 +2896,7 @@
         };
 
         const TravelHubView = ({ user }) => {
+            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [visits, setVisits] = useState([]);
             const [loading, setLoading] = useState(true);
             const [showPlanModal, setShowPlanModal] = useState(false);
@@ -4111,7 +4116,8 @@
             );
         };
 
-        const AnalyticsView = () => {
+        const AnalyticsView = ({user}) => {
+            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [tab, setTab] = useState('executive');
             const [loading, setLoading] = useState(true);
             const [analytics, setAnalytics] = useState(null);
@@ -5442,7 +5448,8 @@
             );
         };
 
-        const LiveSession = ({onClose}) => {
+        const LiveSession = ({onClose, user}) => {
+            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [stage, setStage] = useState('waiting');
             const [users, setUsers] = useState([]);
             const [sessionId, setSessionId] = useState('');
