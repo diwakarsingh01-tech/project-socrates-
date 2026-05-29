@@ -807,6 +807,14 @@ def get_metadata():
     divisions = conn.execute("SELECT DISTINCT division FROM employees WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()
     branches = conn.execute("SELECT DISTINCT branch_name FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
     bus_query = conn.execute("SELECT DISTINCT business_unit FROM employees WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit").fetchall()
+    
+    # Check if empty, fallback to seeded branch structure
+    if not zones:
+        zones = conn.execute("SELECT DISTINCT zone FROM branch_coordinates WHERE zone IS NOT NULL AND zone != '' ORDER BY zone").fetchall()
+    if not divisions:
+        divisions = conn.execute("SELECT DISTINCT division FROM branch_coordinates WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()
+    if not branches:
+        branches = conn.execute("SELECT DISTINCT branch_name FROM branch_coordinates WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
     conn.close()
     
     zones_list = []
@@ -817,7 +825,7 @@ def get_metadata():
                 zones_list.append(z_clean)
     zones_list.sort()
     if not zones_list:
-        zones_list = ["NORTH ZONE", "WEST ZONE", "EAST ZONE"]
+        zones_list = ["AHMEDABAD", "SURAT", "BIKANER", "JAIPUR"]
         
     divisions_list = []
     for r in divisions:
@@ -827,7 +835,7 @@ def get_metadata():
                 divisions_list.append(d_clean)
     divisions_list.sort()
     if not divisions_list:
-        divisions_list = ["DELHI DIVISION", "GUJARAT DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION", "MUMBAI DIVISION"]
+        divisions_list = ["GANDHIDHAM", "JAMNAGAR", "RAJKOT", "BHAVNAGAR", "AHMEDABAD", "PALANPUR", "SURAT", "BARODA", "GANDHINAGAR", "JODHPUR", "BIKANER", "ALWAR", "AJMER", "JAIPUR", "SIKAR"]
         
     branches_list = []
     for r in branches:
@@ -836,9 +844,7 @@ def get_metadata():
             if b_clean and b_clean not in branches_list:
                 branches_list.append(b_clean)
     branches_list.sort()
-    if not branches_list:
-        branches_list = ["AHMEDABAD RF", "DELHI RF", "CHANDIGARH RF", "KOLKATA RF", "MUMBAI RF"]
-        
+    
     bus_list = []
     for r in bus_query:
         for bu in r[0].split(','):
@@ -847,7 +853,7 @@ def get_metadata():
                 bus_list.append(bu_clean)
     bus_list.sort()
     if not bus_list:
-        bus_list = ["TWO-WHEELER", "PERSONAL LOAN", "GOLD LOAN", "COMMERCIAL VEHICLE", "RETAIL"]
+        bus_list = ["AHMEDABAD BU"]
         
     return jsonify({
         "business_units": bus_list,
