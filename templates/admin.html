@@ -2458,24 +2458,11 @@
             const [password, setPassword] = useState('password123');
             const [zone, setZone] = useState('ALL');
 
-            // Multi-select scope states for trainer creation
-            const [selBUs, setSelBUs] = useState(['ALL']);
-            const [selZones, setSelZones] = useState(['ALL']);
-            const [selDivisions, setSelDivisions] = useState(['ALL']);
-            const [selBranches, setSelBranches] = useState(['ALL']);
-
-            // Dynamic option lists loaded from metadata API
-            const [metaOptions, setMetaOptions] = useState({ business_units: [], zones: [], divisions: [], branches: [] });
-
             // Edit Modal States
             const [showEditModal, setShowEditModal] = useState(false);
             const [editTid, setEditTid] = useState('');
             const [editName, setEditName] = useState('');
             const [editPassword, setEditPassword] = useState('');
-            const [editBUs, setEditBUs] = useState([]);
-            const [editZones, setEditZones] = useState([]);
-            const [editDivisions, setEditDivisions] = useState([]);
-            const [editBranches, setEditBranches] = useState([]);
 
             const loadTrainers = () => {
                 fetch('/api/trainers')
@@ -2487,16 +2474,8 @@
                     });
             };
 
-            const loadMetadata = () => {
-                fetch('/api/metadata')
-                    .then(res => res.json())
-                    .then(data => setMetaOptions(data))
-                    .catch(err => console.error("Error fetching dynamic scopes metadata:", err));
-            };
-
             useEffect(() => { 
                 loadTrainers(); 
-                loadMetadata();
             }, []);
 
             const handleToggle = (id, currentStatus) => {
@@ -2549,12 +2528,12 @@
                 const payload = { 
                     id: tid.toUpperCase().trim(), 
                     name: name.trim(), 
-                    zone: selZones[0] || 'ALL', 
+                    zone: 'ALL', 
                     password: password.trim(),
-                    zones: selZones.join(','),
-                    divisions: selDivisions.join(','),
-                    branches: selBranches.join(','),
-                    business_units: selBUs.join(',')
+                    zones: 'ALL',
+                    divisions: 'ALL',
+                    branches: 'ALL',
+                    business_units: 'ALL'
                 };
                 
                 fetch('/api/trainers', {
@@ -2565,14 +2544,10 @@
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        alert('Trainer Credential Created Successfully in SQLite Database!');
+                        alert('Trainer Credential Created Successfully!');
                         setTid(''); 
                         setName('');
                         setPassword('password123');
-                        setSelBUs(['ALL']);
-                        setSelZones(['ALL']);
-                        setSelDivisions(['ALL']);
-                        setSelBranches(['ALL']);
                         loadTrainers();
                     } else {
                         alert("Failed to create trainer: " + data.message);
@@ -2580,7 +2555,7 @@
                 })
                 .catch(err => {
                     console.error("Trainer creation failed, offline fallback:", err);
-                    const newTrainer = { id: tid.toUpperCase().trim(), name: name.trim(), zone: selZones[0] || 'ALL', status: 'Active', password: password.trim() };
+                    const newTrainer = { id: tid.toUpperCase().trim(), name: name.trim(), zone: 'ALL', status: 'Active', password: password.trim() };
                     db.set('s_trainers', [...trainers, newTrainer]);
                     setTid(''); setName(''); setPassword('password123');
                     loadTrainers();
@@ -2591,10 +2566,6 @@
                 setEditTid(tr.id);
                 setEditName(tr.name);
                 setEditPassword(tr.plain_password || 'password123');
-                setEditBUs(tr.business_units ? tr.business_units.split(',').map(x => x.trim()) : ['ALL']);
-                setEditZones(tr.zones ? tr.zones.split(',').map(x => x.trim()) : ['ALL']);
-                setEditDivisions(tr.divisions ? tr.divisions.split(',').map(x => x.trim()) : ['ALL']);
-                setEditBranches(tr.branches ? tr.branches.split(',').map(x => x.trim()) : ['ALL']);
                 setShowEditModal(true);
             };
 
@@ -2605,11 +2576,11 @@
                 const payload = {
                     name: editName.trim(),
                     password: editPassword.trim(),
-                    zone: editZones[0] || 'ALL',
-                    zones: editZones.join(','),
-                    divisions: editDivisions.join(','),
-                    branches: editBranches.join(','),
-                    business_units: editBUs.join(',')
+                    zone: 'ALL',
+                    zones: 'ALL',
+                    divisions: 'ALL',
+                    branches: 'ALL',
+                    business_units: 'ALL'
                 };
                 
                 fetch(`/api/trainers/${editTid}`, {
@@ -2620,7 +2591,7 @@
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        alert('Trainer scopes updated successfully!');
+                        alert('Trainer profile updated successfully!');
                         setShowEditModal(false);
                         loadTrainers();
                     } else {
@@ -2657,7 +2628,7 @@
             };
 
             const downloadTrainerTemplate = () => {
-                const csvData = "Trainer ID,Trainer Name,Password,Business Units,Zones,Divisions,Branches\nTR-1002,AMIT SHARMA,pass123,TWO-WHEELER,WEST ZONE,GUJARAT DIVISION,AHMEDABAD RF\nTR-1003,PRIYA GUPTA,pass456,ALL,ALL,ALL,ALL";
+                const csvData = "Trainer ID,Trainer Name,Password\nTR-1002,AMIT SHARMA,pass123\nTR-1003,PRIYA GUPTA,pass456";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -2689,52 +2660,6 @@
                 });
             };
 
-            const renderCheckboxGroup = (title, options, selected, setSelected) => {
-                const isAllSelected = selected.includes('ALL');
-                
-                const toggleOption = (opt) => {
-                    if (opt === 'ALL') {
-                        if (isAllSelected) {
-                            setSelected([]);
-                        } else {
-                            setSelected(['ALL']);
-                        }
-                    } else {
-                        let updated = selected.filter(x => x !== 'ALL');
-                        if (updated.includes(opt)) {
-                            updated = updated.filter(x => x !== opt);
-                        } else {
-                            updated.push(opt);
-                        }
-                        setSelected(updated);
-                    }
-                };
-
-                return (
-                    <div className="space-y-1">
-                        <div className="flex justify-between items-center">
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">{title}</label>
-                            <div className="flex gap-2">
-                                <button type="button" onClick={() => setSelected(['ALL'])} className="text-[9px] text-socrates-primary font-bold hover:underline">Select All</button>
-                                <button type="button" onClick={() => setSelected([])} className="text-[9px] text-red-500 font-bold hover:underline">Clear</button>
-                            </div>
-                        </div>
-                        <div className="bg-white border border-slate-200 rounded-lg p-2.5 max-h-32 overflow-y-auto space-y-1.5 shadow-inner">
-                            <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                                <input type="checkbox" checked={isAllSelected} onChange={() => toggleOption('ALL')} className="rounded border-slate-350 text-socrates-primary focus:ring-blue-100" />
-                                <span className={isAllSelected ? "text-socrates-primary font-bold" : ""}>ALL (Full Access)</span>
-                            </label>
-                            {options.map(opt => (
-                                <label key={opt} className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                                    <input type="checkbox" checked={selected.includes(opt) || isAllSelected} disabled={isAllSelected} onChange={() => toggleOption(opt)} className="rounded border-slate-350 text-socrates-primary focus:ring-blue-100 disabled:opacity-50" />
-                                    <span>{opt}</span>
-                                </label>
-                            ))}
-                        </div>
-                    </div>
-                );
-            };
-
             return (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in">
                     {/* Edit Trainer Modal */}
@@ -2762,12 +2687,6 @@
                                             <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Password</label>
                                             <input type="text" value={editPassword} onChange={e => setEditPassword(e.target.value)} required className="input-field font-mono" />
                                         </div>
-                                        
-                                        {/* Multi-select check lists in edit form */}
-                                        {renderCheckboxGroup("Business Units Access", metaOptions.business_units, editBUs, setEditBUs)}
-                                        {renderCheckboxGroup("Zones Access", metaOptions.zones, editZones, setEditZones)}
-                                        {renderCheckboxGroup("Divisions Access", metaOptions.divisions, editDivisions, setEditDivisions)}
-                                        {renderCheckboxGroup("Branches Access", metaOptions.branches, editBranches, setEditBranches)}
                                     </div>
                                     <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 font-semibold">
                                         <button type="button" onClick={() => setShowEditModal(false)} className="btn-outline">Cancel</button>
@@ -2802,7 +2721,6 @@
                                         {isSuperAdmin && (
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Viewable Password</th>
                                         )}
-                                        <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Assigned Rights Scopes</th>
                                         <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Status</th>
                                         <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px] text-right">Actions</th>
                                     </tr>
@@ -2827,44 +2745,6 @@
                                                         </code>
                                                     </td>
                                                 )}
-                                                <td className="px-6 py-4 space-y-1.5 py-3">
-                                                    <div className="flex flex-wrap gap-1 items-center">
-                                                        <span className="text-[9px] font-bold uppercase text-slate-400 mr-1.5 w-6">BU:</span>
-                                                        {isAllBUs ? (
-                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 tracking-wider">ALL BUS</span>
-                                                        ) : (
-                                                            tr.business_units.split(',').map((bu, idx) => (
-                                                                <span key={idx} className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">{bu}</span>
-                                                            ))
-                                                        )}
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-1 items-center">
-                                                        <span className="text-[9px] font-bold uppercase text-slate-400 mr-1.5 w-6">ZONE:</span>
-                                                        {isAllZones ? (
-                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 tracking-wider">ALL ZONES</span>
-                                                        ) : (
-                                                            tr.zones.split(',').map((z, idx) => (
-                                                                <span key={idx} className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-100">{z}</span>
-                                                            ))
-                                                        )}
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-1 items-center">
-                                                        <span className="text-[9px] font-bold uppercase text-slate-400 mr-1.5 w-6">DIV:</span>
-                                                        {isAllDivs ? (
-                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 tracking-wider">ALL DIVISIONS</span>
-                                                        ) : (
-                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-150">{tr.divisions.split(',').length} DIVS SELECTED</span>
-                                                        )}
-                                                    </div>
-                                                    <div className="flex flex-wrap gap-1 items-center">
-                                                        <span className="text-[9px] font-bold uppercase text-slate-400 mr-1.5 w-6">BR:</span>
-                                                        {isAllBranches ? (
-                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 tracking-wider">ALL BRANCHES</span>
-                                                        ) : (
-                                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">{tr.branches.split(',').length} BRANCHES SELECTED</span>
-                                                        )}
-                                                    </div>
-                                                </td>
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-2 cursor-pointer" onClick={() => handleToggle(tr.id, tr.status)}>
                                                         {/* iOS Toggle Design */}
@@ -2909,12 +2789,6 @@
                                     <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Password</label>
                                     <input type="text" value={password} onChange={(e)=>setPassword(e.target.value)} className="input-field bg-white font-mono" placeholder="Password" />
                                 </div>
-                                
-                                {/* Dynamic Multi-select checklists in Creation Panel */}
-                                {renderCheckboxGroup("Business Units Access", metaOptions.business_units, selBUs, setSelBUs)}
-                                {renderCheckboxGroup("Zones Access", metaOptions.zones, selZones, setSelZones)}
-                                {renderCheckboxGroup("Divisions Access", metaOptions.divisions, selDivisions, setSelDivisions)}
-                                {renderCheckboxGroup("Branches Access", metaOptions.branches, selBranches, setSelBranches)}
 
                                 <button onClick={handleCreate} className="w-full btn-primary mt-6 shadow-md font-bold py-2.5"><i className="fas fa-plus mr-2"></i> Onboard Trainer</button>
                             </div>
