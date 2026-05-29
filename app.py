@@ -3512,6 +3512,23 @@ def get_dashboard_stats():
             ORDER BY m.id DESC LIMIT 5
         ''').fetchall()
         
+        # 5. Today's Field Visits (Live Tracking)
+        today_str = datetime.datetime.now().strftime('%Y-%m-%d')
+        if trainer_id and trainer_id != 'ADMIN':
+             todays_visits_rows = conn.execute('''
+                SELECT v.id, v.branch_name, v.purpose, v.status, t.name as trainer_name, v.checkin_time
+                FROM field_visits v
+                JOIN trainers t ON v.trainer_id = t.trainer_id
+                WHERE v.planned_date = ? AND v.trainer_id = ?
+            ''', (today_str, trainer_id)).fetchall()
+        else:
+             todays_visits_rows = conn.execute('''
+                SELECT v.id, v.branch_name, v.purpose, v.status, t.name as trainer_name, v.checkin_time
+                FROM field_visits v
+                JOIN trainers t ON v.trainer_id = t.trainer_id
+                WHERE v.planned_date = ?
+            ''', (today_str,)).fetchall()
+        
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -3531,6 +3548,7 @@ def get_dashboard_stats():
         } for r in top_branches_rows
     ]
     pending_audits = [dict(r) for r in pending_audits_rows]
+    todays_visits = [dict(r) for r in todays_visits_rows]
     
     return jsonify({
         "sessions_count": sessions,
@@ -3540,7 +3558,8 @@ def get_dashboard_stats():
         "modules_count": modules_res,
         "recent_sessions": recent_sessions,
         "top_branches": top_branches,
-        "pending_audits": pending_audits
+        "pending_audits": pending_audits,
+        "todays_visits": todays_visits
     })
 
 # --- WEBSOCKET EVENT LISTENERS (Flask-SocketIO) & GAMIFICATION STATE ---

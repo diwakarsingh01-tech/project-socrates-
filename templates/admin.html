@@ -865,6 +865,53 @@
                                 )}
                             </div>
 
+                            {/* Today's Trainer Field Activity (Admin Only) */}
+                            {isSuperAdmin && (
+                                <div className="card p-6 bg-gradient-to-br from-indigo-50 to-blue-50/30 border border-blue-100 shadow-sm animate-fade-in">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <div className="flex items-center gap-2">
+                                            <i className="fas fa-route text-indigo-600"></i>
+                                            <h3 className="font-bold text-base text-socrates-dark tracking-tight">Today's Trainer Movement</h3>
+                                        </div>
+                                        <span className="text-[10px] bg-indigo-100 text-indigo-700 font-bold px-2 py-1 rounded-full uppercase tracking-wider">Live Tracking</span>
+                                    </div>
+                                    <div className="space-y-3">
+                                        {stats.todays_visits && stats.todays_visits.length > 0 ? (
+                                            stats.todays_visits.map((visit, idx) => (
+                                                <div key={idx} className="bg-white border border-blue-150 p-3 rounded-xl flex items-center justify-between shadow-sm hover:border-blue-300 transition-all cursor-pointer" onClick={() => onNav('travel_hub')}>
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-10 h-10 rounded-lg bg-blue-50 flex flex-col items-center justify-center text-blue-600 shrink-0 border border-blue-100">
+                                                            <i className="fas fa-map-marker-alt text-sm"></i>
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-xs font-bold text-socrates-dark">{visit.branch_name}</div>
+                                                            <div className="text-[10px] text-slate-500 font-medium">Trainer: {visit.trainer_name}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${
+                                                            visit.status === 'VERIFIED' ? 'bg-emerald-100 text-emerald-700' : 
+                                                            visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                                        }`}>
+                                                            {visit.status}
+                                                        </span>
+                                                        {visit.checkin_time && <div className="text-[9px] text-slate-400 mt-1 font-mono">{visit.checkin_time}</div>}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="py-8 text-center bg-white/50 rounded-xl border border-dashed border-slate-200">
+                                                <i className="fas fa-calendar-day text-slate-200 text-3xl mb-2 block"></i>
+                                                <p className="text-xs text-slate-400 font-bold italic">No field visits scheduled for today.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="mt-4 pt-4 border-t border-blue-100/50 flex justify-end">
+                                        <button onClick={() => onNav('travel_hub')} className="text-[10px] text-blue-600 hover:text-blue-800 font-extrabold flex items-center gap-1 transition-colors uppercase tracking-wider">View Full Itinerary &rarr;</button>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Recent Socratic Sessions Table */}
                             <div className="card p-6 bg-white border border-socrates-border shadow-sm">
                                 <div className="flex items-center justify-between mb-4">
