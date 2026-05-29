@@ -3589,15 +3589,16 @@ def on_join_session(data):
         }
         
     # Register trainee in current session leaderboard
+    emp_name = emp_id # Default
     if emp_id and emp_id != 'TRAINER':
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT emp_name FROM employees WHERE emp_code=?", (emp_id,))
+        row = cursor.fetchone()
+        conn.close()
+        emp_name = row[0] if row else emp_id
+
         if emp_id not in SESSION_REGISTRY[pin]["leaderboard"]:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT emp_name FROM employees WHERE emp_code=?", (emp_id,))
-            row = cursor.fetchone()
-            conn.close()
-            emp_name = row[0] if row else emp_id
-            
             SESSION_REGISTRY[pin]["leaderboard"][emp_id] = {
                 "name": emp_name,
                 "score": 0,
@@ -3608,7 +3609,7 @@ def on_join_session(data):
                 "last_correct": False
             }
             
-    emit('user_connected', {'emp_id': emp_id}, room=pin)
+    emit('user_connected', {'emp_id': emp_id, 'emp_name': emp_name}, room=pin)
 
 @socketio.on('trainer_broadcast')
 def on_trainer_broadcast(data):
