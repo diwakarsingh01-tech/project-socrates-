@@ -3945,7 +3945,10 @@ def verify_visit():
     visit_id = data.get('visit_id')
     pin = data.get('manager_pin', '').strip()
     
-    if not visit_id or not pin:
+    # Allow SuperAdmin bypass
+    is_superadmin = curr_user.get('role') == 'SuperAdmin'
+    
+    if not visit_id or (not pin and not is_superadmin):
         return jsonify({"status": "error", "message": "Missing validation parameters."}), 400
         
     conn = get_db_connection()
@@ -3959,7 +3962,7 @@ def verify_visit():
         conn.close()
         return jsonify({"status": "error", "message": "Target branch coordinates benchmark not found."}), 404
         
-    if bc['manager_pin'] != pin:
+    if not is_superadmin and bc['manager_pin'] != pin:
         conn.close()
         return jsonify({"status": "error", "message": "❌ Invalid Branch Manager PIN. Verification aborted."}), 400
         

@@ -473,10 +473,10 @@
             });
             const [hideSyncWarnings, setHideSyncWarnings] = useState(() => localStorage.getItem('socrates_hide_sync_warnings') === 'true');
             const [stats, setStats] = useState({
-                sessions_count: 12,
-                branches_visited: 4,
-                execs_trained: 340,
-                avg_growth_delta: 42.0,
+                sessions_count: 0,
+                branches_visited: 0,
+                execs_trained: 0,
+                avg_growth_delta: 0.0,
                 modules_count: 0,
                 recent_sessions: [],
                 top_branches: [],
@@ -3125,915 +3125,398 @@
             return (
                 <div className="space-y-6">
                     {/* Header Controls Block */}
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-6 rounded-2xl border border-socrates-border shadow-sm gap-4 animate-fade-in">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-2xl border border-socrates-border shadow-sm gap-4 animate-fade-in">
                         <div>
-                            <h3 className="font-bold text-socrates-dark text-lg font-outfit">Socratic Travel Hub & FVSE</h3>
-                            <p className="text-xs text-slate-500 mt-1 font-medium">Pre-visit Travel Planner, Geofenced Check-in, & Socratic Manager Sign-off.</p>
+                            <h3 className="font-bold text-socrates-dark text-lg font-outfit">Socratic Travel Hub</h3>
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Planner • Check-in • Compliance</p>
                         </div>
                         <div className="flex items-center gap-3">
+                            <button onClick={() => setShowFilters(!showFilters)} className={`btn-outline flex items-center gap-2 py-2.5 px-4 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest ${showFilters ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700'}`}>
+                                <i className={`fas fa-${showFilters ? 'times' : 'filter'}`}></i> {showFilters ? 'Hide Filters' : 'Adjust Filters'}
+                            </button>
                             {isSuperAdmin && (
-                                <button 
-                                    onClick={handleExportMasterReport}
-                                    className="btn-outline flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2.5 px-4 font-black text-[10px] rounded-xl transition-all shadow-sm uppercase tracking-widest"
-                                >
-                                    <i className="fas fa-file-invoice text-sm text-emerald-600"></i> Master Management Report
+                                <button onClick={handleExportMasterReport} className="btn-outline flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2.5 px-4 font-black text-[10px] rounded-xl transition-all shadow-sm uppercase tracking-widest">
+                                    <i className="fas fa-file-invoice text-sm text-emerald-600"></i> Master Report
                                 </button>
                             )}
-                            <button 
-                                onClick={handleExportCalendar}
-                                className="btn-outline flex items-center gap-2 hover:bg-slate-50 text-slate-700 border border-slate-200/80 py-2.5 px-4 font-bold text-xs rounded-xl transition-all"
-                            >
-                                <i className="fas fa-file-download text-sm text-blue-600"></i> Export Filtered CSV
-                            </button>
-                            <button 
-                                onClick={() => setShowPlanModal(true)}
-                                className="btn-primary flex items-center gap-2 shadow-md bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2.5 px-4 font-bold text-xs rounded-xl transition-all"
-                            >
-                                <i className="fas fa-calendar-plus text-sm"></i> Plan Field Visit
+                            <button onClick={() => setShowPlanModal(true)} className="btn-primary flex items-center gap-2 shadow-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white py-2.5 px-6 font-bold text-xs rounded-xl transition-all">
+                                <i className="fas fa-calendar-plus text-sm"></i> Plan Visit
                             </button>
                         </div>
                     </div>
 
-                    {/* Itinerary Density Matrix (Planned Visits) Widget */}
-                    {(() => {
-                        const plannedVisitsByDate = {};
-                        visits.forEach(v => {
-                            const d = v.planned_date;
-                            plannedVisitsByDate[d] = (plannedVisitsByDate[d] || 0) + 1;
-                        });
-                        const sortedPlannedDates = Object.keys(plannedVisitsByDate).sort();
-                        
-                        if (sortedPlannedDates.length === 0) return null;
-                        
-                        return (
-                            <div className="card p-5 bg-gradient-to-br from-blue-50 to-indigo-50/30 border border-blue-100 rounded-2xl shadow-sm animate-fade-in space-y-3.5">
-                                <div className="flex items-center gap-2">
-                                    <i className="fas fa-route text-blue-600 text-base"></i>
-                                    <h4 className="font-extrabold text-xs text-socrates-dark font-outfit uppercase tracking-wider">Itinerary Density Matrix (Planned Visits per Date)</h4>
+                    {/* Collapsible Filter Console */}
+                    {showFilters && (
+                        <div className="card p-6 border border-socrates-border bg-slate-50 shadow-inner rounded-2xl animate-slide-down">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 items-end">
+                                <div className="space-y-1.5">
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Time Horizon</label>
+                                    <select value={filterPeriod} onChange={e => setFilterPeriod(e.target.value)} className="input-field bg-white text-[11px] font-bold">
+                                        <option value="ALL">All Time</option>
+                                        <option value="MTD">MTD</option>
+                                        <option value="YTD">YTD</option>
+                                        <option value="MONTH">Specific Month</option>
+                                        <option value="YEAR">Specific Year</option>
+                                    </select>
                                 </div>
-                                <div className="flex flex-wrap gap-3">
-                                    {sortedPlannedDates.map(dateStr => (
-                                        <div key={dateStr} className="bg-white border border-blue-150 px-3.5 py-2 rounded-xl flex items-center gap-3.5 shadow-sm hover:border-blue-300 transition-colors">
-                                            <div className="flex flex-col">
-                                                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-outfit">DATE</span>
-                                                <span className="text-xs font-extrabold text-slate-700 font-mono">{dateStr}</span>
-                                            </div>
-                                            <div className="h-6 w-[1px] bg-slate-200"></div>
-                                            <div className="flex flex-col items-center">
-                                                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-widest font-outfit">PLANNED</span>
-                                                <span className="text-xs font-black text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">{plannedVisitsByDate[dateStr]} Visits</span>
-                                            </div>
-                                        </div>
-                                    ))}
+                                {filterPeriod === 'MONTH' && (
+                                    <div className="space-y-1.5 animate-fade-in">
+                                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Month</label>
+                                        <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className="input-field bg-white text-[11px] font-bold" />
+                                    </div>
+                                )}
+                                <div className="space-y-1.5">
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Trainer</label>
+                                    <select value={filterTrainer} onChange={e => setFilterTrainer(e.target.value)} className="input-field bg-white text-[11px] font-bold">
+                                        <option value="">All Trainers</option>
+                                        {uniqueTrainers.map(tr => <option key={tr} value={tr}>{tr}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Zone</label>
+                                    <select value={filterZone} onChange={e => setFilterZone(e.target.value)} className="input-field bg-white text-[11px] font-bold">
+                                        <option value="">All Zones</option>
+                                        {uniqueZones.map(zn => <option key={zn} value={zn}>{zn}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Division</label>
+                                    <select value={filterDivision} onChange={e => setFilterDivision(e.target.value)} className="input-field bg-white text-[11px] font-bold">
+                                        <option value="">All Divisions</option>
+                                        {uniqueDivisions.map(div => <option key={div} value={div}>{div}</option>)}
+                                    </select>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Branch</label>
+                                    <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)} className="input-field bg-white text-[11px] font-bold">
+                                        <option value="">All Branches</option>
+                                        {uniqueBranches.map(br => <option key={br} value={br}>{br}</option>)}
+                                    </select>
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={handleExportCalendar} className="flex-1 btn-outline bg-white border-slate-200 py-2.5 text-[10px] font-black uppercase tracking-widest">Export CSV</button>
+                                    <button onClick={() => { setFilterPeriod('ALL'); setFilterZone(''); setFilterDivision(''); setFilterBranch(''); setFilterTrainer(''); setFilterStatus(''); }} className="btn-outline bg-white border-slate-200 py-2.5 px-3 text-[10px] font-black uppercase tracking-widest"><i className="fas fa-undo"></i></button>
                                 </div>
                             </div>
-                        );
-                    })()}
+                        </div>
+                    )}
+
+                    {/* Compact Horizontal Summary Strip */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 animate-fade-in">
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center text-base"><i className="fas fa-route"></i></div>
+                            <div>
+                                <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Planned</div>
+                                <div className="text-lg font-black text-socrates-dark">{totalPlanned} Journeys</div>
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
+                            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center text-base"><i className="fas fa-check-double"></i></div>
+                            <div>
+                                <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Verified</div>
+                                <div className="text-lg font-black text-socrates-dark">{verifiedCount} Audits</div>
+                            </div>
+                        </div>
+                        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-3">
+                            <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center text-base"><i className="fas fa-chart-line"></i></div>
+                            <div>
+                                <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Compliance</div>
+                                <div className="text-lg font-black text-socrates-dark">{complianceRate}%</div>
+                            </div>
+                        </div>
+                        <div className="bg-slate-900 p-4 rounded-2xl shadow-lg flex items-center justify-between group cursor-pointer" onClick={() => setShowComplianceDetailModal(true)}>
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-white/10 text-white rounded-xl flex items-center justify-center text-base"><i className="fas fa-users-cog"></i></div>
+                                <div>
+                                    <div className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Roster Status</div>
+                                    <div className="text-xs font-black text-white">View Details &rarr;</div>
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <div className="text-xl font-black text-blue-400">{complianceStats?.updated_count || 0}/{complianceStats?.total_active_trainers || 0}</div>
+                                <div className="text-[8px] text-slate-500 font-black uppercase tracking-tighter">Trainers Planned</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Divided Main Content: Calendar (Left) | Widgets (Right) */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                        
+                        {/* LEFT: COMPACT CALENDAR (2/3 width) */}
+                        <div className="lg:col-span-2 space-y-4">
+                            <div className="flex border-b border-slate-200 bg-slate-50/50 p-1 rounded-xl gap-2 w-fit">
+                                <button onClick={() => setActiveTab('calendar')} className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'calendar' ? 'bg-white shadow-sm text-blue-600 border border-slate-200' : 'text-slate-500'}`}>
+                                    <i className="fas fa-calendar-alt"></i> Calendar
+                                </button>
+                                <button onClick={() => setActiveTab('logs')} className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'logs' ? 'bg-white shadow-sm text-blue-600 border border-slate-200' : 'text-slate-500'}`}>
+                                    <i className="fas fa-list"></i> Table Logs
+                                </button>
+                            </div>
+
+                            {activeTab === 'calendar' ? (() => {
+                                const daysInMonth = getDaysInMonth(currentMonthDate);
+                                const firstDayIndex = getFirstDayOfMonth(currentMonthDate);
+                                const days = [];
+                                for (let i = 0; i < firstDayIndex; i++) days.push(null);
+                                for (let d = 1; d <= daysInMonth; d++) days.push(d);
+
+                                return (
+                                    <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden p-6 animate-fade-in">
+                                        <div className="flex justify-between items-center mb-6 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                            <button onClick={handlePrevMonth} className="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-all"><i className="fas fa-chevron-left text-xs"></i></button>
+                                            <h4 className="font-black text-socrates-dark text-sm uppercase tracking-widest">{currentMonthDate.toLocaleString('default', { month: 'long', year: 'numeric' })}</h4>
+                                            <button onClick={handleNextMonth} className="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-all"><i className="fas fa-chevron-right text-xs"></i></button>
+                                        </div>
+
+                                        <div className="grid grid-cols-7 gap-1.5">
+                                            {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => <div key={d} className="text-center font-black text-[9px] text-slate-400 py-2">{d}</div>)}
+                                            {days.map((day, idx) => {
+                                                const isToday = day && new Date().getDate() === day && new Date().getMonth() === currentMonthDate.getMonth() && new Date().getFullYear() === currentMonthDate.getFullYear();
+                                                const dayVisits = getVisitsForDay(day);
+                                                return (
+                                                    <div key={idx} onClick={() => handleDayClick(day)} className={`min-h-[90px] border rounded-2xl p-2 flex flex-col transition-all group relative ${day ? (isToday ? 'border-blue-400 bg-blue-50/20' : 'border-slate-100 bg-white hover:border-blue-300 hover:shadow-md cursor-pointer') : 'border-transparent bg-slate-50/20 opacity-30'}`}>
+                                                        {day && (
+                                                            <>
+                                                                <div className="flex justify-between items-center">
+                                                                    <span className={`text-[11px] font-black ${isToday ? 'text-blue-600 bg-blue-100 w-5 h-5 rounded-full flex items-center justify-center' : 'text-slate-600'}`}>{day}</span>
+                                                                    {dayVisits.length > 0 && <span className="text-[8px] font-black bg-slate-900 text-white w-4 h-4 rounded-full flex items-center justify-center shadow-lg animate-pulse">{dayVisits.length}</span>}
+                                                                </div>
+                                                                <div className="mt-1.5 space-y-1 overflow-y-auto max-h-[50px] no-scrollbar">
+                                                                    {dayVisits.slice(0, 2).map(v => (
+                                                                        <div key={v.id} onClick={(e) => { e.stopPropagation(); setActiveCheckinVisit(v); }} className={`p-1 rounded-lg border text-[7px] font-black truncate uppercase tracking-tighter ${v.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : v.status === 'GEOFENCED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                                                                            {v.branch_name.replace('TPGTN-', '').replace('TPGNR-', '')}
+                                                                        </div>
+                                                                    ))}
+                                                                    {dayVisits.length > 2 && <div className="text-[7px] text-slate-400 font-bold text-center">+{dayVisits.length - 2} more</div>}
+                                                                </div>
+                                                                {!dayVisits.length && <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600/5 rounded-2xl"><i className="fas fa-plus text-blue-400 text-xs"></i></div>}
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })() : (
+                                <div className="card overflow-hidden border border-slate-200 bg-white shadow-sm rounded-3xl animate-fade-in">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse text-[11px]">
+                                            <thead>
+                                                <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-black uppercase tracking-widest text-[8px]">
+                                                    <th className="py-4 px-6">Destination</th>
+                                                    <th className="py-4 px-6">Schedule</th>
+                                                    <th className="py-4 px-6">Trainer</th>
+                                                    <th className="py-4 px-6 text-center">Compliance</th>
+                                                    <th className="py-4 px-6 text-center">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {filteredVisits.map(visit => (
+                                                    <tr key={visit.id} className="hover:bg-slate-50/50 transition-colors">
+                                                        <td className="py-3 px-6"><div className="font-black text-slate-900">{visit.branch_name}</div><div className="text-[9px] text-slate-400 font-bold">{visit.division}</div></td>
+                                                        <td className="py-3 px-6 font-bold text-slate-600">{visit.planned_date}</td>
+                                                        <td className="py-3 px-6"><div className="text-slate-700 font-bold">{visit.trainer_name}</div><div className="text-[8px] font-mono text-blue-500 uppercase">{visit.trainer_id}</div></td>
+                                                        <td className="py-3 px-6 text-center">
+                                                            <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${visit.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : visit.status === 'GEOFENCED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{visit.status}</span>
+                                                        </td>
+                                                        <td className="py-3 px-6 text-center">
+                                                            {visit.status === 'VERIFIED' ? (
+                                                                <i className="fas fa-check-circle text-emerald-500"></i>
+                                                            ) : isSuperAdmin ? (
+                                                                <button onClick={() => setActiveCheckinVisit(visit)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase shadow-sm transition-all">Admin Approve</button>
+                                                            ) : (
+                                                                <button onClick={() => setActiveCheckinVisit(visit)} className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-sm">Check-in</button>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* RIGHT: INSIGHTS & COMPLIANCE (1/3 width) */}
+                        <div className="space-y-6">
+                            {/* Itinerary Density Matrix */}
+                            {(() => {
+                                const plannedVisitsByDate = {};
+                                visits.forEach(v => { plannedVisitsByDate[v.planned_date] = (plannedVisitsByDate[v.planned_date] || 0) + 1; });
+                                const sortedDates = Object.keys(plannedVisitsByDate).sort().slice(0, 5);
+                                if (!sortedDates.length) return null;
+                                return (
+                                    <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="font-black text-[10px] text-slate-400 uppercase tracking-widest">Upcoming Density</h4>
+                                            <i className="fas fa-layer-group text-blue-500"></i>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {sortedDates.map(date => (
+                                                <div key={date} className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100">
+                                                    <span className="text-[10px] font-black text-slate-600 font-mono">{date}</span>
+                                                    <span className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded-lg">{plannedVisitsByDate[date]} VISITS</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* Monthly Compliance SVG Widget */}
+                            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-5">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="font-black text-[10px] text-slate-400 uppercase tracking-widest">Planning Target</h4>
+                                    <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="text-[10px] font-black bg-slate-50 border-none outline-none rounded-lg px-2 py-1" />
+                                </div>
+                                {complianceStats && (
+                                    <div className="flex flex-col items-center py-4">
+                                        <div className="relative w-32 h-32 flex items-center justify-center">
+                                            <svg className="w-full h-full transform -rotate-90">
+                                                <circle cx="64" cy="64" r="58" className="stroke-slate-100 fill-none" strokeWidth="12" />
+                                                <circle cx="64" cy="64" r="58" className="stroke-blue-600 fill-none transition-all duration-1000" strokeWidth="12" strokeDasharray="364" strokeDashoffset={364 - (364 * (complianceStats.total_active_trainers > 0 ? (complianceStats.updated_count / complianceStats.total_active_trainers) : 0))} strokeLinecap="round" />
+                                            </svg>
+                                            <div className="absolute text-center">
+                                                <div className="text-3xl font-black text-slate-900">{((complianceStats.updated_count / complianceStats.total_active_trainers) * 100).toFixed(0)}%</div>
+                                                <div className="text-[8px] font-black text-slate-400 uppercase">Reached</div>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3 w-full mt-6">
+                                            <div className="p-3 bg-emerald-50 rounded-2xl text-center border border-emerald-100">
+                                                <div className="text-lg font-black text-emerald-700">{complianceStats.updated_count}</div>
+                                                <div className="text-[8px] font-black text-emerald-600 uppercase">Planned</div>
+                                            </div>
+                                            <div className="p-3 bg-amber-50 rounded-2xl text-center border border-amber-100">
+                                                <div className="text-lg font-black text-amber-700">{complianceStats.not_updated_count}</div>
+                                                <div className="text-[8px] font-black text-amber-600 uppercase">Pending</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
 
                     {/* Planning Modal */}
                     {showPlanModal && (
                         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all animate-scale-up">
-                                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all animate-scale-up">
+                                <div className="px-8 py-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                                     <div>
-                                        <h3 className="font-bold text-lg text-socrates-dark font-outfit">Plan New Field Itinerary</h3>
-                                        <p className="text-xs text-slate-500 mt-0.5 font-medium">Schedule branch visit and set meeting purposes.</p>
+                                        <h3 className="font-black text-lg text-socrates-dark">New Itinerary</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Schedule production visit</p>
                                     </div>
-                                    <button onClick={() => setShowPlanModal(false)} className="text-slate-400 hover:text-slate-700 text-xl focus:outline-none"><i className="fas fa-times"></i></button>
+                                    <button onClick={() => setShowPlanModal(false)} className="w-8 h-8 rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 transition-all"><i className="fas fa-times"></i></button>
                                 </div>
                                 <form onSubmit={handlePlanSubmit}>
-                                    <div className="p-6 space-y-4">
-                                        {/* Branch Select */}
+                                    <div className="p-8 space-y-5">
                                         <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Target Branch</label>
-                                            <select 
-                                                value={branchName} 
-                                                onChange={e => setBranchName(e.target.value)} 
-                                                required 
-                                                className="input-field bg-white"
-                                            >
-                                                <option value="">-- Select Benchmark Branch --</option>
-                                                {branchOptions.map(b => (
-                                                    <option key={b.name} value={b.name}>{b.name} ({b.zone})</option>
-                                                ))}
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Production Branch</label>
+                                            <select value={branchName} onChange={e => setBranchName(e.target.value)} required className="input-field bg-white font-bold text-xs">
+                                                <option value="">-- Select Branch --</option>
+                                                {branchOptions.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
                                             </select>
                                         </div>
-
-                                        {/* Planned Date */}
                                         <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Planned Date</label>
-                                            <input 
-                                                type="date" 
-                                                value={plannedDate} 
-                                                onChange={e => setPlannedDate(e.target.value)} 
-                                                required 
-                                                className="input-field bg-white cursor-pointer" 
-                                            />
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Planned Date</label>
+                                            <input type="date" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} required className="input-field bg-white font-bold text-xs" />
                                         </div>
-
-                                        {/* Visit Purpose Checkboxes */}
                                         <div className="space-y-2">
-                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Visit Purpose</label>
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Agenda Type</label>
                                             <div className="grid grid-cols-2 gap-3">
-                                                <label className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 cursor-pointer select-none">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={purposeTraining} 
-                                                        onChange={e => setPurposeTraining(e.target.checked)} 
-                                                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" 
-                                                    />
-                                                    <span className="text-xs font-bold text-slate-700">Socratic Training</span>
+                                                <label className={`flex items-center justify-center gap-2 p-3 rounded-2xl border-2 transition-all cursor-pointer ${purposeTraining ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-100 bg-slate-50 text-slate-400'}`}>
+                                                    <input type="checkbox" checked={purposeTraining} onChange={e => setPurposeTraining(e.target.checked)} className="hidden" />
+                                                    <i className="fas fa-chalkboard-teacher text-xs"></i><span className="text-[10px] font-black uppercase">Training</span>
                                                 </label>
-                                                <label className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 cursor-pointer select-none">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={purposeBusiness} 
-                                                        onChange={e => setPurposeBusiness(e.target.checked)} 
-                                                        className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500" 
-                                                    />
-                                                    <span className="text-xs font-bold text-slate-700">Business Discussion</span>
+                                                <label className={`flex items-center justify-center gap-2 p-3 rounded-2xl border-2 transition-all cursor-pointer ${purposeBusiness ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-100 bg-slate-50 text-slate-400'}`}>
+                                                    <input type="checkbox" checked={purposeBusiness} onChange={e => setPurposeBusiness(e.target.checked)} className="hidden" />
+                                                    <i className="fas fa-briefcase text-xs"></i><span className="text-[10px] font-black uppercase">Business</span>
                                                 </label>
                                             </div>
                                         </div>
-
-                                        {/* Business Agenda details (if checked) */}
-                                        {purposeBusiness && (
-                                            <div className="space-y-1.5 animate-fade-in">
-                                                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Business Discussion Agenda</label>
-                                                <input 
-                                                    type="text" 
-                                                    value={businessAgenda} 
-                                                    onChange={e => setBusinessAgenda(e.target.value)} 
-                                                    required 
-                                                    placeholder="e.g. Branch audit, review PL leads, CSE productivity review" 
-                                                    className="input-field" 
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Key Roster Contacts */}
                                         <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Key Branch Contacts</label>
-                                            <input 
-                                                type="text" 
-                                                value={keyContacts} 
-                                                onChange={e => setKeyContacts(e.target.value)} 
-                                                placeholder="e.g. Branch Manager, Sales Executive (SF-1002)" 
-                                                className="input-field" 
-                                            />
-                                        </div>
-
-                                        {/* Strategic Details */}
-                                        <div className="space-y-1.5">
-                                            <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide">Strategic Visit Details / Agenda</label>
-                                            <textarea 
-                                                value={details} 
-                                                onChange={e => setDetails(e.target.value)} 
-                                                placeholder="Enter specific details about the visit goals, previous action items, or focus areas..." 
-                                                className="input-field min-h-[80px] py-3 text-xs leading-relaxed" 
-                                            />
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Strategic Notes</label>
+                                            <textarea value={details} onChange={e => setDetails(e.target.value)} placeholder="Visit goals..." className="input-field min-h-[80px] text-xs font-bold" />
                                         </div>
                                     </div>
-                                    <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
-                                        <button type="button" onClick={() => setShowPlanModal(false)} className="btn-outline">Cancel</button>
-                                        <button type="submit" className="btn-primary shadow-md bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs py-2 px-4 rounded-lg">Schedule Visit</button>
+                                    <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
+                                        <button type="button" onClick={() => setShowPlanModal(false)} className="flex-1 py-3 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-200 rounded-xl transition-all">Cancel</button>
+                                        <button type="submit" className="flex-[2] py-3 bg-slate-900 text-white text-[10px] font-black uppercase rounded-xl shadow-xl hover:bg-slate-800 transition-all">Schedule Itinerary</button>
                                     </div>
                                 </form>
                             </div>
                         </div>
                     )}
 
-                    {/* Geofence Check-in Panel (Floating Overlay/Full View when active) */}
+                    {/* Geofence Check-in Panel */}
                     {activeCheckinVisit && (
-                        <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white p-6 rounded-2xl shadow-xl border border-indigo-500/20 space-y-5 animate-fade-in relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl -z-10"></div>
-                            
-                            <div className="flex justify-between items-start">
-                                <div>
-                                    <span className="bg-indigo-500/25 border border-indigo-400/30 text-indigo-300 font-extrabold text-[9px] uppercase tracking-widest px-2.5 py-0.5 rounded-full">
-                                        Verification Active
-                                    </span>
-                                    <h4 className="font-extrabold text-lg mt-2 font-outfit">Verification Deck: {activeCheckinVisit.branch_name}</h4>
-                                    <p className="text-[10px] text-slate-400 font-medium">Calculates physical coordinates to validate travel compliance.</p>
-                                </div>
-                                <button 
-                                    onClick={() => setActiveCheckinVisit(null)}
-                                    className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-all focus:outline-none"
-                                >
-                                    <i className="fas fa-times text-xs"></i>
-                                </button>
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
-                                {/* Layer 1: GPS Geofence */}
-                                <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <h5 className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">Layer 1: GPS Geofence</h5>
-                                        {isLocating ? (
-                                            <i className="fas fa-spinner fa-spin text-blue-400 text-sm"></i>
-                                        ) : activeCheckinVisit.status === 'GEOFENCED' || activeCheckinVisit.status === 'VERIFIED' ? (
-                                            <i className="fas fa-check-circle text-emerald-400 text-base"></i>
-                                        ) : (
-                                            <i className="fas fa-map-marker-alt text-amber-400 text-base"></i>
-                                        )}
-                                    </div>
-                                    
-                                    {isLocating ? (
-                                        <div className="text-xs text-slate-400 animate-pulse py-2">Acquiring high-accuracy GPS coordinates...</div>
-                                    ) : checkinResult ? (
-                                        <div className={`p-3 rounded-lg text-xs font-semibold ${checkinResult.status === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'}`}>
-                                            {checkinResult.message}
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-3">
-                                            <p className="text-[11px] text-slate-400 font-medium leading-relaxed">System demands physical presence confirmation. Click below to verify GPS.</p>
-                                            <button 
-                                                onClick={() => triggerGPSCheckin(activeCheckinVisit)}
-                                                className="w-full btn-primary bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-3 text-xs font-bold flex items-center justify-center gap-2 rounded-lg"
-                                            >
-                                                <i className="fas fa-satellite"></i> Capture Location Check-In
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Layer 2: Trainee Co-Presence */}
-                                <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <h5 className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">Layer 2: Co-Presence</h5>
-                                        {activeCheckinVisit.status === 'VERIFIED' ? (
-                                            <i className="fas fa-check-circle text-emerald-400 text-base"></i>
-                                        ) : (
-                                            <span className="bg-blue-500/25 border border-blue-400/30 text-blue-300 font-extrabold text-[10px] px-2 py-0.5 rounded-full">
-                                                {activeCheckinVisit.co_presence_count} Joins
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="space-y-2 text-xs">
-                                        <p className="text-[11px] text-slate-400 font-medium leading-relaxed">Checks Socratic learning session activity. Local employees must join trainer session on QR scanner.</p>
-                                        <div className="p-3 bg-white/5 border border-white/10 rounded-lg flex items-center justify-between">
-                                            <span className="font-semibold text-slate-400">Roster Checkins:</span>
-                                            <span className="font-extrabold text-blue-400 text-sm">{activeCheckinVisit.co_presence_count} employees</span>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Layer 3: Branch PIN Verification */}
-                                <div className="bg-white/5 border border-white/10 rounded-xl p-5 space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <h5 className="text-xs font-extrabold text-slate-300 uppercase tracking-wider">Layer 3: BM PIN Sign-off</h5>
-                                        {activeCheckinVisit.status === 'VERIFIED' ? (
-                                            <i className="fas fa-check-circle text-emerald-400 text-base"></i>
-                                        ) : (
-                                            <i className="fas fa-key text-slate-400 text-sm"></i>
-                                        )}
-                                    </div>
-                                    
-                                    {activeCheckinVisit.status === 'VERIFIED' ? (
-                                        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-bold text-center rounded-lg">
-                                            Visit Signed Off & Completed Successfully!
-                                        </div>
-                                    ) : (
-                                        <form onSubmit={handleManagerPINVerify} className="space-y-3">
-                                            <input 
-                                                type="password" 
-                                                maxLength="4" 
-                                                value={managerPin} 
-                                                onChange={e => setManagerPin(e.target.value)} 
-                                                disabled={activeCheckinVisit.status === 'PLANNED'}
-                                                placeholder="Branch Manager PIN" 
-                                                className="w-full bg-white/5 border border-white/15 focus:border-indigo-400 rounded-lg py-2 px-3 text-center font-mono font-bold tracking-widest text-sm outline-none placeholder:font-sans placeholder:tracking-normal placeholder:text-xs placeholder:text-slate-500 disabled:opacity-50"
-                                            />
-                                            <button 
-                                                type="submit" 
-                                                disabled={activeCheckinVisit.status === 'PLANNED' || !managerPin}
-                                                className="w-full btn-primary bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-700 text-white py-2 px-3 text-xs font-bold flex items-center justify-center gap-2 rounded-lg"
-                                            >
-                                                <i className="fas fa-fingerprint"></i> Validate & Lock Visit
-                                            </button>
-                                        </form>
-                                    )}
-
-                                    {verifyResult && (
-                                        <div className={`p-2 rounded text-[11px] font-semibold text-center ${verifyResult.status === 'success' ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-300 border border-rose-500/20'}`}>
-                                            {verifyResult.message}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Dynamic Report Filter Console */}
-                    <div className="card p-6 border border-socrates-border bg-white shadow-sm rounded-2xl space-y-4 animate-fade-in">
-                        <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-                            <i className="fas fa-filter text-blue-600 text-sm"></i>
-                            <h4 className="font-extrabold text-socrates-dark text-xs uppercase tracking-wider font-outfit">Report Filtering Console</h4>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-end">
-                            {/* Time Period Presets */}
-                            <div className="space-y-1.5">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Time Horizon</label>
-                                <select 
-                                    value={filterPeriod} 
-                                    onChange={e => setFilterPeriod(e.target.value)} 
-                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
-                                >
-                                    <option value="ALL">Show All Time</option>
-                                    <option value="MTD">Month-to-Date (MTD)</option>
-                                    <option value="YTD">Year-to-Date (YTD)</option>
-                                    <option value="MONTH">Specific Month</option>
-                                    <option value="YEAR">Specific Year</option>
-                                </select>
-                            </div>
-
-                            {/* Specific Month (if selected) */}
-                            {filterPeriod === 'MONTH' && (
-                                <div className="space-y-1.5 animate-fade-in">
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Choose Month</label>
-                                    <input 
-                                        type="month" 
-                                        value={filterMonth} 
-                                        onChange={e => setFilterMonth(e.target.value)} 
-                                        className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer" 
-                                    />
-                                </div>
-                            )}
-
-                            {/* Specific Year (if selected) */}
-                            {filterPeriod === 'YEAR' && (
-                                <div className="space-y-1.5 animate-fade-in">
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Choose Year</label>
-                                    <select 
-                                        value={filterYear} 
-                                        onChange={e => setFilterYear(e.target.value)} 
-                                        className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
-                                    >
-                                        {uniqueYears.map(yr => (
-                                            <option key={yr} value={yr}>{yr}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
-
-                            {/* Trainer select */}
-                            <div className="space-y-1.5">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Trainer Profile</label>
-                                <select 
-                                    value={filterTrainer} 
-                                    onChange={e => setFilterTrainer(e.target.value)} 
-                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
-                                >
-                                    <option value="">All Trainers</option>
-                                    {uniqueTrainers.map(tr => (
-                                        <option key={tr} value={tr}>{tr}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Status select */}
-                            <div className="space-y-1.5">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Verification Status</label>
-                                <select 
-                                    value={filterStatus} 
-                                    onChange={e => setFilterStatus(e.target.value)} 
-                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
-                                >
-                                    <option value="">All Statuses</option>
-                                    <option value="PLANNED">PLANNED</option>
-                                    <option value="GEOFENCED">GEOFENCED</option>
-                                    <option value="VERIFIED">VERIFIED</option>
-                                </select>
-                            </div>
-
-                            {/* Zone select */}
-                            <div className="space-y-1.5">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Zone Scope</label>
-                                <select 
-                                    value={filterZone} 
-                                    onChange={e => setFilterZone(e.target.value)} 
-                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
-                                >
-                                    <option value="">All Zones</option>
-                                    {uniqueZones.map(zn => (
-                                        <option key={zn} value={zn}>{zn}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Division select */}
-                            <div className="space-y-1.5">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Division Scope</label>
-                                <select 
-                                    value={filterDivision} 
-                                    onChange={e => setFilterDivision(e.target.value)} 
-                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
-                                >
-                                    <option value="">All Divisions</option>
-                                    {uniqueDivisions.map(div => (
-                                        <option key={div} value={div}>{div}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Branch select */}
-                            <div className="space-y-1.5">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide">Branch Target</label>
-                                <select 
-                                    value={filterBranch} 
-                                    onChange={e => setFilterBranch(e.target.value)} 
-                                    className="input-field bg-slate-50 border-slate-200/80 text-xs font-bold text-slate-700 cursor-pointer"
-                                >
-                                    <option value="">All Branches</option>
-                                    {uniqueBranches.map(br => (
-                                        <option key={br} value={br}>{br}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Reset Filters button */}
-                            <div className="flex">
-                                <button 
-                                    type="button"
-                                    onClick={() => {
-                                        setFilterPeriod('ALL');
-                                        setFilterZone('');
-                                        setFilterDivision('');
-                                        setFilterBranch('');
-                                        setFilterTrainer('');
-                                        setFilterStatus('');
-                                    }}
-                                    className="w-full btn-outline border-slate-200 hover:bg-slate-50 text-slate-600 font-bold py-2.5 px-4 text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all"
-                                >
-                                    <i className="fas fa-undo"></i> Reset Filters
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Zonal Compliance Summary stats */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div className="card p-5 border border-slate-200 shadow-sm flex items-center gap-4 bg-white animate-fade-in">
-                            <div className="w-12 h-12 bg-blue-50 border border-blue-100 rounded-xl flex items-center justify-center text-blue-600 text-xl shadow-inner shrink-0">
-                                <i className="fas fa-route"></i>
-                            </div>
-                            <div>
-                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Total Planned Journeys</div>
-                                <div className="font-extrabold text-2xl text-socrates-dark font-outfit mt-0.5">{totalPlanned} visits</div>
-                            </div>
-                        </div>
-                        <div className="card p-5 border border-slate-200 shadow-sm flex items-center gap-4 bg-white animate-fade-in">
-                            <div className="w-12 h-12 bg-emerald-50 border border-emerald-100 rounded-xl flex items-center justify-center text-emerald-600 text-xl shadow-inner shrink-0">
-                                <i className="fas fa-check-double"></i>
-                            </div>
-                            <div>
-                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Verified Audits Completed</div>
-                                <div className="font-extrabold text-2xl text-socrates-dark font-outfit mt-0.5">{verifiedCount} branches</div>
-                            </div>
-                        </div>
-                        <div className="card p-5 border border-slate-200 shadow-sm flex items-center gap-4 bg-white animate-fade-in">
-                            <div className="w-12 h-12 bg-purple-50 border border-purple-100 rounded-xl flex items-center justify-center text-purple-600 text-xl shadow-inner shrink-0">
-                                <i className="fas fa-chart-line"></i>
-                            </div>
-                            <div>
-                                <div className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Plan vs. Actual Compliance</div>
-                                <div className="font-extrabold text-2xl text-socrates-dark font-outfit mt-0.5">{complianceRate}%</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Calendar Submission Compliance Section */}
-                    <div className="card p-6 border border-socrates-border bg-white shadow-sm space-y-4 rounded-2xl">
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                            <div>
-                                <h4 className="font-bold text-socrates-dark text-sm font-outfit">Trainer Calendar Submission Compliance</h4>
-                                <p className="text-[11px] text-slate-500 mt-0.5">Tracks monthly calendar updates by active trainers.</p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <span className="text-xs font-bold text-slate-500 uppercase tracking-wide">Target Month:</span>
-                                <input 
-                                    type="month" 
-                                    value={selectedMonth} 
-                                    onChange={e => setSelectedMonth(e.target.value)} 
-                                    className="bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 outline-none cursor-pointer"
-                                />
-                            </div>
-                        </div>
-
-                        {loadingCompliance ? (
-                            <div className="py-6 flex justify-center items-center gap-2">
-                                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full fa-spin"></div>
-                                <span className="text-xs text-slate-400 font-bold">Fetching trainer planning status...</span>
-                            </div>
-                        ) : complianceStats ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 items-center">
-                                {/* Pie/Progress Chart segment */}
-                                <div className="bg-slate-50/50 border border-slate-100 rounded-xl p-4 flex items-center justify-between col-span-1">
-                                    <div className="space-y-1">
-                                        <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Planning Completion</div>
-                                        <div className="text-2xl font-extrabold text-socrates-dark font-outfit">
-                                            {complianceStats.total_active_trainers > 0 
-                                                ? ((complianceStats.updated_count / complianceStats.total_active_trainers) * 100).toFixed(0) 
-                                                : 0}%
-                                        </div>
-                                    </div>
-                                    <div className="relative w-14 h-14 flex items-center justify-center shrink-0">
-                                        <svg className="w-full h-full transform -rotate-90">
-                                            <circle cx="28" cy="28" r="24" className="stroke-slate-200 fill-none" strokeWidth="4" />
-                                            <circle 
-                                                cx="28" 
-                                                cy="28" 
-                                                r="24" 
-                                                className="stroke-blue-600 fill-none transition-all duration-500" 
-                                                strokeWidth="4" 
-                                                strokeDasharray="150"
-                                                strokeDashoffset={150 - (150 * (complianceStats.total_active_trainers > 0 ? (complianceStats.updated_count / complianceStats.total_active_trainers) : 0))}
-                                            />
-                                        </svg>
-                                        <span className="absolute text-[10px] font-extrabold text-blue-600">
-                                            {complianceStats.updated_count}/{complianceStats.total_active_trainers}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Active Counters */}
-                                <div className="grid grid-cols-2 gap-4 col-span-2">
-                                    <div className="bg-emerald-50/40 border border-emerald-100/60 rounded-xl p-4 flex items-center justify-between">
+                        <div className="fixed inset-0 bg-slate-900/90 z-[60] flex items-center justify-center p-4 backdrop-blur-xl animate-fade-in">
+                            <div className="w-full max-w-4xl bg-slate-900 text-white rounded-[3rem] shadow-2xl border border-white/10 overflow-hidden">
+                                <div className="p-8 md:p-12 space-y-10">
+                                    <div className="flex justify-between items-start">
                                         <div>
-                                            <div className="text-[9px] text-emerald-500 font-bold uppercase tracking-wider">Submitted</div>
-                                            <div className="text-xl font-extrabold text-emerald-700 font-outfit mt-0.5">{complianceStats.updated_count} Trainers</div>
-                                            <div className="text-[10px] text-emerald-600/80 font-medium mt-1">Calendar fully planned.</div>
+                                            <span className="bg-blue-600 text-white font-black text-[9px] uppercase tracking-[0.2em] px-3 py-1 rounded-full">Compliance Check-In</span>
+                                            <h2 className="text-4xl font-black mt-4 font-outfit">{activeCheckinVisit.branch_name}</h2>
+                                            <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mt-2">{activeCheckinVisit.planned_date} • {activeCheckinVisit.trainer_name}</p>
                                         </div>
-                                        <i className="fas fa-check-circle text-emerald-500 text-xl opacity-70"></i>
+                                        <button onClick={() => setActiveCheckinVisit(null)} className="w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"><i className="fas fa-times text-xl"></i></button>
                                     </div>
 
-                                    <div className="bg-amber-50/40 border border-amber-100/60 rounded-xl p-4 flex items-center justify-between">
-                                        <div>
-                                            <div className="text-[9px] text-amber-600 font-bold uppercase tracking-wider">Pending Planning</div>
-                                            <div className="text-xl font-extrabold text-amber-700 font-outfit mt-0.5">{complianceStats.not_updated_count} Trainers</div>
-                                            <div className="text-[10px] text-amber-600/80 font-medium mt-1">No scheduled visits yet.</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                        {/* GPS */}
+                                        <div className={`p-8 rounded-[2.5rem] border-2 transition-all ${activeCheckinVisit.status !== 'PLANNED' ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-white/10 bg-white/5'}`}>
+                                            <div className="flex justify-between items-center mb-6">
+                                                <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-xl text-blue-400"><i className="fas fa-satellite"></i></div>
+                                                {activeCheckinVisit.status !== 'PLANNED' && <i className="fas fa-check-circle text-emerald-500 text-2xl"></i>}
+                                            </div>
+                                            <h4 className="text-lg font-black mb-2">GPS Geofence</h4>
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase leading-relaxed mb-8">Validates physical presence within 150m of branch benchmark.</p>
+                                            {activeCheckinVisit.status === 'PLANNED' && (
+                                                <button onClick={() => triggerGPSCheckin(activeCheckinVisit)} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-blue-500 transition-all">{isLocating ? 'Locating...' : 'Validate GPS'}</button>
+                                            )}
                                         </div>
-                                        <i className="fas fa-exclamation-circle text-amber-500 text-xl opacity-70"></i>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : null}
 
-                        {complianceStats && (
-                            <div className="pt-2 flex justify-end">
-                                <button 
-                                    onClick={() => setShowComplianceDetailModal(true)}
-                                    className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 focus:outline-none transition-colors"
-                                >
-                                    <i className="fas fa-users-cog"></i> View Roster Planning Status
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Compliance Detail Modal */}
-                    {showComplianceDetailModal && complianceStats && (
-                        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden transform transition-all animate-scale-up">
-                                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                                    <div>
-                                        <h3 className="font-bold text-lg text-socrates-dark font-outfit">Trainer Roster Status • {selectedMonth}</h3>
-                                        <p className="text-xs text-slate-500 mt-0.5 font-medium">Verify who has submitted calendar visits for this month.</p>
-                                    </div>
-                                    <button onClick={() => setShowComplianceDetailModal(false)} className="text-slate-400 hover:text-slate-700 text-xl focus:outline-none"><i className="fas fa-times"></i></button>
-                                </div>
-                                <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6 max-h-[380px] overflow-y-auto">
-                                    {/* Column 1: Submitted */}
-                                    <div className="space-y-3">
-                                        <h4 className="font-bold text-emerald-700 text-xs uppercase tracking-wider flex items-center gap-1.5 border-b border-emerald-100 pb-2">
-                                            <i className="fas fa-calendar-check text-emerald-500 text-sm"></i> Submitted ({complianceStats.updated_count})
-                                        </h4>
-                                        {complianceStats.updated_trainers.length === 0 ? (
-                                            <p className="text-xs text-slate-400 italic font-semibold py-2">No trainer has scheduled a visit yet.</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {complianceStats.updated_trainers.map(t => (
-                                                    <div key={t.trainer_id} className="flex items-center justify-between p-2.5 rounded-xl border border-emerald-100/50 bg-emerald-50/20 text-xs font-semibold text-slate-700">
-                                                        <span>{t.name}</span>
-                                                        <span className="text-[10px] text-emerald-600 bg-emerald-100/60 px-2 py-0.5 rounded font-mono font-bold">{t.trainer_id}</span>
-                                                    </div>
-                                                ))}
+                                        {/* CO-PRESENCE */}
+                                        <div className={`p-8 rounded-[2.5rem] border-2 transition-all ${activeCheckinVisit.co_presence_count > 0 ? 'border-purple-500/50 bg-purple-500/5' : 'border-white/10 bg-white/5'}`}>
+                                            <div className="flex justify-between items-center mb-6">
+                                                <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-xl text-purple-400"><i className="fas fa-users"></i></div>
+                                                {activeCheckinVisit.co_presence_count > 0 && <i className="fas fa-check-circle text-emerald-500 text-2xl"></i>}
                                             </div>
-                                        )}
-                                    </div>
-
-                                    {/* Column 2: Pending Submission */}
-                                    <div className="space-y-3">
-                                        <h4 className="font-bold text-amber-700 text-xs uppercase tracking-wider flex items-center gap-1.5 border-b border-amber-100 pb-2">
-                                            <i className="fas fa-calendar-times text-amber-500 text-sm"></i> Pending Planning ({complianceStats.not_updated_count})
-                                        </h4>
-                                        {complianceStats.not_updated_trainers.length === 0 ? (
-                                            <p className="text-xs text-slate-400 italic font-semibold py-2">All active trainers have submitted plans!</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {complianceStats.not_updated_trainers.map(t => (
-                                                    <div key={t.trainer_id} className="flex items-center justify-between p-2.5 rounded-xl border border-amber-100/50 bg-amber-50/20 text-xs font-semibold text-slate-700">
-                                                        <span>{t.name}</span>
-                                                        <span className="text-[10px] text-amber-600 bg-amber-100/60 px-2 py-0.5 rounded font-mono font-bold">{t.trainer_id}</span>
-                                                    </div>
-                                                ))}
+                                            <h4 className="text-lg font-black mb-2">Co-Presence</h4>
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase leading-relaxed mb-8">Detects active Socratic sessions happening at the location.</p>
+                                            <div className="text-center py-4 bg-white/5 rounded-2xl">
+                                                <span className="text-3xl font-black text-white">{activeCheckinVisit.co_presence_count}</span>
+                                                <span className="text-[9px] block text-slate-500 font-black uppercase mt-1">Joins Detected</span>
                                             </div>
-                                        )}
-                                    </div>
-                                </div>
-                                <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end">
-                                    <button onClick={() => setShowComplianceDetailModal(false)} className="btn-outline font-bold text-xs">Close Panel</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* View Selector Tabs */}
-                    <div className="flex border-b border-slate-200 bg-slate-50/50 p-1.5 rounded-xl gap-2 w-fit animate-fade-in">
-                        <button 
-                            type="button"
-                            onClick={() => setActiveTab('calendar')}
-                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 focus:outline-none ${activeTab === 'calendar' ? 'bg-white shadow-sm text-blue-600 border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
-                        >
-                            <i className="fas fa-calendar-alt text-sm"></i> Visual Monthly Calendar
-                        </button>
-                        <button 
-                            type="button"
-                            onClick={() => setActiveTab('logs')}
-                            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 focus:outline-none ${activeTab === 'logs' ? 'bg-white shadow-sm text-blue-600 border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
-                        >
-                            <i className="fas fa-list-alt text-sm"></i> Enterprise Detailed Table
-                        </button>
-                    </div>
-
-                    {/* View Switcher Panels */}
-                    {activeTab === 'calendar' ? (() => {
-                        const daysInMonth = getDaysInMonth(currentMonthDate);
-                        const firstDayIndex = getFirstDayOfMonth(currentMonthDate);
-                        const days = [];
-                        for (let i = 0; i < firstDayIndex; i++) days.push(null);
-                        for (let d = 1; d <= daysInMonth; d++) days.push(d);
-
-                        return (
-                            <div className="card border border-socrates-border bg-white shadow-sm rounded-2xl overflow-hidden p-6 space-y-6 animate-fade-in">
-                                <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                    <button 
-                                        type="button"
-                                        onClick={handlePrevMonth}
-                                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-all focus:outline-none"
-                                    >
-                                        <i className="fas fa-chevron-left text-xs"></i>
-                                    </button>
-                                    <h4 className="font-extrabold text-socrates-dark text-sm font-outfit select-none uppercase tracking-wider">
-                                        {currentMonthDate.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                                    </h4>
-                                    <button 
-                                        type="button"
-                                        onClick={handleNextMonth}
-                                        className="w-8 h-8 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-all focus:outline-none"
-                                    >
-                                        <i className="fas fa-chevron-right text-xs"></i>
-                                    </button>
-                                </div>
-
-                                <div className="grid grid-cols-7 gap-2">
-                                    {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((day) => (
-                                        <div key={day} className="text-center font-bold text-[10px] text-slate-400 uppercase tracking-wider py-2">
-                                            {day.substring(0, 3)}
                                         </div>
-                                    ))}
 
-                                    {days.map((day, idx) => {
-                                        const isToday = day && 
-                                            new Date().getDate() === day && 
-                                            new Date().getMonth() === currentMonthDate.getMonth() && 
-                                            new Date().getFullYear() === currentMonthDate.getFullYear();
-                                            
-                                        const dayVisits = getVisitsForDay(day);
-
-                                        return (
-                                            <div 
-                                                key={idx} 
-                                                onClick={() => handleDayClick(day)}
-                                                className={`min-h-[105px] border rounded-xl p-2 flex flex-col justify-between transition-all select-none relative group ${
-                                                    day 
-                                                        ? isToday
-                                                            ? 'border-blue-300 bg-blue-50/15 hover:bg-blue-50/30'
-                                                            : 'border-slate-200/80 bg-white hover:bg-slate-50 cursor-pointer'
-                                                        : 'border-transparent bg-slate-50/30 opacity-40 cursor-default'
-                                                }`}
-                                            >
-                                                {day && (
-                                                    <>
-                                                        <div className="flex justify-between items-center">
-                                                            <span className={`text-[11px] font-extrabold font-outfit ${isToday ? 'text-blue-600 bg-blue-100 w-5 h-5 rounded-full flex items-center justify-center' : 'text-slate-600'}`}>
-                                                                {day}
-                                                            </span>
-                                                            {dayVisits.length > 0 && (
-                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">
-                                                                    {dayVisits.length}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <div className="space-y-1.5 mt-2 flex-grow overflow-y-auto max-h-[60px] custom-scrollbar">
-                                                            {dayVisits.map((visit) => (
-                                                                <div 
-                                                                    key={visit.id}
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        setActiveCheckinVisit(visit);
-                                                                    }}
-                                                                    className={`p-1.5 rounded-lg border text-[9px] font-bold flex flex-col justify-center transition-all hover:scale-[1.02] cursor-pointer shadow-sm ${
-                                                                        visit.status === 'VERIFIED'
-                                                                            ? 'bg-emerald-500/10 text-emerald-700 border-emerald-200/60'
-                                                                            : visit.status === 'GEOFENCED'
-                                                                                ? 'bg-amber-500/10 text-amber-700 border-amber-200/60'
-                                                                                : 'bg-blue-500/10 text-blue-700 border-blue-200/60'
-                                                                    }`}
-                                                                >
-                                                                    <div className="flex items-center justify-between gap-1">
-                                                                        <span className="truncate max-w-[55px] uppercase tracking-wide font-extrabold">{visit.branch_name.replace(' RF', '')}</span>
-                                                                        {visit.status === 'VERIFIED' ? (
-                                                                            <i className="fas fa-check-double text-[8px] text-emerald-500 shrink-0"></i>
-                                                                        ) : visit.status === 'GEOFENCED' ? (
-                                                                            <i className="fas fa-fingerprint text-[8px] text-amber-500 shrink-0"></i>
-                                                                        ) : (
-                                                                            <i className="fas fa-satellite text-[8px] text-blue-500 shrink-0"></i>
-                                                                        )}
-                                                                    </div>
-                                                                    <span className="text-[8px] text-slate-400 font-semibold truncate mt-0.5 block">{visit.trainer_name}</span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                        {day && dayVisits.length === 0 && (
-                                                            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/5 rounded-xl cursor-pointer">
-                                                                <span className="text-[9px] font-bold text-blue-600 bg-white shadow-sm border border-blue-100 px-2 py-1 rounded-lg">
-                                                                    <i className="fas fa-plus text-[8px] mr-1"></i> Plan Visit
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                    </>
-                                                )}
+                                        {/* BM PIN */}
+                                        <div className={`p-8 rounded-[2.5rem] border-2 transition-all ${activeCheckinVisit.status === 'VERIFIED' ? 'border-emerald-500/50 bg-emerald-500/5' : 'border-white/10 bg-white/5'}`}>
+                                            <div className="flex justify-between items-center mb-6">
+                                                <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center text-xl text-emerald-400"><i className="fas fa-key"></i></div>
+                                                {activeCheckinVisit.status === 'VERIFIED' && <i className="fas fa-check-circle text-emerald-500 text-2xl"></i>}
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        );
-                    })() : (
-                        <div className="card overflow-hidden border border-socrates-border bg-white shadow-sm rounded-2xl animate-fade-in">
-                            <div className="px-6 py-5 border-b border-socrates-border bg-white flex justify-between items-center">
-                                <div>
-                                    <h4 className="font-bold text-socrates-dark text-base font-outfit">Itinerary Tracker & Field Logs</h4>
-                                    <p className="text-xs text-slate-500 mt-1">Real-time tracking status of Socratic field training plans.</p>
-                                </div>
-                            </div>
-                            <div className="overflow-x-auto">
-                                {loading ? (
-                                    <div className="p-12 flex flex-col justify-center items-center gap-3">
-                                        <div className="w-8 h-8 border-3 border-socrates-primary border-t-transparent rounded-full fa-spin animate-spin"></div>
-                                        <span className="text-xs font-bold text-slate-400">Loading travel database...</span>
+                                            <h4 className="text-lg font-black mb-2">Manager PIN</h4>
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase leading-relaxed mb-8">Final Socratic sign-off from the Branch Manager.</p>
+                                            {activeCheckinVisit.status === 'VERIFIED' ? (
+                                                <div className="text-center text-emerald-400 font-black text-xs uppercase tracking-widest">Audit Completed</div>
+                                            ) : (
+                                                <form onSubmit={handleManagerPINVerify} className="space-y-4">
+                                                    <input type="password" maxLength="4" value={managerPin} onChange={e => setManagerPin(e.target.value)} disabled={activeCheckinVisit.status === 'PLANNED'} placeholder="****" className="w-full bg-white/10 border-none rounded-2xl py-4 text-center font-mono font-black text-2xl tracking-[0.5em] outline-none" />
+                                                    <button type="submit" disabled={activeCheckinVisit.status === 'PLANNED' || (!managerPin && !isSuperAdmin)} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl hover:bg-emerald-500 disabled:opacity-50 transition-all">{isSuperAdmin ? 'Admin Force Sign-Off' : 'Sign Off'}</button>
+                                                </form>
+                                            )}
+                                        </div>
                                     </div>
-                                ) : visits.length === 0 ? (
-                                    <div className="p-12 text-center text-slate-400 text-xs font-bold">
-                                        <i className="fas fa-map-marked-alt text-3xl text-slate-200 mb-2 block"></i>
-                                        No planned branch itineraries logged for this month.
-                                    </div>
-                                ) : (
-                                    <table className="w-full text-left border-collapse text-xs">
-                                        <thead>
-                                            <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
-                                                <th className="py-3.5 px-6">Branch Destination</th>
-                                                <th className="py-3.5 px-6">Schedule Timestamps</th>
-                                                <th className="py-3.5 px-6">Trainer Profile</th>
-                                                <th className="py-3.5 px-6">Visit Objective / Purpose</th>
-                                                <th className="py-3.5 px-6 text-center">Layer 1: GPS Geofence</th>
-                                                <th className="py-3.5 px-6 text-center">Layer 2: Co-Presence</th>
-                                                <th className="py-3.5 px-6 text-center">Layer 3: PIN Lock</th>
-                                                <th className="py-3.5 px-6 text-center">Socratic Delta</th>
-                                                <th className="py-3.5 px-6 text-center">Itinerary Actions</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 font-medium">
-                                            {filteredVisits.map((visit) => (
-                                                <tr key={visit.id} className="hover:bg-slate-50/50 transition-colors">
-                                                    {/* Branch Destination */}
-                                                    <td className="py-4 px-6">
-                                                        <div className="font-extrabold text-socrates-dark">{visit.branch_name}</div>
-                                                        <div className="text-[10px] text-slate-400 mt-0.5">{visit.zone} • {visit.division}</div>
-                                                        <div className="text-[9px] text-slate-400 font-mono mt-0.5">Benchmark: {visit.latitude}, {visit.longitude}</div>
-                                                    </td>
-                                                    {/* Schedule Timestamps */}
-                                                    <td className="py-4 px-6 text-slate-600 font-bold">
-                                                        <div>{visit.planned_date}</div>
-                                                        {visit.checkin_time && (
-                                                            <div className="text-[10px] text-emerald-600 mt-0.5">Checked-in: {visit.checkin_time}</div>
-                                                        )}
-                                                        {visit.verification_time && (
-                                                            <div className="text-[10px] text-indigo-600 mt-0.5">Verified: {visit.verification_time}</div>
-                                                        )}
-                                                    </td>
-                                                    {/* Trainer Profile */}
-                                                    <td className="py-4 px-6">
-                                                        <div className="text-slate-700 font-semibold">{visit.trainer_name}</div>
-                                                        <span className="inline-block text-[9px] font-mono text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full mt-1 font-extrabold uppercase tracking-wide">{visit.trainer_id}</span>
-                                                    </td>
-                                                    {/* Objective / Purpose */}
-                                                    <td className="py-4 px-6 text-slate-600 max-w-[200px] truncate" title={visit.purpose}>
-                                                        <div className="flex flex-wrap gap-1 mb-1">
-                                                            {visit.purpose.includes("Training") && (
-                                                                <span className="inline-block bg-blue-50 text-blue-700 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded">Training</span>
-                                                            )}
-                                                            {visit.purpose.includes("Business Discussion") && (
-                                                                <span className="inline-block bg-purple-50 text-purple-700 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded">Discussion</span>
-                                                            )}
-                                                        </div>
-                                                        <div className="text-[11px] text-slate-500 leading-normal italic">{visit.purpose}</div>
-                                                        {visit.details && (
-                                                            <div className="mt-2 p-2 bg-slate-50 rounded-lg border border-slate-100 text-[10px] text-slate-500 font-medium whitespace-pre-wrap">
-                                                                <i className="fas fa-info-circle text-blue-400 mr-1"></i> {visit.details}
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                    {/* Layer 1: GPS Geofence */}
-                                                    <td className="py-4 px-6 text-center">
-                                                        {visit.status === 'VERIFIED' || visit.status === 'GEOFENCED' ? (
-                                                            <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
-                                                                <i className="fas fa-check-circle"></i> Passed (Within 150m)
-                                                            </span>
-                                                        ) : (
-                                                            <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
-                                                                <i className="fas fa-satellite"></i> Awaiting Location
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    {/* Layer 2: Co-Presence */}
-                                                    <td className="py-4 px-6 text-center">
-                                                        <span className="inline-block bg-purple-50 text-purple-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-purple-150">
-                                                            {visit.co_presence_count} Trainees Verified
-                                                        </span>
-                                                    </td>
-                                                    {/* Layer 3: PIN Lock */}
-                                                    <td className="py-4 px-6 text-center">
-                                                        {visit.status === 'VERIFIED' ? (
-                                                            <span className="inline-flex items-center gap-1 bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
-                                                                <i className="fas fa-lock"></i> Locked & Signed Off
-                                                            </span>
-                                                        ) : visit.status === 'GEOFENCED' ? (
-                                                            <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
-                                                                <i className="fas fa-key animate-pulse"></i> Awaiting Manager PIN
-                                                            </span>
-                                                        ) : (
-                                                            <span className="inline-flex items-center gap-1 bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-wide">
-                                                                <i className="fas fa-clock"></i> Awaiting Check-In
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    {/* Socratic Delta */}
-                                                    <td className="py-4 px-6 text-center">
-                                                        <span className={`font-extrabold text-[11px] px-2 py-0.5 rounded-full ${
-                                                            visit.socratic_delta > 0
-                                                                ? 'bg-emerald-50 text-emerald-600'
-                                                                : 'bg-slate-100 text-slate-500'
-                                                        }`}>
-                                                            +{visit.socratic_delta}%
-                                                        </span>
-                                                    </td>
-                                                    {/* Itinerary Actions */}
-                                                    <td className="py-4 px-6 text-center">
-                                                        {visit.status === 'VERIFIED' ? (
-                                                            <span className="text-slate-400 font-semibold text-xs flex items-center justify-center gap-1.5">
-                                                                <i className="fas fa-check-double text-emerald-500"></i> Completed
-                                                            </span>
-                                                        ) : isSuperAdmin ? (
-                                                            <span className="text-slate-400 italic text-[11px]">Verify (Trainer Only)</span>
-                                                        ) : (
-                                                            <button 
-                                                                type="button"
-                                                                onClick={() => setActiveCheckinVisit(visit)}
-                                                                className={`py-1 px-3 text-[10px] font-extrabold uppercase rounded-lg shadow-sm border transition-all ${
-                                                                    visit.status === 'GEOFENCED'
-                                                                        ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
-                                                                        : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-700'
-                                                                }`}
-                                                            >
-                                                                {visit.status === 'GEOFENCED' ? 'Input PIN' : 'Start Check-In'}
-                                                            </button>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                )}
+                                </div>
                             </div>
                         </div>
                     )}
                 </div>
             );
-        };
 
-        const AnalyticsView = ({user}) => {
+                const AnalyticsView = ({user}) => {
             const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [tab, setTab] = useState('executive');
             const [loading, setLoading] = useState(true);
@@ -4316,9 +3799,9 @@
             };
 
             const temporal = analytics?.temporal || {
-                'ZERO DAY': { pre: 40.0, post: 65.0, count: 0 },
-                'SIX DAYS': { pre: 50.0, post: 80.0, count: 0 },
-                'TWENTY DAYS': { pre: 60.0, post: 90.0, count: 0 }
+                'ZERO DAY': { pre: 0.0, post: 0.0, count: 0 },
+                'SIX DAYS': { pre: 0.0, post: 0.0, count: 0 },
+                'TWENTY DAYS': { pre: 0.0, post: 0.0, count: 0 }
             };
 
             const hasLive = analytics?.has_live_data;
