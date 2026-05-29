@@ -3515,8 +3515,9 @@
                     )}
                 </div>
             );
+        };
 
-                const AnalyticsView = ({user}) => {
+        const AnalyticsView = ({user}) => {
             const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const [tab, setTab] = useState('executive');
             const [loading, setLoading] = useState(true);
