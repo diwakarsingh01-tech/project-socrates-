@@ -239,9 +239,11 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
         self.assertTrue(found_in_b, "Trainer B should see Trainer A's pending draft under globally shared modules!")
 
         # Step 4: Complete the audit (Finalize module - all approved)
+        # We must use a DIFFERENT trainer (TRAINER_B) to approve TRAINER_A's module
+        # to satisfy the newly enforced Maker-Checker logic.
         final_payload = {
             'title': 'TEST SYSTEM GENERATED MODULE',
-            'trainer_id': 'TRAINER_A',
+            'trainer_id': 'TRAINER_B',
             'module_id': module_id,
             'questions': [
                 {

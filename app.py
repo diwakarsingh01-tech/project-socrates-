@@ -5,11 +5,12 @@ import os
 import json
 import datetime
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import csv
 import threading
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'socrates-secret-key-123'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-placeholder')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
@@ -248,7 +249,8 @@ def init_db():
         zones TEXT DEFAULT 'ALL',
         divisions TEXT DEFAULT 'ALL',
         branches TEXT DEFAULT 'ALL',
-        business_units TEXT DEFAULT 'ALL'
+        business_units TEXT DEFAULT 'ALL',
+        plain_password TEXT
     )''')
     
     # Run migration to add trainer scope columns if db was created in older version
@@ -262,11 +264,14 @@ def init_db():
         cursor.execute("ALTER TABLE trainers ADD COLUMN branches TEXT DEFAULT 'ALL'")
     if 'business_units' not in trainer_cols:
         cursor.execute("ALTER TABLE trainers ADD COLUMN business_units TEXT DEFAULT 'ALL'")
+    if 'plain_password' not in trainer_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN plain_password TEXT")
     
     # Add a default Super Admin if none exists
     cursor.execute("SELECT * FROM trainers WHERE trainer_id='ADMIN'")
     if not cursor.fetchone():
-        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, zones, divisions, branches, business_units) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin', 'ALL', 'ALL', 'ALL', 'ALL')")
+        hashed_pwd = generate_password_hash('admin123')
+        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, zones, divisions, branches, business_units, plain_password) VALUES ('ADMIN', 'Super Admin', 'All', ?, 'SuperAdmin', 'ALL', 'ALL', 'ALL', 'ALL', 'admin123')", (hashed_pwd,))
     
     # Modules
     cursor.execute('''
@@ -333,6 +338,10 @@ def init_db():
         assignment_day TEXT,
         pre_test_score REAL,
         post_test_score REAL,
+        correct_count INTEGER DEFAULT 0,
+        wrong_count INTEGER DEFAULT 0,
+        unattempted_count INTEGER DEFAULT 0,
+        total_questions INTEGER DEFAULT 0,
         completed_at TEXT,
         session_id TEXT,
         PRIMARY KEY (emp_code, module_id, assignment_day),
@@ -340,11 +349,19 @@ def init_db():
         FOREIGN KEY(module_id) REFERENCES modules(id)
     )''')
     
-    # Run migration to add session_id column in assessment_results if db was created in older version
+    # Run migration to add new columns in assessment_results if db was created in older version
     cursor.execute("PRAGMA table_info(assessment_results)")
     ar_cols = [row[1] for row in cursor.fetchall()]
     if 'session_id' not in ar_cols:
         cursor.execute("ALTER TABLE assessment_results ADD COLUMN session_id TEXT")
+    if 'correct_count' not in ar_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN correct_count INTEGER DEFAULT 0")
+    if 'wrong_count' not in ar_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN wrong_count INTEGER DEFAULT 0")
+    if 'unattempted_count' not in ar_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN unattempted_count INTEGER DEFAULT 0")
+    if 'total_questions' not in ar_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN total_questions INTEGER DEFAULT 0")
         
     # Trainee Feedback table
     cursor.execute('''
@@ -494,21 +511,39 @@ def admin_login():
     password = data.get('password', '').strip()
     
     conn = get_db_connection()
-    user = conn.execute("SELECT * FROM trainers WHERE trainer_id=? AND password=? AND status='Active'", (trainer_id, password)).fetchone()
+    user = conn.execute("SELECT * FROM trainers WHERE trainer_id=? AND status='Active'", (trainer_id,)).fetchone()
+    
     if user:
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        conn.execute("UPDATE trainers SET last_login=? WHERE trainer_id=?", (now, trainer_id))
-        conn.commit()
-        conn.close()
+        stored_password = user['password']
+        is_valid = False
         
-        # Store user profile in backend encrypted session cookie
-        session['user'] = {
-            "trainer_id": user['trainer_id'],
-            "role": user['role'],
-            "name": user['name']
-        }
-        
-        return jsonify({"status": "success", "role": user['role'], "name": user['name'], "trainer_id": trainer_id})
+        # Check if password is a hash
+        if stored_password.startswith(('pbkdf2:', 'scrypt:', 'bcrypt:')):
+            is_valid = check_password_hash(stored_password, password)
+        else:
+            # Fallback for plain-text (Migration)
+            if stored_password == password:
+                is_valid = True
+                # Migrate to hash and store plain version for SuperAdmin visibility
+                new_hash = generate_password_hash(password)
+                conn.execute("UPDATE trainers SET password=?, plain_password=? WHERE trainer_id=?", (new_hash, password, trainer_id))
+                conn.commit()
+                
+        if is_valid:
+            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            conn.execute("UPDATE trainers SET last_login=? WHERE trainer_id=?", (now, trainer_id))
+            conn.commit()
+            conn.close()
+            
+            # Store user profile in backend encrypted session cookie
+            session['user'] = {
+                "trainer_id": user['trainer_id'],
+                "role": user['role'],
+                "name": user['name']
+            }
+            
+            return jsonify({"status": "success", "role": user['role'], "name": user['name'], "trainer_id": trainer_id})
+            
     conn.close()
     return jsonify({"status": "error", "message": "Invalid Credentials or Account Revoked"}), 401
 
@@ -525,24 +560,32 @@ def handle_trainers():
         except Exception as e:
             print(f"[GDRIVE] Dynamic trainers sync skipped: {str(e)}")
 
-        trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units, password FROM trainers WHERE role='Trainer'").fetchall()
+        is_superadmin = session.get('user', {}).get('role') == 'SuperAdmin'
+        if is_superadmin:
+            trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units, plain_password FROM trainers WHERE role='Trainer'").fetchall()
+        else:
+            trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units FROM trainers WHERE role='Trainer'").fetchall()
+        
         conn.close()
         return jsonify([dict(t) for t in trainers])
     
     elif request.method == 'POST':
         data = request.json
+        password_plain = data['password'].strip()
+        hashed_pwd = generate_password_hash(password_plain)
         try:
             conn.execute(
-                "INSERT INTO trainers (trainer_id, name, zone, password, zones, divisions, branches, business_units) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO trainers (trainer_id, name, zone, password, zones, divisions, branches, business_units, plain_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     data['id'].upper().strip(),
                     data['name'].strip(),
                     data.get('zone', 'ALL'),
-                    data['password'].strip(),
+                    hashed_pwd,
                     data.get('zones', 'ALL'),
                     data.get('divisions', 'ALL'),
                     data.get('branches', 'ALL'),
-                    data.get('business_units', 'ALL')
+                    data.get('business_units', 'ALL'),
+                    password_plain
                 )
             )
             conn.commit()
@@ -595,15 +638,23 @@ def handle_single_trainer(trainer_id):
         branches = data.get('branches', 'ALL')
         business_units = data.get('business_units', 'ALL')
         
-        if not name or not password:
+        if not name:
             conn.close()
-            return jsonify({"status": "error", "message": "Name and Password are required."}), 400
+            return jsonify({"status": "error", "message": "Name is required."}), 400
             
         try:
-            conn.execute(
-                "UPDATE trainers SET name=?, password=?, zone=?, zones=?, divisions=?, branches=?, business_units=? WHERE trainer_id=?",
-                (name, password, zone, zones, divisions, branches, business_units, trainer_id)
-            )
+            # Only update password if it's not the UI placeholder and not empty
+            if password and password != 'password123':
+                hashed_pwd = generate_password_hash(password)
+                conn.execute(
+                    "UPDATE trainers SET name=?, password=?, plain_password=?, zone=?, zones=?, divisions=?, branches=?, business_units=? WHERE trainer_id=?",
+                    (name, hashed_pwd, password, zone, zones, divisions, branches, business_units, trainer_id)
+                )
+            else:
+                conn.execute(
+                    "UPDATE trainers SET name=?, zone=?, zones=?, divisions=?, branches=?, business_units=? WHERE trainer_id=?",
+                    (name, zone, zones, divisions, branches, business_units, trainer_id)
+                )
             conn.commit()
         except Exception as e:
             conn.close()
@@ -683,10 +734,12 @@ def upload_trainers():
             
             final_rows = []
             for row_idx, r in rows:
+                p_plain = r[hdr_indices['Password']].strip()
                 row_data = {
                     'id': r[hdr_indices['Trainer ID']].strip().upper(),
                     'name': r[hdr_indices['Trainer Name']].strip(),
-                    'password': r[hdr_indices['Password']].strip(),
+                    'password': generate_password_hash(p_plain),
+                    'plain_password': p_plain,
                     'business_units': r[hdr_indices['Business Units']].strip(),
                     'zones': r[hdr_indices['Zones']].strip(),
                     'divisions': r[hdr_indices['Divisions']].strip(),
@@ -727,8 +780,8 @@ def upload_trainers():
         for _, row in rows:
             try:
                 conn.execute(
-                    "INSERT INTO trainers (trainer_id, name, zone, password, zones, divisions, branches, business_units) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (row['id'], row['name'], row['zones'].split(',')[0].strip().upper() if row['zones'] else 'ALL', row['password'], row['zones'].upper(), row['divisions'].upper(), row['branches'].upper(), row['business_units'].upper())
+                    "INSERT INTO trainers (trainer_id, name, zone, password, plain_password, zones, divisions, branches, business_units) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (row['id'], row['name'], row['zones'].split(',')[0].strip().upper() if row['zones'] else 'ALL', row['password'], row['plain_password'], row['zones'].upper(), row['divisions'].upper(), row['branches'].upper(), row['business_units'].upper())
                 )
             except Exception as e:
                 conn.rollback()
@@ -2659,6 +2712,28 @@ def save_module():
         return jsonify({"status": "error", "message": "No questions provided to save."}), 400
         
     all_approved = all([int(q.get('approved', 0)) == 1 for q in questions])
+    
+    # Maker-Checker Enforcement: A trainer cannot approve their own module unless they are a SuperAdmin.
+    is_superadmin = session.get('user', {}).get('role') == 'SuperAdmin'
+    
+    if all_approved and not is_superadmin:
+        # Check if the person saving (active_trainer_name) is the same as the original creator.
+        # If we are creating a NEW module, trainer_id is the creator.
+        # If we are UPDATING, we need to check the 'created_by' in the DB.
+        original_creator = trainer_id
+        if module_id:
+            conn = get_db_connection()
+            orig = conn.execute("SELECT created_by FROM modules WHERE id=?", (module_id,)).fetchone()
+            if orig:
+                original_creator = orig['created_by']
+            conn.close()
+            
+        if trainer_id == original_creator:
+            all_approved = False # Force 'Pending Audit' status
+            # Reset approvals to 0 for all questions to force a second eyes review
+            for q in questions:
+                q['approved'] = 0
+            
     status = 'Ready' if all_approved else 'Pending Audit'
     
     conn = get_db_connection()
@@ -2755,6 +2830,10 @@ def submit_assessment():
     pre_test_score = data.get('pre_test_score')
     post_test_score = data.get('post_test_score')
     session_id = data.get('session_id')
+    correct_count = data.get('correct_count', 0)
+    wrong_count = data.get('wrong_count', 0)
+    unattempted_count = data.get('unattempted_count', 0)
+    total_questions = data.get('total_questions', 0)
     
     conn = get_db_connection()
     try:
@@ -2764,23 +2843,23 @@ def submit_assessment():
         if row:
             if pre_test_score is not None:
                 if session_id:
-                    conn.execute("UPDATE assessment_results SET pre_test_score=?, completed_at=?, session_id=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
-                                 (pre_test_score, now_str, session_id, emp_code, module_id, assignment_day))
+                    conn.execute("UPDATE assessment_results SET pre_test_score=?, correct_count=?, wrong_count=?, unattempted_count=?, total_questions=?, completed_at=?, session_id=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
+                                 (pre_test_score, correct_count, wrong_count, unattempted_count, total_questions, now_str, session_id, emp_code, module_id, assignment_day))
                 else:
-                    conn.execute("UPDATE assessment_results SET pre_test_score=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
-                                 (pre_test_score, now_str, emp_code, module_id, assignment_day))
+                    conn.execute("UPDATE assessment_results SET pre_test_score=?, correct_count=?, wrong_count=?, unattempted_count=?, total_questions=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
+                                 (pre_test_score, correct_count, wrong_count, unattempted_count, total_questions, now_str, emp_code, module_id, assignment_day))
             if post_test_score is not None:
                 if session_id:
-                    conn.execute("UPDATE assessment_results SET post_test_score=?, completed_at=?, session_id=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
-                                 (post_test_score, now_str, session_id, emp_code, module_id, assignment_day))
+                    conn.execute("UPDATE assessment_results SET post_test_score=?, correct_count=?, wrong_count=?, unattempted_count=?, total_questions=?, completed_at=?, session_id=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
+                                 (post_test_score, correct_count, wrong_count, unattempted_count, total_questions, now_str, session_id, emp_code, module_id, assignment_day))
                 else:
-                    conn.execute("UPDATE assessment_results SET post_test_score=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
-                                 (post_test_score, now_str, emp_code, module_id, assignment_day))
+                    conn.execute("UPDATE assessment_results SET post_test_score=?, correct_count=?, wrong_count=?, unattempted_count=?, total_questions=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
+                                 (post_test_score, correct_count, wrong_count, unattempted_count, total_questions, now_str, emp_code, module_id, assignment_day))
         else:
             p_val = pre_test_score if pre_test_score is not None else 0.0
             post_val = post_test_score if post_test_score is not None else 0.0
-            conn.execute("INSERT INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at, session_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                         (emp_code, module_id, assignment_day, p_val, post_val, now_str, session_id))
+            conn.execute("INSERT INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, correct_count, wrong_count, unattempted_count, total_questions, completed_at, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         (emp_code, module_id, assignment_day, p_val, post_val, correct_count, wrong_count, unattempted_count, total_questions, now_str, session_id))
         conn.commit()
     except Exception as e:
         conn.close()
@@ -2864,14 +2943,18 @@ def get_analytics():
         # A. Query Temporal averages for the current filter scope
         temporal_query = f"""
             SELECT ar.assignment_day, 
-                   AVG(ar.pre_test_score) as avg_pre, 
+                   AVG(ar.pre_test_score) as avg_pre,
                    AVG(ar.post_test_score) as avg_post,
+                   SUM(ar.correct_count) as total_correct,
+                   SUM(ar.wrong_count) as total_wrong,
+                   SUM(ar.unattempted_count) as total_unattempted,
                    COUNT(DISTINCT e.emp_code) as participants
             FROM assessment_results ar
             JOIN employees e ON ar.emp_code = e.emp_code
             {where_str}
             GROUP BY ar.assignment_day
         """
+
         results = conn.execute(temporal_query, query_params).fetchall()
         
         # B. Query Breakdown for the child entities in the current scope
@@ -3031,9 +3114,9 @@ def get_analytics():
     
     # 2. Build temporal response payload with high-fidelity default fallback values
     payload = {
-        'ZERO DAY': {'pre': 0.0, 'post': 0.0, 'count': 0},
-        'SIX DAYS': {'pre': 0.0, 'post': 0.0, 'count': 0},
-        'TWENTY DAYS': {'pre': 0.0, 'post': 0.0, 'count': 0}
+        'ZERO DAY': {'pre': 0.0, 'post': 0.0, 'count': 0, 'correct': 0, 'wrong': 0, 'left': 0},
+        'SIX DAYS': {'pre': 0.0, 'post': 0.0, 'count': 0, 'correct': 0, 'wrong': 0, 'left': 0},
+        'TWENTY DAYS': {'pre': 0.0, 'post': 0.0, 'count': 0, 'correct': 0, 'wrong': 0, 'left': 0}
     }
     
     has_live_data = False
@@ -3043,6 +3126,9 @@ def get_analytics():
             payload[day]['pre'] = round(r['avg_pre'], 1)
             payload[day]['post'] = round(r['avg_post'], 1)
             payload[day]['count'] = r['participants']
+            payload[day]['correct'] = r['total_correct'] or 0
+            payload[day]['wrong'] = r['total_wrong'] or 0
+            payload[day]['left'] = r['total_unattempted'] or 0
             has_live_data = True
             
     payload_metadata = {
@@ -3490,6 +3576,9 @@ def on_join_session(data):
             SESSION_REGISTRY[pin]["leaderboard"][emp_id] = {
                 "name": emp_name,
                 "score": 0,
+                "correct_count": 0,
+                "wrong_count": 0,
+                "total_questions": 0,
                 "last_speed": 0.0,
                 "last_correct": False
             }
@@ -3536,10 +3625,9 @@ def on_submit_vote(data):
             
         if answer_idx == correct_index:
             is_correct = True
-            base_points = 1000
-            # Answering within 20 seconds yields a speed bonus
-            speed_bonus = max(0, int(1000 - (response_time * 50)))
-            points_earned = base_points + speed_bonus
+            # Scoring is now purely based on accuracy as per team requirements.
+            # Timing/Speed is moved to a separate analysis segment.
+            points_earned = 1 
             
         # Ensure student is registered
         if emp_id not in session["leaderboard"]:
@@ -3553,22 +3641,31 @@ def on_submit_vote(data):
             session["leaderboard"][emp_id] = {
                 "name": emp_name,
                 "score": 0,
+                "correct_count": 0,
+                "wrong_count": 0,
+                "total_questions": 0,
                 "last_speed": 0.0,
                 "last_correct": False
             }
             
         # Update session points
         session["leaderboard"][emp_id]["score"] += points_earned
+        session["leaderboard"][emp_id]["total_questions"] += 1
+        if is_correct:
+            session["leaderboard"][emp_id]["correct_count"] += 1
+        else:
+            session["leaderboard"][emp_id]["wrong_count"] += 1
+            
         session["leaderboard"][emp_id]["last_speed"] = round(response_time, 2)
         session["leaderboard"][emp_id]["last_correct"] = is_correct
         
     # Broadcast standard vote updates for presenter chart
     emit('vote_update', {'emp_id': emp_id, 'answer_idx': answer_idx}, room=pin)
     
-    # Emit score confirmation details back to student tab for immediate screen celebrations
+    # Emit score confirmation details back to student tab
     emit('score_confirmation', {
         'points': points_earned,
-        'speed_bonus': speed_bonus,
+        'speed_bonus': 0, # Speed bonus removed from scoring model
         'is_correct': is_correct,
         'total_score': SESSION_REGISTRY[pin]["leaderboard"][emp_id]["score"] if pin in SESSION_REGISTRY else points_earned,
         'response_time': round(response_time, 2)
@@ -3582,6 +3679,9 @@ def on_submit_vote(data):
                 'emp_code': code,
                 'emp_name': player['name'],
                 'score': player['score'],
+                'correct_count': player.get('correct_count', 0),
+                'wrong_count': player.get('wrong_count', 0),
+                'total_questions': player.get('total_questions', 0),
                 'last_speed': player['last_speed'],
                 'last_correct': player['last_correct']
             })
@@ -3724,6 +3824,34 @@ def plan_visit():
     conn.close()
     
     return jsonify({"status": "success", "message": "Field visit itinerary successfully planned!"})
+
+@app.route('/api/branches/pin', methods=['PUT'])
+def update_branch_pin():
+    curr_user = session.get('user')
+    if not curr_user or curr_user.get('role') != 'SuperAdmin':
+        return jsonify({"status": "error", "message": "Unauthorized. SuperAdmin privileges required."}), 403
+        
+    data = request.json or {}
+    branch_name = data.get('branch_name', '').strip()
+    new_pin = data.get('new_pin', '').strip()
+    
+    if not branch_name or not new_pin:
+        return jsonify({"status": "error", "message": "Branch Name and New PIN are required."}), 400
+        
+    if not new_pin.isdigit() or len(new_pin) < 4:
+        return jsonify({"status": "error", "message": "PIN must be at least 4 digits."}), 400
+        
+    conn = get_db_connection()
+    bc = conn.execute("SELECT * FROM branch_coordinates WHERE branch_name=?", (branch_name,)).fetchone()
+    if not bc:
+        conn.close()
+        return jsonify({"status": "error", "message": f"Branch '{branch_name}' not found."}), 404
+        
+    conn.execute("UPDATE branch_coordinates SET manager_pin=? WHERE branch_name=?", (new_pin, branch_name))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"status": "success", "message": f"Manager PIN for '{branch_name}' updated successfully."})
 
 @app.route('/api/visits/checkin', methods=['POST'])
 def checkin_visit():

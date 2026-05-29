@@ -767,8 +767,8 @@ def sync_trainers_from_gdrive(conn=None):
 
         for t in trainers_data:
             cursor.execute("""
-                INSERT INTO trainers (trainer_id, name, zone, password, status, role, last_login, zones, divisions, branches, business_units)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO trainers (trainer_id, name, zone, password, status, role, last_login, zones, divisions, branches, business_units, plain_password)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(trainer_id) DO UPDATE SET
                     name=excluded.name,
                     zone=excluded.zone,
@@ -779,11 +779,13 @@ def sync_trainers_from_gdrive(conn=None):
                     zones=excluded.zones,
                     divisions=excluded.divisions,
                     branches=excluded.branches,
-                    business_units=excluded.business_units
+                    business_units=excluded.business_units,
+                    plain_password=excluded.plain_password
             """, (
                 t['trainer_id'], t['name'], t['zone'], t['password'], t.get('status', 'Active'),
                 t.get('role', 'Trainer'), t.get('last_login'), t.get('zones', 'ALL'),
-                t.get('divisions', 'ALL'), t.get('branches', 'ALL'), t.get('business_units', 'ALL')
+                t.get('divisions', 'ALL'), t.get('branches', 'ALL'), t.get('business_units', 'ALL'),
+                t.get('plain_password')
             ))
 
         conn.commit()

@@ -101,31 +101,87 @@
         };
 
         const App = () => {
-            const [view, setView] = useState('login'); 
-            const [empId, setEmpId] = useState('');
-            const [empDetails, setEmpDetails] = useState(null);
-            const [pin, setPin] = useState('');
+            const [view, setView] = useState(() => localStorage.getItem('socrates_view') || 'login'); 
+            const [empId, setEmpId] = useState(() => localStorage.getItem('socrates_empId') || '');
+            const [empDetails, setEmpDetails] = useState(() => {
+                const saved = localStorage.getItem('socrates_empDetails');
+                return saved ? JSON.parse(saved) : null;
+            });
+            const [pin, setPin] = useState(() => localStorage.getItem('socrates_pin') || '');
             
             // Dynamic assessment states broadcasted by trainer
-            const [activeQuestion, setActiveQuestion] = useState('');
-            const [activeOptions, setActiveOptions] = useState([]);
-            const [activeCorrectIndex, setActiveCorrectIndex] = useState(null);
-            const [activeAssignmentDay, setActiveAssignmentDay] = useState('zero day');
-            const [activeTranslations, setActiveTranslations] = useState({});
+            const [activeQuestion, setActiveQuestion] = useState(() => localStorage.getItem('socrates_activeQuestion') || '');
+            const [activeOptions, setActiveOptions] = useState(() => {
+                const saved = localStorage.getItem('socrates_activeOptions');
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [activeCorrectIndex, setActiveCorrectIndex] = useState(() => {
+                const saved = localStorage.getItem('socrates_activeCorrectIndex');
+                return saved !== null ? parseInt(saved) : null;
+            });
+            const [activeAssignmentDay, setActiveAssignmentDay] = useState(() => localStorage.getItem('socrates_activeAssignmentDay') || 'zero day');
+            const [activeTranslations, setActiveTranslations] = useState(() => {
+                const saved = localStorage.getItem('socrates_activeTranslations');
+                return saved ? JSON.parse(saved) : {};
+            });
             const [activeLanguage, setActiveLanguage] = useState('en'); // 'en', 'easy', 'hindi', 'hinglish'
+            const [hasSubmittedCurrent, setHasSubmittedCurrent] = useState(() => localStorage.getItem('socrates_hasSubmittedCurrent') === 'true');
             
+            // Student cumulative metrics
+            const [correctCount, setCorrectCount] = useState(() => parseInt(localStorage.getItem('socrates_correctCount') || '0'));
+            const [wrongCount, setWrongCount] = useState(() => parseInt(localStorage.getItem('socrates_wrongCount') || '0'));
+            const [unattemptedCount, setUnattemptedCount] = useState(() => parseInt(localStorage.getItem('socrates_unattemptedCount') || '0'));
+            const [totalQuestions, setTotalQuestions] = useState(() => parseInt(localStorage.getItem('socrates_totalQuestions') || '0'));
+
             // Student scores
             const [preTestScore, setPreTestScore] = useState(null);
             const [postTestScore, setPostTestScore] = useState(null);
+
+            // Save state to localStorage
+            useEffect(() => {
+                localStorage.setItem('socrates_view', view);
+                localStorage.setItem('socrates_empId', empId);
+                localStorage.setItem('socrates_empDetails', JSON.stringify(empDetails));
+                localStorage.setItem('socrates_pin', pin);
+                localStorage.setItem('socrates_activeQuestion', activeQuestion);
+                localStorage.setItem('socrates_activeOptions', JSON.stringify(activeOptions));
+                localStorage.setItem('socrates_activeCorrectIndex', activeCorrectIndex);
+                localStorage.setItem('socrates_activeAssignmentDay', activeAssignmentDay);
+                localStorage.setItem('socrates_activeTranslations', JSON.stringify(activeTranslations));
+                localStorage.setItem('socrates_correctCount', correctCount);
+                localStorage.setItem('socrates_wrongCount', wrongCount);
+                localStorage.setItem('socrates_unattemptedCount', unattemptedCount);
+                localStorage.setItem('socrates_totalQuestions', totalQuestions);
+                localStorage.setItem('socrates_hasSubmittedCurrent', hasSubmittedCurrent);
+            }, [view, empId, empDetails, pin, activeQuestion, activeOptions, activeCorrectIndex, activeAssignmentDay, activeTranslations, correctCount, wrongCount, unattemptedCount, totalQuestions, hasSubmittedCurrent]);
+
+            // Re-join session on reload
+            useEffect(() => {
+                if (pin && empId) {
+                    socket.emit('join_session', {pin, emp_id: empId});
+                }
+            }, []);
 
             // Listen to Trainer commands via Socket.IO
             useEffect(() => {
                 socket.on('change_view', (data) => {
                     if (data.view) {
+                        // If moving away from a test view while a question was pending
+                        if ((view === 'pretest' || view === 'posttest') && !hasSubmittedCurrent && activeQuestion) {
+                            setUnattemptedCount(prev => prev + 1);
+                        }
                         setView(data.view);
                     }
                     if (data.question) {
-                        setActiveQuestion(data.question);
+                        if (data.question !== activeQuestion) {
+                            // If we didn't submit the PREVIOUS question before a NEW one was pushed
+                            if (!hasSubmittedCurrent && activeQuestion) {
+                                setUnattemptedCount(prev => prev + 1);
+                            }
+                            setActiveQuestion(data.question);
+                            setTotalQuestions(prev => prev + 1);
+                            setHasSubmittedCurrent(false);
+                        }
                     }
                     if (data.options) {
                         setActiveOptions(data.options);
@@ -152,9 +208,25 @@
                     }
                 });
 
+                socket.on('client_command', (data) => {
+                    if (data.command === 'reset_scores') {
+                        setCorrectCount(0);
+                        setWrongCount(0);
+                        setUnattemptedCount(0);
+                        setTotalQuestions(0);
+                        setHasSubmittedCurrent(false);
+                        localStorage.removeItem('socrates_correctCount');
+                        localStorage.removeItem('socrates_wrongCount');
+                        localStorage.removeItem('socrates_unattemptedCount');
+                        localStorage.removeItem('socrates_totalQuestions');
+                        localStorage.removeItem('socrates_hasSubmittedCurrent');
+                    }
+                });
+
                 return () => {
                     socket.off('change_view');
                     socket.off('force_language');
+                    socket.off('client_command');
                 };
             }, []);
 
@@ -174,7 +246,13 @@
                                 translations={activeTranslations}
                                 activeLanguage={activeLanguage}
                                 setActiveLanguage={setActiveLanguage}
-                                onScoreSubmit={(score) => setPreTestScore(score)}
+                                counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
+                                onScoreSubmit={(score, isCorrect) => {
+                                    if (isCorrect) setCorrectCount(prev => prev + 1);
+                                    else setWrongCount(prev => prev + 1);
+                                    setPreTestScore(score);
+                                    setHasSubmittedCurrent(true);
+                                }}
                             />
                         );
                     case 'training': return <Training assignmentDay={activeAssignmentDay} />;
@@ -191,7 +269,13 @@
                                 translations={activeTranslations}
                                 activeLanguage={activeLanguage}
                                 setActiveLanguage={setActiveLanguage}
-                                onScoreSubmit={(score) => setPostTestScore(score)}
+                                counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
+                                onScoreSubmit={(score, isCorrect) => {
+                                    if (isCorrect) setCorrectCount(prev => prev + 1);
+                                    else setWrongCount(prev => prev + 1);
+                                    setPostTestScore(score);
+                                    setHasSubmittedCurrent(true);
+                                }}
                             />
                         );
                     case 'result': 
@@ -199,10 +283,21 @@
                             <Result 
                                 preScore={preTestScore} 
                                 postScore={postTestScore} 
+                                counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
                                 onFinish={() => {
                                     setView('dashboard');
                                     setPreTestScore(null);
                                     setPostTestScore(null);
+                                    setCorrectCount(0);
+                                    setWrongCount(0);
+                                    setUnattemptedCount(0);
+                                    setTotalQuestions(0);
+                                    setHasSubmittedCurrent(false);
+                                    localStorage.removeItem('socrates_correctCount');
+                                    localStorage.removeItem('socrates_wrongCount');
+                                    localStorage.removeItem('socrates_unattemptedCount');
+                                    localStorage.removeItem('socrates_totalQuestions');
+                                    localStorage.removeItem('socrates_hasSubmittedCurrent');
                                 }} 
                             />
                         );
@@ -451,7 +546,7 @@
             );
         };
 
-        const Quiz = ({type, empId, pin, question, options, correctIndex, assignmentDay, translations, activeLanguage, setActiveLanguage, onScoreSubmit}) => {
+        const Quiz = ({type, empId, pin, question, options, correctIndex, assignmentDay, translations, activeLanguage, setActiveLanguage, counts, onScoreSubmit}) => {
             const [selected, setSelected] = useState(null);
             const [submitted, setSubmitted] = useState(false);
             const [scoreInfo, setScoreInfo] = useState(null);
@@ -501,14 +596,19 @@
                     // Emit vote to Trainer Console
                     socket.emit('submit_vote', {pin: pin, emp_id: empId, answer_idx: selected});
                     
-                    const score = selected === qCorrect ? 100 : 0;
-                    onScoreSubmit(score);
+                    const isCorrect = selected === qCorrect;
+                    const score = isCorrect ? 100 : 0;
+                    onScoreSubmit(score, isCorrect);
                     
                     const payload = {
                         emp_code: empId,
                         module_id: 1, // Default module
                         assignment_day: assignmentDay,
-                        session_id: pin
+                        session_id: pin,
+                        correct_count: isCorrect ? counts.correctCount + 1 : counts.correctCount,
+                        wrong_count: !isCorrect ? counts.wrongCount + 1 : counts.wrongCount,
+                        unattempted_count: counts.unattemptedCount,
+                        total_questions: counts.totalQuestions
                     };
                     if (type === 'Pre-Test') {
                         payload.pre_test_score = score;
@@ -843,19 +943,34 @@
             </div>
         );
 
-        const Result = ({preScore, postScore, onFinish}) => (
+        const Result = ({preScore, postScore, counts, onFinish}) => (
             <div className="card h-full flex flex-col items-center justify-center p-8 text-center border-t-4 border-socrates-accent w-full max-w-xl mx-auto my-6 shadow-md">
                 <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-4xl text-socrates-accent shadow-sm border border-emerald-100 mb-6"><i className="fas fa-trophy"></i></div>
                 <h2 className="text-xl font-bold text-socrates-dark mb-2">Session Complete</h2>
-                <p className="text-sm text-slate-500 mb-8">Your assessment results have been recorded.</p>
+                <p className="text-sm text-slate-500 mb-8">Your assessment metrics have been recorded.</p>
                 
-                <div className="w-full space-y-3 mb-10">
+                <div className="w-full space-y-4 mb-10">
+                    <div className="grid grid-cols-3 gap-3">
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 shadow-sm">
+                            <div className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-widest mb-1">Correct</div>
+                            <div className="text-2xl font-black text-emerald-600 font-outfit">{counts.correctCount}</div>
+                        </div>
+                        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 shadow-sm">
+                            <div className="text-[10px] font-extrabold text-red-800 uppercase tracking-widest mb-1">Wrong</div>
+                            <div className="text-2xl font-black text-red-600 font-outfit">{counts.wrongCount}</div>
+                        </div>
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 shadow-sm">
+                            <div className="text-[10px] font-extrabold text-slate-800 uppercase tracking-widest mb-1">Left</div>
+                            <div className="text-2xl font-black text-slate-600 font-outfit">{counts.unattemptedCount}</div>
+                        </div>
+                    </div>
+
                     <div className="flex justify-between items-center p-4 bg-slate-50 border border-slate-200 rounded-xl">
-                        <span className="text-sm text-slate-600 font-medium">Pre-Test Score</span>
+                        <span className="text-sm text-slate-600 font-medium">Last Pre-Test Score</span>
                         <span className="font-bold text-base text-socrates-dark">{preScore !== null ? `${preScore}%` : 'N/A'}</span>
                     </div>
                     <div className="flex justify-between items-center p-4 bg-emerald-50 border border-emerald-200 rounded-xl shadow-sm">
-                        <span className="text-sm text-emerald-800 font-bold">Post-Test Score</span>
+                        <span className="text-sm text-emerald-800 font-bold">Last Post-Test Score</span>
                         <span className="font-bold text-lg text-emerald-600">{postScore !== null ? `${postScore}%` : 'N/A'}</span>
                     </div>
                 </div>
