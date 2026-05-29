@@ -2981,6 +2981,11 @@
                 window.open(url, '_blank');
             };
 
+            const handleExportMasterReport = () => {
+                // Bypass all UI filters to export complete historical database for all trainers
+                window.open('/api/visits/export?period=ALL', '_blank');
+            };
+
             useEffect(() => {
                 loadVisits();
                 // Load roster filters to get branch list options
@@ -3157,11 +3162,19 @@
                             <p className="text-xs text-slate-500 mt-1 font-medium">Pre-visit Travel Planner, Geofenced Check-in, & Socratic Manager Sign-off.</p>
                         </div>
                         <div className="flex items-center gap-3">
+                            {isSuperAdmin && (
+                                <button 
+                                    onClick={handleExportMasterReport}
+                                    className="btn-outline flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2.5 px-4 font-black text-[10px] rounded-xl transition-all shadow-sm uppercase tracking-widest"
+                                >
+                                    <i className="fas fa-file-invoice text-sm text-emerald-600"></i> Master Management Report
+                                </button>
+                            )}
                             <button 
                                 onClick={handleExportCalendar}
                                 className="btn-outline flex items-center gap-2 hover:bg-slate-50 text-slate-700 border border-slate-200/80 py-2.5 px-4 font-bold text-xs rounded-xl transition-all"
                             >
-                                <i className="fas fa-file-download text-sm text-blue-600"></i> Export CSV
+                                <i className="fas fa-file-download text-sm text-blue-600"></i> Export Filtered CSV
                             </button>
                             <button 
                                 onClick={() => setShowPlanModal(true)}
