@@ -413,14 +413,8 @@ def init_db():
     # Seed branch baseline coordinates if empty
     cursor.execute("SELECT COUNT(*) FROM branch_coordinates")
     if cursor.fetchone()[0] == 0:
-        seed_data = [
-            ('DELHI RF', 'NORTH ZONE', 'DELHI DIVISION', 28.6139, 77.2090, '1234'),
-            ('AHMEDABAD RF', 'WEST ZONE', 'GUJARAT DIVISION', 23.0225, 72.5714, '1234'),
-            ('CHANDIGARH RF', 'NORTH ZONE', 'PUNJAB DIVISION', 30.7333, 76.7794, '1234'),
-            ('KOLKATA RF', 'EAST ZONE', 'BENGAL DIVISION', 22.5726, 88.3639, '1234'),
-            ('MUMBAI RF', 'WEST ZONE', 'MUMBAI DIVISION', 19.0760, 72.8777, '1234')
-        ]
-        cursor.executemany("INSERT INTO branch_coordinates VALUES (?, ?, ?, ?, ?, ?)", seed_data)
+        # No hardcoded demo data in production
+        pass
     else:
         cursor.execute("UPDATE branch_coordinates SET zone = UPPER(zone), division = UPPER(division)")
         cursor.execute("UPDATE employees SET zone = UPPER(zone), division = UPPER(division)")
