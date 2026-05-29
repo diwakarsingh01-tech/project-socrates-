@@ -987,6 +987,127 @@ class ProjectSocratesAuditSuite(unittest.TestCase):
             cursor.execute("DELETE FROM trainers WHERE trainer_id IN ('TEST-TR-A', 'TEST-TR-B')")
             self.conn.commit()
 
+    def test_roster_formatting_and_validation(self):
+        """Audit 24: Verify roster upload strictly validates zones, divisions, and branches, while normalizing slightly messy spellings"""
+        
+        # 1. Messy but mappable CSV (Should succeed)
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Employee Code', 'Employee Name', 'Branch Name', 'Zone', 'Division', 'Business Unit', 'Role'])
+            writer.writerow(['SF-8881', 'MAPPED USER 1', 'delhi', 'DEL_BU', 'DELHI DIVISION', '2-Wheeler Personal Loan', 'PL Exe'])
+            writer.writerow(['SF-8882', 'MAPPED USER 2', 'ahmedabad rf', 'WEST', 'gujarat', '2-Wheeler Personal Loan', 'PL Exe'])
+            temp_path = f.name
+            
+        try:
+            with open(temp_path, 'rb') as f:
+                res = self.client.post('/api/roster/upload', data={'file': (f, 'test_mappable.csv')})
+                data = json.loads(res.data)
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(data['status'], 'success')
+                
+            # Verify they were normalized and inserted correctly
+            cursor = self.conn.cursor()
+            emp1 = cursor.execute("SELECT branch_name, zone, division FROM employees WHERE emp_code='SF-8881'").fetchone()
+            self.assertEqual(emp1[0], 'DELHI RF')
+            self.assertEqual(emp1[1], 'North Zone')
+            self.assertEqual(emp1[2], 'Delhi Division')
+            
+            emp2 = cursor.execute("SELECT branch_name, zone, division FROM employees WHERE emp_code='SF-8882'").fetchone()
+            self.assertEqual(emp2[0], 'AHMEDABAD RF')
+            self.assertEqual(emp2[1], 'West Zone')
+            self.assertEqual(emp2[2], 'Gujarat Division')
+            
+        finally:
+            os.remove(temp_path)
+            cursor = self.conn.cursor()
+            cursor.execute("DELETE FROM employees WHERE emp_code IN ('SF-8881', 'SF-8882')")
+            self.conn.commit()
+            
+        # 2. Invalid CSV (Should fail)
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Employee Code', 'Employee Name', 'Branch Name', 'Zone', 'Division', 'Business Unit', 'Role'])
+            writer.writerow(['SF-8883', 'INVALID USER', 'chennai', 'SOUTH ZONE', 'tamil nadu', 'Retail', 'CSE'])
+            temp_path = f.name
+            
+        try:
+            with open(temp_path, 'rb') as f:
+                res = self.client.post('/api/roster/upload', data={'file': (f, 'test_invalid.csv')})
+                data = json.loads(res.data)
+                self.assertEqual(res.status_code, 400)
+                self.assertEqual(data['status'], 'error')
+                self.assertIn("formatting validation failed", data['message'])
+                self.assertTrue(len(data['details']) > 0)
+        finally:
+            os.remove(temp_path)
+
+    def test_historical_assessments_upload(self):
+        """Audit 25: Verify historical assessments upload, matching sessions auto-generation, and validation rules"""
+        cursor = self.conn.cursor()
+        
+        # Seed test employee
+        cursor.execute("INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role) VALUES ('SF-6601', 'HIST TESTER', 'DELHI RF', 'North Zone', 'Delhi Division', 'Retail', 'CSE')")
+        # Seed test module
+        cursor.execute("INSERT OR REPLACE INTO modules (id, title, questions_count) VALUES (99, 'Historical Policy', 5)")
+        # Seed trainer
+        cursor.execute("INSERT OR REPLACE INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('TR-HIST-1', 'Hist Trainer', 'All', 'password123', 'Trainer', 'Active')")
+        self.conn.commit()
+        
+        # 1. Try uploading with non-existent employee code (Should fail)
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Employee Code', 'Module ID', 'Date', 'Pre-Test Score', 'Post-Test Score'])
+            writer.writerow(['SF-NONEXIST', '99', '2026-03-15', '45', '85'])
+            temp_path = f.name
+            
+        try:
+            self.client.post('/api/admin/login', json={"trainer_id": "TR-HIST-1", "password": "password123"})
+            with open(temp_path, 'rb') as f:
+                res = self.client.post('/api/assessments/upload-historical', data={'file': (f, 'test_hist_fail.csv')})
+                data = json.loads(res.data)
+                self.assertEqual(res.status_code, 400)
+                self.assertEqual(data['status'], 'error')
+                self.assertIn("not registered in the Master Roster", data['details'][0])
+        finally:
+            os.remove(temp_path)
+            
+        # 2. Upload valid CSV (Should succeed and auto-generate session)
+        with tempfile.NamedTemporaryFile(suffix='.csv', mode='w+', delete=False) as f:
+            writer = csv.writer(f)
+            writer.writerow(['Employee Code', 'Module ID', 'Date', 'Pre-Test Score', 'Post-Test Score'])
+            writer.writerow(['SF-6601', '99', '2026-03-15', '40.0', '90.0'])
+            temp_path = f.name
+            
+        try:
+            with open(temp_path, 'rb') as f:
+                res = self.client.post('/api/assessments/upload-historical', data={'file': (f, 'test_hist_success.csv')})
+                data = json.loads(res.data)
+                self.assertEqual(res.status_code, 200)
+                self.assertEqual(data['status'], 'success')
+                
+            # Verify database rows and session generation
+            ar = cursor.execute("SELECT pre_test_score, post_test_score, completed_at, session_id FROM assessment_results WHERE emp_code='SF-6601' AND module_id=99").fetchone()
+            self.assertEqual(ar[0], 40.0)
+            self.assertEqual(ar[1], 90.0)
+            self.assertEqual(ar[2], '2026-03-15')
+            
+            # Match session auto-generation
+            session_id = ar[3]
+            sess = cursor.execute("SELECT module_id, branch_name, date FROM training_sessions WHERE session_id=?", (session_id,)).fetchone()
+            self.assertIsNotNone(sess)
+            self.assertEqual(sess[0], 99)
+            self.assertEqual(sess[1], 'DELHI RF')
+            self.assertEqual(sess[2], '2026-03-15')
+            
+        finally:
+            os.remove(temp_path)
+            cursor.execute("DELETE FROM assessment_results WHERE emp_code='SF-6601' AND module_id=99")
+            cursor.execute("DELETE FROM training_sessions WHERE branch_name='DELHI RF' AND date='2026-03-15' AND module_id=99")
+            cursor.execute("DELETE FROM employees WHERE emp_code='SF-6601'")
+            cursor.execute("DELETE FROM modules WHERE id=99")
+            cursor.execute("DELETE FROM trainers WHERE trainer_id='TR-HIST-1'")
+            self.conn.commit()
+
 if __name__ == '__main__':
     unittest.main()
 
