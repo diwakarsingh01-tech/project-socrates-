@@ -478,7 +478,7 @@ def enforce_authentication():
         if 'user' not in session:
             return jsonify({"status": "error", "message": "Unauthorized. Please log in first."}), 401
             
-        # Role-based restriction: Access Management, DB Reset, Roster Upload/Modifications are SuperAdmin only!
+        # Role-based restriction: Access Management, DB Reset, Roster Upload/Modifications are Admin only!
         superadmin_routes = [
             '/api/trainers',
             '/api/trainers/upload',
@@ -490,8 +490,12 @@ def enforce_authentication():
                                (request.path.startswith('/api/roster') and request.method in ['POST', 'PUT', 'DELETE'])
                                
         if is_superadmin_route:
-            if session['user']['role'] != 'SuperAdmin':
-                return jsonify({"status": "error", "message": "Forbidden. SuperAdmin privileges required."}), 403
+            if request.path == '/api/admin/reset-database':
+                if session['user']['role'] != 'SuperAdmin':
+                    return jsonify({"status": "error", "message": "Forbidden. SuperAdmin privileges required."}), 403
+            else:
+                if session['user']['role'] not in ['SuperAdmin', 'Leader']:
+                    return jsonify({"status": "error", "message": "Forbidden. SuperAdmin or Leader privileges required."}), 403
 
 @app.route('/api/admin/me', methods=['GET'])
 def get_current_session():
@@ -573,10 +577,13 @@ def handle_trainers():
             print(f"[GDRIVE] Dynamic trainers sync skipped: {str(e)}")
 
         is_superadmin = session.get('user', {}).get('role') == 'SuperAdmin'
+        is_leader = session.get('user', {}).get('role') == 'Leader'
         if is_superadmin:
-            trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units, plain_password FROM trainers WHERE role='Trainer'").fetchall()
+            trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units, role, plain_password FROM trainers WHERE role IN ('Trainer', 'Leader')").fetchall()
+        elif is_leader:
+            trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units, role, plain_password FROM trainers WHERE role='Trainer'").fetchall()
         else:
-            trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units FROM trainers WHERE role='Trainer'").fetchall()
+            trainers = conn.execute("SELECT trainer_id AS id, name, zone, status, last_login, zones, divisions, branches, business_units, role FROM trainers WHERE role='Trainer'").fetchall()
         
         conn.close()
         return jsonify([dict(t) for t in trainers])
@@ -585,9 +592,16 @@ def handle_trainers():
         data = request.json
         password_plain = data['password'].strip()
         hashed_pwd = generate_password_hash(password_plain)
+        
+        caller_role = session.get('user', {}).get('role')
+        target_role = data.get('role', 'Trainer')
+        if caller_role == 'Leader' and target_role != 'Trainer':
+            conn.close()
+            return jsonify({"status": "error", "message": "Forbidden. Leaders can only onboard standard Trainers."}), 403
+            
         try:
             conn.execute(
-                "INSERT INTO trainers (trainer_id, name, zone, password, zones, divisions, branches, business_units, plain_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO trainers (trainer_id, name, zone, password, zones, divisions, branches, business_units, role, plain_password) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     data['id'].upper().strip(),
                     data['name'].strip(),
@@ -597,6 +611,7 @@ def handle_trainers():
                     data.get('divisions', 'ALL'),
                     data.get('branches', 'ALL'),
                     data.get('business_units', 'ALL'),
+                    target_role,
                     password_plain
                 )
             )
@@ -620,8 +635,19 @@ def handle_single_trainer(trainer_id):
     trainer_id = trainer_id.upper().strip()
     conn = get_db_connection()
     
+    target_user = conn.execute("SELECT role FROM trainers WHERE trainer_id=?", (trainer_id,)).fetchone()
+    if not target_user:
+        conn.close()
+        return jsonify({"status": "error", "message": "Trainer not found"}), 404
+        
+    caller_role = session.get('user', {}).get('role')
+    if caller_role == 'Leader' and target_user['role'] != 'Trainer':
+        conn.close()
+        return jsonify({"status": "error", "message": "Forbidden. Leaders can only manage standard Trainers."}), 403
+        
     if request.method == 'DELETE':
         if trainer_id == 'ADMIN':
+            conn.close()
             return jsonify({"status": "error", "message": "Super Admin cannot be deleted"}), 400
         try:
             conn.execute("DELETE FROM trainers WHERE trainer_id=?", (trainer_id,))
@@ -649,7 +675,12 @@ def handle_single_trainer(trainer_id):
         divisions = data.get('divisions', 'ALL')
         branches = data.get('branches', 'ALL')
         business_units = data.get('business_units', 'ALL')
+        role = data.get('role', target_user['role'])
         
+        if caller_role == 'Leader' and role != 'Trainer':
+            conn.close()
+            return jsonify({"status": "error", "message": "Forbidden. Leaders can only set role to Trainer."}), 403
+            
         if not name:
             conn.close()
             return jsonify({"status": "error", "message": "Name is required."}), 400
@@ -659,13 +690,13 @@ def handle_single_trainer(trainer_id):
             if password and password != 'password123':
                 hashed_pwd = generate_password_hash(password)
                 conn.execute(
-                    "UPDATE trainers SET name=?, password=?, plain_password=?, zone=?, zones=?, divisions=?, branches=?, business_units=? WHERE trainer_id=?",
-                    (name, hashed_pwd, password, zone, zones, divisions, branches, business_units, trainer_id)
+                    "UPDATE trainers SET name=?, password=?, plain_password=?, zone=?, zones=?, divisions=?, branches=?, business_units=?, role=? WHERE trainer_id=?",
+                    (name, hashed_pwd, password, zone, zones, divisions, branches, business_units, role, trainer_id)
                 )
             else:
                 conn.execute(
-                    "UPDATE trainers SET name=?, zone=?, zones=?, divisions=?, branches=?, business_units=? WHERE trainer_id=?",
-                    (name, zone, zones, divisions, branches, business_units, trainer_id)
+                    "UPDATE trainers SET name=?, zone=?, zones=?, divisions=?, branches=?, business_units=?, role=? WHERE trainer_id=?",
+                    (name, zone, zones, divisions, branches, business_units, role, trainer_id)
                 )
             conn.commit()
         except Exception as e:
@@ -684,8 +715,19 @@ def handle_single_trainer(trainer_id):
 
 @app.route('/api/trainers/<trainer_id>/status', methods=['PUT'])
 def update_trainer_status(trainer_id):
-    data = request.json
+    trainer_id = trainer_id.upper().strip()
     conn = get_db_connection()
+    target_user = conn.execute("SELECT role FROM trainers WHERE trainer_id=?", (trainer_id,)).fetchone()
+    if not target_user:
+        conn.close()
+        return jsonify({"status": "error", "message": "Trainer not found"}), 404
+        
+    caller_role = session.get('user', {}).get('role')
+    if caller_role == 'Leader' and target_user['role'] != 'Trainer':
+        conn.close()
+        return jsonify({"status": "error", "message": "Forbidden. Leaders can only manage standard Trainers."}), 403
+        
+    data = request.json
     conn.execute("UPDATE trainers SET status=? WHERE trainer_id=?", (data['status'], trainer_id))
     conn.commit()
     conn.close()
@@ -745,8 +787,21 @@ def upload_trainers():
             hdr_indices = {h: headers.index(h) for h in REQUIRED_HEADERS}
             
             final_rows = []
+            caller_role = session.get('user', {}).get('role')
             for row_idx, r in rows:
                 p_plain = r[hdr_indices['Password']].strip()
+                row_role = 'Trainer'
+                if 'Role' in headers:
+                    row_role = r[headers.index('Role')].strip()
+                    if row_role.upper() == 'SUPERADMIN':
+                        row_role = 'SuperAdmin'
+                    elif row_role.upper() == 'LEADER':
+                        row_role = 'Leader'
+                    else:
+                        row_role = 'Trainer'
+                if caller_role == 'Leader':
+                    row_role = 'Trainer'
+                    
                 row_data = {
                     'id': r[hdr_indices['Trainer ID']].strip().upper(),
                     'name': r[hdr_indices['Trainer Name']].strip(),
@@ -756,6 +811,7 @@ def upload_trainers():
                     'zones': r[hdr_indices['Zones']].strip(),
                     'divisions': r[hdr_indices['Divisions']].strip(),
                     'branches': r[hdr_indices['Branches']].strip(),
+                    'role': row_role
                 }
                 final_rows.append((row_idx, row_data))
             rows = final_rows
@@ -792,8 +848,8 @@ def upload_trainers():
         for _, row in rows:
             try:
                 conn.execute(
-                    "INSERT INTO trainers (trainer_id, name, zone, password, plain_password, zones, divisions, branches, business_units) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (row['id'], row['name'], row['zones'].split(',')[0].strip().upper() if row['zones'] else 'ALL', row['password'], row['plain_password'], row['zones'].upper(), row['divisions'].upper(), row['branches'].upper(), row['business_units'].upper())
+                    "INSERT INTO trainers (trainer_id, name, zone, password, plain_password, zones, divisions, branches, business_units, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (row['id'], row['name'], row['zones'].split(',')[0].strip().upper() if row['zones'] else 'ALL', row['password'], row['plain_password'], row['zones'].upper(), row['divisions'].upper(), row['branches'].upper(), row['business_units'].upper(), row['role'])
                 )
             except Exception as e:
                 conn.rollback()
@@ -1979,7 +2035,7 @@ def delete_module(module_id):
     
     # Enforce Creator RBAC limits: Trainers can only delete their own modules
     curr_user = session.get('user')
-    if curr_user and curr_user['role'] != 'SuperAdmin':
+    if curr_user and curr_user['role'] not in ['SuperAdmin', 'Leader']:
         m_row = conn.execute("SELECT created_by FROM modules WHERE id=?", (module_id,)).fetchone()
         if m_row and m_row['created_by'] != curr_user['trainer_id']:
             conn.close()
@@ -3770,8 +3826,8 @@ def get_visits():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # SuperAdmins fetch all field visits, standard trainers only fetch their own schedules
-    if curr_user['role'] == 'SuperAdmin':
+    # SuperAdmins and Leaders fetch all field visits, standard trainers only fetch their own schedules
+    if curr_user['role'] in ['SuperAdmin', 'Leader']:
         cursor.execute('''
             SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
                    bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
@@ -3898,8 +3954,8 @@ def plan_visit():
 @app.route('/api/branches/pin', methods=['PUT'])
 def update_branch_pin():
     curr_user = session.get('user')
-    if not curr_user or curr_user.get('role') != 'SuperAdmin':
-        return jsonify({"status": "error", "message": "Unauthorized. SuperAdmin privileges required."}), 403
+    if not curr_user or curr_user.get('role') not in ['SuperAdmin', 'Leader']:
+        return jsonify({"status": "error", "message": "Unauthorized. SuperAdmin or Leader privileges required."}), 403
         
     data = request.json or {}
     branch_name = data.get('branch_name', '').strip()
@@ -4089,7 +4145,7 @@ def export_visits():
     params = []
     
     # Role-based restriction
-    if curr_user['role'] != 'SuperAdmin':
+    if curr_user['role'] not in ['SuperAdmin', 'Leader']:
         query += " AND v.trainer_id = ?"
         params.append(curr_user['trainer_id'])
         
