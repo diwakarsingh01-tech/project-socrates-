@@ -133,8 +133,8 @@
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
             const activeTrainer = impersonatedTrainer || user;
-            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
-            const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
 
             const handleLogout = () => {
                 fetch('/api/admin/logout', { method: 'POST' })
@@ -461,8 +461,8 @@
         };
 
         const AdminDashboard = ({onNav, user, dbDiag}) => {
-            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
-            const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
             const [modules, setModules] = useState([]);
             const [selectedModId, setSelectedModId] = useState('');
             const [loading, setLoading] = useState(true);
@@ -1029,8 +1029,8 @@
         };
 
         const RosterView = ({user}) => {
-            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
-            const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
             const [emps, setEmps] = useState([]);
             const [errorMsg, setErrorMsg] = useState('');
             const [errorDetails, setErrorDetails] = useState([]);
@@ -1758,8 +1758,8 @@
 
 
         const LibraryView = ({user}) => {
-            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
-            const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
             const [status, setStatus] = useState('idle'); // idle, loading, generating, review
             const [modules, setModules] = useState([]);
             const [title, setTitle] = useState('');
@@ -2423,8 +2423,8 @@
         };
 
         const AccessMgmtView = ({user}) => {
-            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
-            const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
             const [trainers, setTrainers] = useState([]);
             const [tid, setTid] = useState('');
             const [name, setName] = useState('');
@@ -2821,8 +2821,8 @@
         };
 
         const TravelHubView = ({ user }) => {
-            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
-            const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
             const [visits, setVisits] = useState([]);
             const [loading, setLoading] = useState(true);
             const [showPlanModal, setShowPlanModal] = useState(false);
@@ -3566,8 +3566,8 @@
         };
 
         const AnalyticsView = ({user}) => {
-            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
-            const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
             const [tab, setTab] = useState('executive');
             const [loading, setLoading] = useState(true);
             const [analytics, setAnalytics] = useState(null);
@@ -4899,8 +4899,8 @@
         };
 
                         const LiveSession = ({onClose, user}) => {
-            const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
-            const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
             const [stage, setStage] = useState('waiting');
             const [connectedTrainees, setConnectedTrainees] = useState([]);
             const [sessionId, setSessionId] = useState('');
