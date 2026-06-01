@@ -74,8 +74,8 @@ class PostgresCursorWrapper:
         # Automatically append RETURNING id for INSERT queries to populate lastrowid
         is_insert = query.strip().upper().startswith("INSERT INTO")
         if is_insert and "RETURNING" not in query.upper():
-            table_name = query.split()[2].lower().replace('(', '')
-            if "employees" not in table_name and "trainers" not in table_name and "training_sessions" not in table_name:
+            table_name = query.split()[2].lower().replace('(', '').replace(')', '')
+            if "employees" not in table_name and "trainers" not in table_name and "training_sessions" not in table_name and "branch_coordinates" not in table_name and "assessment_results" not in table_name:
                 query += " RETURNING id"
 
         if params is not None:
