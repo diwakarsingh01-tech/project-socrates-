@@ -4115,6 +4115,24 @@ def verify_visit():
     })
 
 
+@app.route('/api/visits/<int:visit_id>', methods=['DELETE'])
+def delete_visit(visit_id):
+    curr_user = session.get('user')
+    if not curr_user or curr_user.get('role') not in ['SuperAdmin', 'Leader']:
+        return jsonify({"status": "error", "message": "Unauthorized. SuperAdmin or Leader privileges required."}), 403
+        
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM field_visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit not found"}), 404
+        
+    conn.execute("DELETE FROM field_visits WHERE id=?", (visit_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Field visit successfully cancelled/deleted!"})
+
+
 @app.route('/api/visits/export', methods=['GET'])
 def export_visits():
     curr_user = session.get('user')

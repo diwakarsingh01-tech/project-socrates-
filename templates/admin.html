@@ -390,6 +390,7 @@
                             { id: 'live_session', icon: 'satellite-dish', label: 'Live' },
                             { id: 'library', icon: 'robot', label: 'AI Library' },
                             { id: 'roster', icon: 'users-cog', label: 'Roster' },
+                            { id: 'travel_hub', icon: 'map-marked-alt', label: 'Travel' },
                             { id: 'analytics', icon: 'chart-pie', label: 'Data' }
                         ].map(item => (
                             <button 
@@ -398,12 +399,12 @@
                                     if (item.id === 'live_session') localStorage.removeItem('socrates_active_module');
                                     setView(item.id);
                                 }} 
-                                className={`flex flex-col items-center gap-1.5 px-3 py-1 transition-all rounded-xl ${
+                                className={`flex flex-col items-center gap-1.5 px-2 py-1 transition-all rounded-xl ${
                                     view === item.id ? 'text-blue-600' : 'text-slate-400 opacity-80'
                                 }`}
                             >
                                 <i className={`fas fa-${item.icon} text-lg ${view === item.id ? 'animate-pulse' : ''}`}></i>
-                                <span className="text-[9px] font-black uppercase tracking-tighter">{item.label}</span>
+                                <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
                             </button>
                         ))}
                     </div>
@@ -2948,6 +2949,27 @@
                 setShowPlanModal(true);
             };
 
+            const handleDeleteVisit = (id) => {
+                if(!confirm("Are you sure you want to permanently delete/cancel this planned field visit?")) return;
+                
+                fetch(`/api/visits/${id}`, {
+                    method: 'DELETE'
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert("Itinerary visit deleted successfully!");
+                        loadVisits();
+                    } else {
+                        alert("Failed to delete visit: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("Error deleting visit:", err);
+                    alert("Network error deleting visit.");
+                });
+            };
+
             const loadVisits = () => {
                 setLoading(true);
                 fetch('/api/visits')
@@ -3363,13 +3385,20 @@
                                                             <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${visit.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : visit.status === 'GEOFENCED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{visit.status}</span>
                                                         </td>
                                                         <td className="py-3 px-6 text-center">
-                                                            {visit.status === 'VERIFIED' ? (
-                                                                <i className="fas fa-check-circle text-emerald-500"></i>
-                                                            ) : isSuperAdmin ? (
-                                                                <button onClick={() => setActiveCheckinVisit(visit)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase shadow-sm transition-all">Admin Approve</button>
-                                                            ) : (
-                                                                <button onClick={() => setActiveCheckinVisit(visit)} className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-sm">Check-in</button>
-                                                            )}
+                                                            <div className="flex items-center justify-center gap-2">
+                                                                {visit.status === 'VERIFIED' ? (
+                                                                    <span className="flex items-center gap-1"><i className="fas fa-check-circle text-emerald-500"></i> <span className="text-[9px] font-black text-emerald-600 uppercase">Passed</span></span>
+                                                                ) : isSuperAdmin ? (
+                                                                    <button onClick={() => setActiveCheckinVisit(visit)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase shadow-sm transition-all">Admin Approve</button>
+                                                                ) : (
+                                                                    <button onClick={() => setActiveCheckinVisit(visit)} className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-sm">Check-in</button>
+                                                                )}
+                                                                {(isSuperAdmin || isLeader) && (
+                                                                    <button onClick={() => handleDeleteVisit(visit.id)} className="border border-red-200 text-red-600 bg-red-50/50 hover:bg-red-100 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-sm flex items-center gap-1" title="Cancel Itinerary">
+                                                                        <i className="fas fa-trash-alt text-[10px]"></i> Delete
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))}
