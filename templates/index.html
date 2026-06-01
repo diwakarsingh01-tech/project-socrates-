@@ -315,45 +315,55 @@
             }, [searchQuery]);
 
             return (
-                <div className="w-full h-[100dvh] bg-slate-50 flex flex-col relative overflow-hidden">
-                    <div className="backdrop-blur-header border-b border-slate-200/60 px-5 py-4 flex justify-between items-center z-50 shrink-0">
+                <div className="w-full h-[100dvh] bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex flex-col relative overflow-hidden">
+                    {/* Visual background decorative glows */}
+                    <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse"></div>
+                    <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse" style={{ animationDelay: '2s' }}></div>
+
+                    <div className="border-b border-slate-800/80 px-5 py-4 flex justify-between items-center z-50 shrink-0 bg-slate-950/40 backdrop-blur-md">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center text-white text-base shadow-lg shadow-blue-500/20"><i className="fas fa-brain"></i></div>
-                            <span className="font-outfit font-extrabold text-xl tracking-tight text-slate-900">Socrates AI</span>
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white text-base shadow-lg shadow-blue-500/20 border border-blue-400/20"><i className="fas fa-brain"></i></div>
+                            <span className="font-outfit font-extrabold text-xl tracking-tight text-white">Socrates AI</span>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto flex flex-col justify-center p-6 w-full max-w-md mx-auto">
-                        <div className="card w-full p-8 border-none shadow-2xl bg-white space-y-6">
+                    <div className="flex-1 overflow-y-auto flex flex-col justify-center p-6 w-full max-w-md mx-auto z-10">
+                        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-[2.5rem] shadow-2xl p-8 space-y-6 transition-all duration-300 hover:border-slate-700/80">
                             <div className="text-center space-y-1">
-                                <h2 className="font-outfit font-black text-2xl text-slate-900 tracking-tight">Executive Login</h2>
+                                <h2 className="font-outfit font-black text-2xl text-white tracking-tight">Executive Login</h2>
                                 <p className="text-slate-400 font-bold text-[10px] tracking-widest uppercase">Institutional Training Portal</p>
                             </div>
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Session Access PIN</label>
-                                    <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="0000" className="input-field text-center tracking-[0.5em] font-black text-3xl" />
+                                    <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="0000" className="w-full bg-slate-950/50 border border-slate-800 focus:border-blue-500 rounded-2xl px-4 py-3 text-center tracking-[0.5em] font-black text-3xl text-slate-100 outline-none transition-all focus:ring-4 focus:ring-blue-500/10" />
                                 </div>
                                 <div className="relative">
                                     <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Find Your Profile</label>
-                                    <input type="text" placeholder="NAME OR EMPLOYEE CODE" value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="input-field font-bold uppercase text-sm" />
+                                    <input type="text" placeholder="NAME OR EMPLOYEE CODE" value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="w-full bg-slate-950/50 border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-650 outline-none transition-all focus:ring-4 focus:ring-blue-500/10 font-bold uppercase" />
                                     {showDropdown && searchResults.length > 0 && (
-                                        <div className="absolute left-0 right-0 mt-2 bg-white border border-slate-100 rounded-2xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-50">
+                                        <div className="absolute left-0 right-0 mt-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-800">
                                             {searchResults.map((emp) => (
-                                                <div key={emp.emp_code} onClick={() => { setSelectedEmp(emp); setSearchQuery(emp.emp_name); setShowDropdown(false); }} className="px-4 py-4 hover:bg-blue-50 transition-colors cursor-pointer flex justify-between items-center">
-                                                    <div><div className="font-black text-slate-800 text-xs">{emp.emp_name}</div><div className="text-[10px] text-slate-400 font-bold uppercase">{emp.branch_name} &bull; {emp.business_unit}</div></div>
-                                                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-xl border border-blue-100">{emp.emp_code}</span>
+                                                <div key={emp.emp_code} onClick={() => { setSelectedEmp(emp); setSearchQuery(emp.emp_name); setShowDropdown(false); }} className="px-4 py-4 hover:bg-slate-800/60 transition-colors cursor-pointer flex justify-between items-center">
+                                                    <div>
+                                                        <div className="font-black text-slate-200 text-xs">{emp.emp_name}</div>
+                                                        <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">{emp.branch_name} &bull; {emp.business_unit}</div>
+                                                    </div>
+                                                    <span className="text-[10px] font-black text-blue-400 bg-blue-500/10 px-2.5 py-1.5 rounded-xl border border-blue-500/20">{emp.emp_code}</span>
                                                 </div>
                                             ))}
                                         </div>
                                     )}
                                 </div>
                                 {selectedEmp && (
-                                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 animate-fade-in">
-                                        <div className="text-[9px] font-black text-emerald-700 uppercase tracking-widest mb-1 flex items-center gap-1.5"><i className="fas fa-check-circle"></i> Profile Matched</div>
-                                        <div className="text-xs font-black text-slate-800 uppercase">{selectedEmp.emp_name} ({selectedEmp.emp_code})</div>
+                                    <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 animate-fade-in">
+                                        <div className="text-[9px] font-black text-emerald-400 uppercase tracking-widest mb-1 flex items-center gap-1.5"><i className="fas fa-check-circle"></i> Profile Matched</div>
+                                        <div className="text-xs font-black text-slate-200 uppercase">{selectedEmp.emp_name} ({selectedEmp.emp_code})</div>
                                     </div>
                                 )}
-                                <button onClick={() => selectedEmp && pin && onLogin(selectedEmp.emp_code, selectedEmp, pin)} className="w-full btn-primary h-14 shadow-blue-500/30 text-base">Enter Classroom <i className="fas fa-arrow-right ml-2 text-sm"></i></button>
+                                <button onClick={() => selectedEmp && pin && onLogin(selectedEmp.emp_code, selectedEmp, pin)} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl h-14 font-extrabold text-base transition-all active:scale-[0.98] shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2 mt-6 uppercase tracking-wider">
+                                    <span>Enter Classroom</span>
+                                    <i className="fas fa-door-open text-sm"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
