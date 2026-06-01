@@ -132,6 +132,7 @@
             const [dbDiag, setDbDiag] = useState({ database_type: 'Checking...', connection_status: 'Checking...', connection_error: null, database_url: '' });
             const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+            const activeTrainer = impersonatedTrainer || user;
             const isSuperAdmin = user?.role?.toLowerCase().replace(/\s/g, '') === 'superadmin';
             const isLeader = user?.role?.toLowerCase().replace(/\s/g, '') === 'leader';
 
