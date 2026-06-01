@@ -3296,8 +3296,12 @@ def push_refresher_campaign():
 def get_trainers_performance():
     conn = get_db_connection()
     try:
-        # Get all trainers
-        trainers = conn.execute("SELECT trainer_id, name FROM trainers WHERE role='Trainer'").fetchall()
+        # Get all trainers (including Leaders for SuperAdmin)
+        curr_user = session.get('user', {})
+        if curr_user.get('role') == 'SuperAdmin':
+            trainers = conn.execute("SELECT trainer_id, name FROM trainers WHERE role IN ('Trainer', 'Leader')").fetchall()
+        else:
+            trainers = conn.execute("SELECT trainer_id, name FROM trainers WHERE role='Trainer'").fetchall()
         
         perf_list = []
         for t in trainers:
@@ -4264,12 +4268,19 @@ def get_visits_compliance_stats():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 1. Get all active trainers
-    cursor.execute('''
-        SELECT trainer_id, name 
-        FROM trainers 
-        WHERE status = 'Active' AND role = 'Trainer'
-    ''')
+    # 1. Get all active trainers (including Leaders for SuperAdmin)
+    if curr_user.get('role') == 'SuperAdmin':
+        cursor.execute('''
+            SELECT trainer_id, name 
+            FROM trainers 
+            WHERE status = 'Active' AND role IN ('Trainer', 'Leader')
+        ''')
+    else:
+        cursor.execute('''
+            SELECT trainer_id, name 
+            FROM trainers 
+            WHERE status = 'Active' AND role = 'Trainer'
+        ''')
     all_trainers = [{"trainer_id": r[0], "name": r[1]} for r in cursor.fetchall()]
     
     # 2. Get trainers who have planned visits in this month
