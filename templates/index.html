@@ -373,20 +373,20 @@
 
         const Dashboard = ({ empDetails, assignmentDay }) => (
             <div className="animate-fade-in flex flex-col gap-6 mt-2">
-                <div className="text-center md:text-left bg-white p-8 rounded-[32px] border border-slate-200/60 shadow-sm space-y-4">
-                    <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-3xl flex items-center justify-center text-3xl mx-auto md:mx-0 shadow-inner"><i className="fas fa-id-badge"></i></div>
+                <div className="text-center md:text-left bg-white p-6 sm:p-8 rounded-3xl sm:rounded-[32px] border border-slate-200/60 shadow-sm space-y-4">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-50 text-blue-600 rounded-2xl sm:rounded-3xl flex items-center justify-center text-2xl sm:text-3xl mx-auto md:mx-0 shadow-inner"><i className="fas fa-id-badge"></i></div>
                     <div>
-                        <h2 className="font-outfit font-black text-3xl text-slate-900 leading-tight">Welcome, {empDetails?.emp_name?.split(' ')[0] || 'Executive'}</h2>
-                        <p className="text-[11px] text-slate-400 font-black uppercase tracking-widest mt-1">{empDetails?.role || 'Executive'} &bull; {empDetails?.branch_name}</p>
+                        <h2 className="font-outfit font-black text-2xl sm:text-3xl text-slate-900 leading-tight">Welcome, {empDetails?.emp_name?.split(' ')[0] || 'Executive'}</h2>
+                        <p className="text-[10px] sm:text-[11px] text-slate-400 font-black uppercase tracking-widest mt-1">{empDetails?.role || 'Executive'} &bull; {empDetails?.branch_name}</p>
                     </div>
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center md:text-left">
+                    <div className="bg-slate-50 p-4 rounded-xl sm:rounded-2xl border border-slate-100 text-center md:text-left">
                         <p className="text-xs text-slate-500 font-bold leading-relaxed">Stay tuned to the main screen. Your Socratic Trainer will begin the live module shortly.</p>
                     </div>
                 </div>
-                <div className="card p-8 border-l-[12px] border-blue-600 bg-white relative overflow-hidden min-h-[180px] flex flex-col justify-center">
-                    <div className="absolute -top-4 -right-4 opacity-[0.03] rotate-12 text-[120px] text-blue-900"><i className="fas fa-book-open"></i></div>
-                    <span className="text-[10px] font-black text-blue-600 bg-blue-50 w-fit px-3 py-1.5 rounded-full uppercase tracking-widest mb-4">Live Module Status</span>
-                    <h4 className="font-outfit font-black text-xl text-slate-900">{assignmentDay?.toUpperCase() || 'GENERAL'} REFRESHER SESSION</h4>
+                <div className="card p-6 sm:p-8 border-l-8 sm:border-l-[12px] border-blue-600 bg-white relative overflow-hidden min-h-[160px] sm:min-h-[180px] flex flex-col justify-center">
+                    <div className="absolute -top-4 -right-4 opacity-[0.03] rotate-12 text-[100px] sm:text-[120px] text-blue-900"><i className="fas fa-book-open"></i></div>
+                    <span className="text-[9px] sm:text-[10px] font-black text-blue-600 bg-blue-50 w-fit px-3 py-1.5 rounded-full uppercase tracking-widest mb-3 sm:mb-4">Live Module Status</span>
+                    <h4 className="font-outfit font-black text-lg sm:text-xl text-slate-900">{assignmentDay?.toUpperCase() || 'GENERAL'} REFRESHER SESSION</h4>
                     <p className="text-xs text-slate-400 mt-2 font-bold flex items-center gap-2"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span> Cloud Link Active</p>
                 </div>
             </div>

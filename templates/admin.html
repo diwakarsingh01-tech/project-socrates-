@@ -3339,13 +3339,13 @@
                                             <button onClick={handleNextMonth} className="w-8 h-8 rounded-xl bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-50 transition-all"><i className="fas fa-chevron-right text-xs"></i></button>
                                         </div>
 
-                                        <div className="grid grid-cols-7 gap-1.5">
-                                            {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => <div key={d} className="text-center font-black text-[9px] text-slate-400 py-2">{d}</div>)}
+                                        <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+                                            {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => <div key={d} className="text-center font-black text-[9px] text-slate-400 py-2"><span className="hidden sm:inline">{d}</span><span className="sm:hidden">{d[0]}</span></div>)}
                                             {days.map((day, idx) => {
                                                 const isToday = day && new Date().getDate() === day && new Date().getMonth() === currentMonthDate.getMonth() && new Date().getFullYear() === currentMonthDate.getFullYear();
                                                 const dayVisits = getVisitsForDay(day);
                                                 return (
-                                                    <div key={idx} onClick={() => handleDayClick(day)} className={`min-h-[90px] border rounded-2xl p-2 flex flex-col transition-all group relative ${day ? (isToday ? 'border-blue-400 bg-blue-50/20' : 'border-slate-100 bg-white hover:border-blue-300 hover:shadow-md cursor-pointer') : 'border-transparent bg-slate-50/20 opacity-30'}`}>
+                                                    <div key={idx} onClick={() => handleDayClick(day)} className={`min-h-[60px] sm:min-h-[90px] border rounded-xl sm:rounded-2xl p-1 sm:p-2 flex flex-col transition-all group relative ${day ? (isToday ? 'border-blue-400 bg-blue-50/20' : 'border-slate-100 bg-white hover:border-blue-300 hover:shadow-md cursor-pointer') : 'border-transparent bg-slate-50/20 opacity-30'}`}>
                                                         {day && (
                                                             <>
                                                                 <div className="flex justify-between items-center">
