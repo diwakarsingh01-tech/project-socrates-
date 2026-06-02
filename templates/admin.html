@@ -1043,6 +1043,7 @@
             const [errorMsg, setErrorMsg] = useState('');
             const [errorDetails, setErrorDetails] = useState([]);
             const [successMsg, setSuccessMsg] = useState('');
+            const [isUploading, setIsUploading] = useState(false);
             const [showManualModal, setShowManualModal] = useState(false);
             
             // Manual form fields
@@ -1185,6 +1186,7 @@
                 setErrorMsg('');
                 setErrorDetails([]);
                 setSuccessMsg('');
+                setIsUploading(true);
 
                 const formData = new FormData();
                 formData.append('file', file);
@@ -1195,6 +1197,7 @@
                 })
                 .then(res => res.json())
                 .then(data => {
+                    setIsUploading(false);
                     if (data.status === 'success') {
                         setSuccessMsg(data.message);
                         loadEmps();
@@ -1205,6 +1208,7 @@
                     }
                 })
                 .catch(err => {
+                    setIsUploading(false);
                     setErrorMsg("Server error uploading file. Duplicacy or network check failed.");
                 });
             };
@@ -1226,6 +1230,7 @@
                 setErrorMsg('');
                 setErrorDetails([]);
                 setSuccessMsg('');
+                setIsUploading(true);
 
                 const formData = new FormData();
                 formData.append('file', file);
@@ -1236,6 +1241,7 @@
                 })
                 .then(res => res.json())
                 .then(data => {
+                    setIsUploading(false);
                     if (data.status === 'success') {
                         setSuccessMsg(data.message);
                         loadEmps();
@@ -1245,6 +1251,7 @@
                     }
                 })
                 .catch(err => {
+                    setIsUploading(false);
                     setErrorMsg("Server error importing historical dataset. Ensure CSV formatting is valid.");
                 });
             };
@@ -1552,6 +1559,24 @@
                     )}
 
                     {/* Alert Notifications */}
+                    {isUploading && (
+                        <div className="p-6 bg-blue-50 border-l-4 border-blue-500 rounded-xl shadow-md text-blue-900 animate-pulse flex flex-col md:flex-row items-center gap-5 justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className="relative flex items-center justify-center">
+                                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent shadow-lg shadow-blue-500/20"></div>
+                                    <i className="fas fa-cloud-upload-alt text-blue-500 text-xs absolute"></i>
+                                </div>
+                                <div>
+                                    <h4 className="font-extrabold text-blue-800 text-sm">Processing & Syncing Roster...</h4>
+                                    <p className="text-xs text-blue-600 mt-1">Unified database tables are being updated. Running secure PostgreSQL schema checks and Google Drive cloud synchronizations. Please keep this tab open.</p>
+                                </div>
+                            </div>
+                            <div className="text-[10px] font-black bg-blue-100 border border-blue-200 rounded-full px-4 py-1.5 uppercase tracking-widest text-blue-700 animate-pulse">
+                                Live Sync Active
+                            </div>
+                        </div>
+                    )}
+
                     {successMsg && (
                         <div className="p-4 bg-emerald-50 border-l-4 border-emerald-500 rounded-lg text-emerald-800 text-sm font-medium flex items-center gap-3 shadow-sm animate-fade-in">
                             <i className="fas fa-check-circle text-lg text-emerald-500"></i>
@@ -1595,8 +1620,20 @@
                                         <i className="fas fa-user-plus mr-2 text-socrates-primary"></i> Add Manually
                                     </button>
                                     <div className="relative overflow-hidden inline-block">
-                                        <button className="btn-primary text-sm flex items-center shadow-sm"><i className="fas fa-cloud-upload-alt mr-2"></i> Upload CSV</button>
-                                        <input type="file" accept=".csv" onChange={handleUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                        <button className={`btn-primary text-sm flex items-center shadow-sm ${isUploading ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`} disabled={isUploading}>
+                                            {isUploading ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                                                    <span>Syncing...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <i className="fas fa-cloud-upload-alt mr-2"></i>
+                                                    <span>Upload CSV</span>
+                                                </>
+                                            )}
+                                        </button>
+                                        {!isUploading && <input type="file" accept=".csv" onChange={handleUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />}
                                     </div>
                                 </div>
                             </div>
