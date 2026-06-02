@@ -1299,33 +1299,6 @@ def normalize_employee_data(branch_name, business_unit, product_name, division=N
         if best_bu_ratio >= 0.8:
             bu_name = best_bu
             
-    # Check if business_unit contains 'RF' or matches refresher centers (e.g. 'AHMEDABAD RF')
-    if any(rf in bu_name.upper() for rf in ['RF', 'AHMEDABAD', 'DELHI', 'CHANDIGARH', 'KOLKATA', 'MUMBAI']):
-        refresher_center = bu_name.upper().strip()
-        local_branch = b_name
-        
-        b_name = refresher_center
-        bu_name = "TWO-WHEELER"
-        p_name = local_branch
-        
-    # If branch_name is a Business Unit or similar, swap it correctly
-    if b_name in ["TWO-WHEELER", "PERSONAL LOAN", "GOLD LOAN", "COMMERCIAL VEHICLE", "RETAIL"]:
-        bu_name = branch_name.upper().strip()
-        # Guess branch from division or default
-        div_upper = (division or "").strip().upper()
-        if "GUJARAT" in div_upper or "AHMEDABAD" in div_upper:
-            b_name = "AHMEDABAD RF"
-        elif "DELHI" in div_upper or "NORTH" in div_upper:
-            b_name = "DELHI RF"
-        elif "PUNJAB" in div_upper or "CHANDIGARH" in div_upper:
-            b_name = "CHANDIGARH RF"
-        elif "BENGAL" in div_upper or "KOLKATA" in div_upper or "EAST" in div_upper:
-            b_name = "KOLKATA RF"
-        elif "MUMBAI" in div_upper or "WEST" in div_upper:
-            b_name = "MUMBAI RF"
-        else:
-            b_name = "AHMEDABAD RF" # Default fallback
-            
     if not bu_name:
         bu_name = "TWO-WHEELER"
         
@@ -1371,23 +1344,35 @@ def upload_roster():
                             continue
                         rows.append((row_idx, r))
             
-            # Check for critical header: Employee Code
-            if 'Employee Code' not in headers:
-                found_emp_code_hdr = None
-                for h in headers:
-                    if h.lower().strip().replace('_', ' ').replace('-', ' ') == 'employee code':
-                        found_emp_code_hdr = h
+            # Fuzzy mapping dictionary to resolve typos (e.g. "Divison"), case differences, spaces, underscores, etc.
+            FUZZY_MAPPING = {
+                'Employee Code': ['employee code', 'emp code', 'code', 'employee_code', 'emp_code'],
+                'Employee Name': ['employee name', 'emp name', 'name', 'employee_name', 'emp_name'],
+                'Business Unit': ['business unit', 'businessunit', 'bu', 'business_unit'],
+                'Zone': ['zone'],
+                'Division': ['division', 'divison', 'divisionname', 'division_name'],
+                'Branch Name': ['branch name', 'branchname', 'branch', 'branch code', 'branch_name', 'branchcode'],
+                'Role': ['role', 'designation'],
+                'Product Name': ['product name', 'productname', 'product', 'product_name']
+            }
+            
+            hdr_indices = {}
+            for canonical, variants in FUZZY_MAPPING.items():
+                found_idx = None
+                for idx, h in enumerate(headers):
+                    norm_h = h.lower().strip().replace('_', ' ').replace('-', ' ')
+                    norm_h_clean = " ".join(norm_h.split())
+                    if norm_h_clean in variants or norm_h_clean.replace(' ', '') in [v.replace(' ', '') for v in variants]:
+                        found_idx = idx
                         break
-                if found_emp_code_hdr:
-                    headers[headers.index(found_emp_code_hdr)] = 'Employee Code'
-                else:
-                    return jsonify({
-                        "status": "error", 
-                        "message": "Invalid CSV format. Missing critical column header: 'Employee Code'"
-                    }), 400
+                hdr_indices[canonical] = found_idx
                 
-            # Map columns by index, supporting missing columns gracefully
-            hdr_indices = {h: headers.index(h) if h in headers else None for h in REQUIRED_HEADERS}
+            # Check for critical header: Employee Code
+            if hdr_indices.get('Employee Code') is None:
+                return jsonify({
+                    "status": "error", 
+                    "message": "Invalid CSV format. Missing critical column header: 'Employee Code'"
+                }), 400
             
             final_rows = []
             
