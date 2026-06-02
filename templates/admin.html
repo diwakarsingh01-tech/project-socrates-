@@ -205,7 +205,7 @@
             };
 
             const downloadTemplate = () => {
-                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name\nSF-1001,RAHUL SINGH,DELHI RF,NORTH ZONE,DELHI DIVISION,TWO-WHEELER,PL EXE,SPLENDOR V2\nSF-1002,NEHA SHARMA,AHMEDABAD RF,WEST ZONE,GUJARAT DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G\nSF-1003,AMIT PATEL,CHANDIGARH RF,NORTH ZONE,PUNJAB DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G\nSF-1004,PRIYA DAS,KOLKATA RF,EAST ZONE,BENGAL DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G";
+                const csvData = "Employee Code,Employee Name,Business Unit,Zone,Division,Branch Name,Role,Product Name\nSF-1001,RAHUL SINGH,TWO-WHEELER,NORTH ZONE,DELHI DIVISION,DELHI RF,PL EXE,SPLENDOR V2\nSF-1002,NEHA SHARMA,TWO-WHEELER,WEST ZONE,GUJARAT DIVISION,AHMEDABAD RF,PL EXE,ACTIVA 6G\nSF-1003,AMIT PATEL,TWO-WHEELER,NORTH ZONE,PUNJAB DIVISION,CHANDIGARH RF,PL EXE,ACTIVA 6G\nSF-1004,PRIYA DAS,TWO-WHEELER,EAST ZONE,BENGAL DIVISION,KOLKATA RF,PL EXE,ACTIVA 6G";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -1265,7 +1265,7 @@
             };
 
             const downloadAssessmentTemplate = () => {
-                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name,Trainer ID,Trainer Name,Date of Visit,Module ID,Zero Day Pre-Test,Zero Day Post-Test,Six Days Pre-Test,Six Days Post-Test,Twenty Days Pre-Test,Twenty Days Post-Test\nSF-1001,Rahul Singh,DELHI RF,NORTH ZONE,DELHI DIVISION,TWO-WHEELER,PL Exe,SPLENDOR V2,TR-1001,AMIT SHARMA,2026-03-15,1,45.0,85.0,55.0,90.0,60.0,95.0\nSF-1002,Neha Sharma,AHMEDABAD RF,WEST ZONE,GUJARAT DIVISION,TWO-WHEELER,PL Exe,ACTIVA 6G,TR-1002,PRIYA GUPTA,2026-03-16,1,50.0,90.0,N/A,N/A,N/A,N/A";
+                const csvData = "Employee Code,Employee Name,Business Unit,Zone,Division,Branch Name,Role,Product Name,Trainer ID,Trainer Name,Date of Visit,Module ID,Zero Day Pre-Test,Zero Day Post-Test,Six Days Pre-Test,Six Days Post-Test,Twenty Days Pre-Test,Twenty Days Post-Test\nSF-1001,Rahul Singh,TWO-WHEELER,NORTH ZONE,DELHI DIVISION,DELHI RF,PL Exe,SPLENDOR V2,TR-1001,AMIT SHARMA,2026-03-15,1,45.0,85.0,55.0,90.0,60.0,95.0\nSF-1002,Neha Sharma,TWO-WHEELER,WEST ZONE,GUJARAT DIVISION,AHMEDABAD RF,PL Exe,ACTIVA 6G,TR-1002,PRIYA GUPTA,2026-03-16,1,50.0,90.0,N/A,N/A,N/A,N/A";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
