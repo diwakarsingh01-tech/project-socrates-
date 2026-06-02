@@ -521,14 +521,14 @@
                                     <h3 className="text-xl md:text-2xl font-outfit font-black text-white leading-tight text-center md:text-left">{qText}</h3>
                                     <div className="grid grid-cols-1 gap-4">
                                         {qOpts.map((opt, i) => (
-                                            <button key={i} onClick={() => setSelected(i)} className={`w-full text-left p-6 rounded-[24px] border-2 transition-all active:scale-[0.98] flex items-center gap-5 ${selected === i ? 'border-amber-500 bg-amber-500/10 shadow-2xl shadow-amber-500/5' : 'border-white/5 bg-white/5 hover:border-white/10 hover:bg-white/10'}`}>
-                                                <div className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center text-sm font-black transition-all shrink-0 ${selected === i ? 'border-amber-500 bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/35' : 'border-white/10 text-slate-400 bg-white/5'}`}>{String.fromCharCode(65 + i)}</div>
-                                                <span className={`text-[13px] leading-snug font-bold ${selected === i ? 'text-amber-400 font-extrabold' : 'text-slate-300'}`}>{opt}</span>
+                                            <button key={i} onClick={() => setSelected(i)} className={`w-full text-left p-4 sm:p-5 md:p-6 rounded-2xl sm:rounded-[24px] border-2 transition-all active:scale-[0.98] flex items-center gap-4 sm:gap-5 ${selected === i ? 'border-amber-500 bg-amber-500/10 shadow-2xl shadow-amber-500/5' : 'border-white/5 bg-white/5 hover:border-white/10 hover:bg-white/10'}`}>
+                                                <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl border-2 flex items-center justify-center text-xs sm:text-sm font-black transition-all shrink-0 ${selected === i ? 'border-amber-500 bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/35' : 'border-white/10 text-slate-400 bg-white/5'}`}>{String.fromCharCode(65 + i)}</div>
+                                                <span className={`text-[12px] sm:text-[13px] leading-snug font-bold ${selected === i ? 'text-amber-400 font-extrabold' : 'text-slate-300'}`}>{opt}</span>
                                             </button>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="sticky bottom-0 bg-transparent pt-4 pb-2"><button onClick={submitAnswer} disabled={selected === null} className={`w-full h-16 rounded-[24px] font-black text-base tracking-widest transition-all ${selected !== null ? 'btn-primary shadow-xl shadow-amber-500/25' : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed uppercase'}`}>CONFIRM SELECTION <i className="fas fa-bolt ml-2"></i></button></div>
+                                <div className="sticky bottom-0 bg-transparent pt-4 pb-[calc(8px+env(safe-area-inset-bottom))]"><button onClick={submitAnswer} disabled={selected === null} className={`w-full h-14 sm:h-16 rounded-2xl sm:rounded-[24px] font-black text-sm sm:text-base tracking-widest transition-all ${selected !== null ? 'btn-primary shadow-xl shadow-amber-500/25' : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed uppercase'}`}>CONFIRM SELECTION <i className="fas fa-bolt ml-2"></i></button></div>
                             </div>
                         )}
                     </div>

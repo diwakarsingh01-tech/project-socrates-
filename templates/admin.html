@@ -408,7 +408,7 @@
                                 {isSuperAdmin && (
                                     <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-1.5 shrink-0 ml-2 hidden sm:flex">
                                         <i className="fas fa-user-shield text-amber-600 text-[10px]"></i>
-                                        <span className="font-black text-purple-800 text-[9px] uppercase tracking-widest">View As:</span>
+                                        <span className="font-black text-amber-800 text-[9px] uppercase tracking-widest">View As:</span>
                                         <select 
                                             value={impersonatedTrainer ? impersonatedTrainer.id : ''}
                                             onChange={(e) => {
@@ -419,7 +419,7 @@
                                                     setImpersonatedTrainer(matched || null);
                                                 }
                                             }}
-                                            className="bg-transparent text-purple-900 font-black outline-none cursor-pointer text-[10px] max-w-[120px] truncate"
+                                            className="bg-transparent text-amber-950 font-black outline-none cursor-pointer text-[10px] max-w-[120px] truncate"
                                         >
                                             <option value="">Full Admin</option>
                                             {trainersList.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -450,7 +450,7 @@
                     </div>
 
                     {/* Bottom Mobile Navigation Bar (Visible only on mobile screen widths) */}
-                    <div className="md:hidden bg-white/95 backdrop-blur-md border-t border-slate-200/80 fixed bottom-0 left-0 right-0 z-40 flex justify-around py-3 shadow-[0_-8px_20px_rgba(0,0,0,0.05)] px-2">
+                    <div className="md:hidden bg-white/95 backdrop-blur-md border-t border-slate-200/80 fixed bottom-0 left-0 right-0 z-40 flex justify-around pt-3 pb-[calc(10px+env(safe-area-inset-bottom))] shadow-[0_-8px_20px_rgba(0,0,0,0.05)] px-2">
                         {[
                             { id: 'dashboard', icon: 'layer-group', label: 'Home' },
                             { id: 'live_session', icon: 'satellite-dish', label: 'Live' },
