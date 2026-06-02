@@ -1506,7 +1506,8 @@ def upload_roster():
                 if ratio >= 0.8:
                     row['Employee Name'] = db_name
             
-        # Insert or replace records database-agnostically
+        # Prepare list of records to insert/update
+        to_write = []
         now_str = datetime.datetime.now().strftime("%Y-%m-%d")
         for _, row in rows:
             try:
@@ -1537,24 +1538,61 @@ def upload_roster():
                     ):
                         continue
                 
-                exists = emp_code_upper in existing_emp_data
-                
-                if exists:
-                    conn.execute(
-                        "UPDATE employees SET emp_name = ?, branch_name = ?, zone = ?, division = ?, business_unit = ?, role = ?, product_name = ?, status = 'ACTIVE', change_detail = ? WHERE emp_code = ?",
-                        (emp_name_upper, b_name, zone_upper, division_upper, bu_name, role_upper, p_name, f"UPLOADED VIA CSV ON {now_str}", emp_code_upper)
-                    )
-                else:
-                    conn.execute(
-                        "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
-                        (emp_code_upper, emp_name_upper, b_name, zone_upper, division_upper, bu_name, role_upper, p_name, f"UPLOADED VIA CSV ON {now_str}")
-                    )
+                to_write.append((
+                    emp_code_upper,
+                    emp_name_upper,
+                    b_name,
+                    zone_upper,
+                    division_upper,
+                    bu_name,
+                    role_upper,
+                    p_name,
+                    'ACTIVE',
+                    f"UPLOADED VIA CSV ON {now_str}"
+                ))
             except Exception as e:
                 conn.rollback()
                 conn.close()
-                return jsonify({"status": "error", "message": f"Database insertion failed: {str(e)}"}), 500
+                return jsonify({"status": "error", "message": f"Data normalization failed: {str(e)}"}), 400
+
+        # Write to database in batches of 200 rows using high-performance multi-row upserts
+        BATCH_SIZE = 200
+        try:
+            for idx in range(0, len(to_write), BATCH_SIZE):
+                chunk = to_write[idx : idx + BATCH_SIZE]
+                if not chunk:
+                    continue
+                    
+                placeholders = []
+                params = []
+                for item in chunk:
+                    placeholders.append("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                    params.extend(item)
+                    
+                query = """
+                    INSERT INTO employees 
+                    (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail)
+                    VALUES {}
+                    ON CONFLICT (emp_code) DO UPDATE SET
+                        emp_name = EXCLUDED.emp_name,
+                        branch_name = EXCLUDED.branch_name,
+                        zone = EXCLUDED.zone,
+                        division = EXCLUDED.division,
+                        business_unit = EXCLUDED.business_unit,
+                        role = EXCLUDED.role,
+                        product_name = EXCLUDED.product_name,
+                        status = EXCLUDED.status,
+                        change_detail = EXCLUDED.change_detail
+                """.format(", ".join(placeholders))
                 
-        conn.commit()
+                conn.execute(query, params)
+                
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            conn.close()
+            return jsonify({"status": "error", "message": f"Database insertion failed: {str(e)}"}), 500
+            
         conn.close()
 
         # Trigger real-time roster synchronization to Google Drive in background thread
