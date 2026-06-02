@@ -1191,50 +1191,11 @@ def get_roster_filters():
     conn.close()
     
     zones_list = [r[0] for r in zones]
-    if not zones_list:
-        zones_list = ["NORTH ZONE", "WEST ZONE", "EAST ZONE"]
-        
     divisions_list = [r[0] for r in divisions]
-    # Always ensure default divisions are present
-    default_divs = ["GUJARAT DIVISION", "DELHI DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION", "MAHARASHTRA DIVISION", "MUMBAI DIVISION"]
-    for div in default_divs:
-        if div not in divisions_list:
-            divisions_list.append(div)
-        
     branches_list = [r[0] for r in branches]
-    # Always ensure the main RF centers are included in the branches list
-    default_rfs = ["AHMEDABAD RF", "DELHI RF", "CHANDIGARH RF", "KOLKATA RF", "MUMBAI RF"]
-    for rf in default_rfs:
-        if rf not in branches_list:
-            branches_list.append(rf)
-            
-    # Always ensure default branches meta is populated
+    
     branches_meta = [{"name": r[0], "division": r[1]} for r in branches]
-    existing_meta_names = {m["name"] for m in branches_meta}
-    rf_division_mapping = {
-        "AHMEDABAD RF": "GUJARAT DIVISION",
-        "DELHI RF": "DELHI DIVISION",
-        "CHANDIGARH RF": "PUNJAB DIVISION",
-        "KOLKATA RF": "BENGAL DIVISION",
-        "MUMBAI RF": "MUMBAI DIVISION"
-    }
-    for rf in default_rfs:
-        if rf not in existing_meta_names:
-            branches_meta.append({"name": rf, "division": rf_division_mapping.get(rf, "GUJARAT DIVISION")})
-            
     divisions_meta = [{"name": r[0], "zone": r[1]} for r in divisions]
-    existing_div_names = {d["name"] for d in divisions_meta}
-    div_zone_mapping = {
-        "GUJARAT DIVISION": "WEST ZONE",
-        "DELHI DIVISION": "NORTH ZONE",
-        "PUNJAB DIVISION": "NORTH ZONE",
-        "BENGAL DIVISION": "EAST ZONE",
-        "MAHARASHTRA DIVISION": "WEST ZONE",
-        "MUMBAI DIVISION": "WEST ZONE"
-    }
-    for div in divisions_list:
-        if div not in existing_div_names and div in div_zone_mapping:
-            divisions_meta.append({"name": div, "zone": div_zone_mapping[div]})
             
     return jsonify({
         "zones": zones_list,
