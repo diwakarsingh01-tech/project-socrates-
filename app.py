@@ -1473,13 +1473,32 @@ def upload_roster():
             
         # Check for name similarity to auto-correct variations, but do not block duplicates
         conn = get_db_connection()
+        existing_emp_data = {}
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail FROM employees")
+            for r in cursor.fetchall():
+                existing_emp_data[r['emp_code'].upper().strip()] = {
+                    'emp_name': r['emp_name'],
+                    'branch_name': r['branch_name'],
+                    'zone': r['zone'],
+                    'division': r['division'],
+                    'business_unit': r['business_unit'],
+                    'role': r['role'],
+                    'product_name': r['product_name'],
+                    'status': r['status'],
+                    'change_detail': r['change_detail']
+                }
+        except Exception as e:
+            print(f"[OPTIMIZER] Error pre-fetching employees map: {str(e)}")
+            
         for idx, row in rows:
             code = row['Employee Code'].upper().strip()
             if not code:
                 continue
                 
-            db_match = conn.execute("SELECT emp_name FROM employees WHERE emp_code=?", (code,)).fetchone()
-            if db_match:
+            db_match = existing_emp_data.get(code)
+            if db_match and db_match.get('emp_name'):
                 import difflib
                 db_name = db_match['emp_name'].strip().upper()
                 input_name = row['Employee Name'].strip().upper()
@@ -1498,20 +1517,37 @@ def upload_roster():
                     row.get('Division', '')
                 )
                 emp_code_upper = row['Employee Code'].upper().strip()
+                emp_name_upper = row['Employee Name'].upper().strip()
+                role_upper = row.get('Role', '').upper().strip()
+                zone_upper = row.get('Zone', '').upper().strip()
+                division_upper = row.get('Division', '').upper().strip()
                 
-                cursor = conn.cursor()
-                cursor.execute("SELECT emp_code FROM employees WHERE emp_code = ?", (emp_code_upper,))
-                exists = cursor.fetchone()
+                # Performance Optimization: Skip identical records to prevent thousands of remote query writes
+                if emp_code_upper in existing_emp_data:
+                    existing = existing_emp_data[emp_code_upper]
+                    if (
+                        (existing.get('emp_name') or '').upper().strip() == emp_name_upper and
+                        (existing.get('branch_name') or '').upper().strip() == b_name.upper().strip() and
+                        (existing.get('zone') or '').upper().strip() == zone_upper and
+                        (existing.get('division') or '').upper().strip() == division_upper and
+                        (existing.get('business_unit') or '').upper().strip() == bu_name.upper().strip() and
+                        (existing.get('role') or '').upper().strip() == role_upper and
+                        (existing.get('product_name') or '').upper().strip() == p_name.upper().strip() and
+                        (existing.get('status') or '').upper().strip() == 'ACTIVE'
+                    ):
+                        continue
+                
+                exists = emp_code_upper in existing_emp_data
                 
                 if exists:
                     conn.execute(
                         "UPDATE employees SET emp_name = ?, branch_name = ?, zone = ?, division = ?, business_unit = ?, role = ?, product_name = ?, status = 'ACTIVE', change_detail = ? WHERE emp_code = ?",
-                        (row['Employee Name'].upper(), b_name, row['Zone'], row['Division'], bu_name, row['Role'].upper(), p_name, f"UPLOADED VIA CSV ON {now_str}", emp_code_upper)
+                        (emp_name_upper, b_name, zone_upper, division_upper, bu_name, role_upper, p_name, f"UPLOADED VIA CSV ON {now_str}", emp_code_upper)
                     )
                 else:
                     conn.execute(
                         "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
-                        (emp_code_upper, row['Employee Name'].upper(), b_name, row['Zone'], row['Division'], bu_name, row['Role'].upper(), p_name, f"UPLOADED VIA CSV ON {now_str}")
+                        (emp_code_upper, emp_name_upper, b_name, zone_upper, division_upper, bu_name, role_upper, p_name, f"UPLOADED VIA CSV ON {now_str}")
                     )
             except Exception as e:
                 conn.rollback()
@@ -1859,6 +1895,109 @@ def add_roster_manual():
         print(f"[GDRIVE] Error spawning roster upload thread: {str(e)}")
 
     return jsonify({"status": "success", "message": f"Employee '{emp_name}' added manually successfully!"})
+
+@app.route('/api/roster/bulk-action', methods=['POST'])
+def bulk_action_roster():
+    data = request.json or {}
+    emp_codes = data.get('emp_codes', [])
+    action = data.get('action', '')
+    
+    if not emp_codes:
+        return jsonify({"status": "error", "message": "No employees selected for bulk action."}), 400
+        
+    conn = get_db_connection()
+    try:
+        if action == 'delete':
+            reason = data.get('reason', 'BULK DELETION').strip().upper()
+            hard = data.get('hard', False) or data.get('hard', 'false') == 'true'
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            
+            if hard:
+                conn.execute(
+                    "DELETE FROM employees WHERE emp_code IN ({})".format(','.join('?' for _ in emp_codes)),
+                    tuple(code.upper().strip() for code in emp_codes)
+                )
+            else:
+                conn.execute(
+                    "UPDATE employees SET status='DELETED', change_detail=? WHERE emp_code IN ({})".format(','.join('?' for _ in emp_codes)),
+                    (f"BULK DELETED ON {now_str}: {reason}", *[code.upper().strip() for code in emp_codes])
+                )
+            conn.commit()
+            conn.close()
+            
+            try:
+                from gdrive_sync import sync_roster_to_gdrive
+                threading.Thread(target=sync_roster_to_gdrive, daemon=True).start()
+            except Exception:
+                pass
+                
+            return jsonify({"status": "success", "message": f"Successfully deleted {len(emp_codes)} employees."})
+            
+        elif action == 'edit':
+            fields = {}
+            for field in ['zone', 'division', 'branch_name', 'business_unit', 'role', 'product_name', 'status', 'change_detail']:
+                if field in data and data[field] is not None:
+                    val = data[field].strip()
+                    if field in ['zone', 'division', 'branch_name', 'business_unit', 'role', 'status']:
+                        val = val.upper()
+                    if val != '':
+                        fields[field] = val
+                    
+            if not fields:
+                conn.close()
+                return jsonify({"status": "error", "message": "No fields provided for bulk edit."}), 400
+                
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d")
+            if 'change_detail' not in fields:
+                fields['change_detail'] = f"BULK EDITED ON {now_str}"
+                
+            for emp_code in emp_codes:
+                emp_code = emp_code.upper().strip()
+                existing = conn.execute("SELECT * FROM employees WHERE emp_code = ?", (emp_code,)).fetchone()
+                if not existing:
+                    continue
+                    
+                merged_zone = fields.get('zone', existing['zone'])
+                merged_div = fields.get('division', existing['division'])
+                merged_br = fields.get('branch_name', existing['branch_name'])
+                merged_bu = fields.get('business_unit', existing['business_unit'])
+                merged_role = fields.get('role', existing['role'])
+                merged_pn = fields.get('product_name', existing['product_name'])
+                merged_status = fields.get('status', existing['status'])
+                merged_cd = fields.get('change_detail', existing['change_detail'])
+                
+                norm_zone, norm_div, norm_br = normalize_enums(merged_zone, merged_div, merged_br)
+                norm_br, norm_bu, norm_pn = normalize_employee_data(
+                    norm_br if norm_br else merged_br,
+                    merged_bu,
+                    merged_pn,
+                    norm_div if norm_div else merged_div
+                )
+                
+                conn.execute(
+                    "UPDATE employees SET zone=?, division=?, branch_name=?, business_unit=?, role=?, product_name=?, status=?, change_detail=? WHERE emp_code=?",
+                    (norm_zone if norm_zone else merged_zone, norm_div if norm_div else merged_div, norm_br, norm_bu, merged_role, norm_pn, merged_status, merged_cd, emp_code)
+                )
+                
+            conn.commit()
+            conn.close()
+            
+            try:
+                from gdrive_sync import sync_roster_to_gdrive
+                threading.Thread(target=sync_roster_to_gdrive, daemon=True).start()
+            except Exception:
+                pass
+                
+            return jsonify({"status": "success", "message": f"Successfully updated {len(emp_codes)} employees."})
+            
+        else:
+            conn.close()
+            return jsonify({"status": "error", "message": f"Invalid action: {action}"}), 400
+            
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"status": "error", "message": f"Bulk action failed: {str(e)}"}), 500
 
 @app.route('/api/roster/<emp_code>', methods=['PUT', 'DELETE'])
 def handle_single_roster_item(emp_code):

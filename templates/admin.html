@@ -1050,6 +1050,18 @@
             const [isLoadingEmps, setIsLoadingEmps] = useState(false);
             const [showManualModal, setShowManualModal] = useState(false);
             
+            // Bulk action states
+            const [selectedEmpCodes, setSelectedEmpCodes] = useState([]);
+            const [showBulkEditModal, setShowBulkEditModal] = useState(false);
+            const [bulkZone, setBulkZone] = useState('');
+            const [bulkDivision, setBulkDivision] = useState('');
+            const [bulkBranchName, setBulkBranchName] = useState('');
+            const [bulkBu, setBulkBu] = useState('');
+            const [bulkRole, setBulkRole] = useState('');
+            const [bulkProductName, setBulkProductName] = useState('');
+            const [bulkStatus, setBulkStatus] = useState('');
+            const [bulkChangeDetail, setBulkChangeDetail] = useState('');
+            
             // Manual form fields
             const [empCode, setEmpCode] = useState('');
             const [empName, setEmpName] = useState('');
@@ -1457,6 +1469,116 @@
                 });
             };
 
+            const handleSelectEmp = (code) => {
+                setSelectedEmpCodes(prev => {
+                    if (prev.includes(code)) {
+                        return prev.filter(c => c !== code);
+                    } else {
+                        return [...prev, code];
+                    }
+                });
+            };
+
+            const handleSelectAll = () => {
+                const visibleCodes = emps.map(e => e.emp_code);
+                const allSelected = visibleCodes.length > 0 && visibleCodes.every(code => selectedEmpCodes.includes(code));
+                if (allSelected) {
+                    setSelectedEmpCodes(prev => prev.filter(code => !visibleCodes.includes(code)));
+                } else {
+                    setSelectedEmpCodes(prev => {
+                        const newSelection = [...prev];
+                        visibleCodes.forEach(code => {
+                            if (!newSelection.includes(code)) {
+                                newSelection.push(code);
+                            }
+                        });
+                        return newSelection;
+                    });
+                }
+            };
+
+            const handleBulkDelete = () => {
+                const reason = prompt(`Are you sure you want to delete the ${selectedEmpCodes.length} selected employees?\nPlease enter a deletion reason / remarks:`);
+                if (reason === null) return;
+                
+                setErrorMsg('');
+                setSuccessMsg('');
+                
+                fetch('/api/roster/bulk-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        emp_codes: selectedEmpCodes,
+                        action: 'delete',
+                        reason: reason.strip || reason.trim() || 'BULK DELETION'
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setSuccessMsg(data.message);
+                        setSelectedEmpCodes([]);
+                        loadEmps();
+                        loadFilterOptions();
+                    } else {
+                        setErrorMsg(data.message);
+                    }
+                })
+                .catch(err => {
+                    setErrorMsg("Server error executing bulk deletion.");
+                });
+            };
+
+            const handleBulkEditSubmit = (e) => {
+                e.preventDefault();
+                setErrorMsg('');
+                setSuccessMsg('');
+                
+                const payload = {
+                    emp_codes: selectedEmpCodes,
+                    action: 'edit'
+                };
+                
+                if (bulkZone) payload.zone = bulkZone;
+                if (bulkDivision) payload.division = bulkDivision;
+                if (bulkBranchName) payload.branch_name = bulkBranchName;
+                if (bulkBu) payload.business_unit = bulkBu;
+                if (bulkRole) payload.role = bulkRole;
+                if (bulkProductName) payload.product_name = bulkProductName;
+                if (bulkStatus) payload.status = bulkStatus;
+                if (bulkChangeDetail) payload.change_detail = bulkChangeDetail;
+                
+                fetch('/api/roster/bulk-action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        setSuccessMsg(data.message);
+                        setSelectedEmpCodes([]);
+                        setShowBulkEditModal(false);
+                        loadEmps();
+                        loadFilterOptions();
+                        
+                        setBulkZone('');
+                        setBulkDivision('');
+                        setBulkBranchName('');
+                        setBulkBu('');
+                        setBulkRole('');
+                        setBulkProductName('');
+                        setBulkStatus('');
+                        setBulkChangeDetail('');
+                    } else {
+                        setErrorMsg(data.message);
+                    }
+                })
+                .catch(err => {
+                    setErrorMsg("Server error executing bulk edits.");
+                });
+            };
+
             return (
                 <div className="space-y-6">
                     {/* Manual Entry Modal */}
@@ -1626,6 +1748,93 @@
                                     <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
                                         <button type="button" onClick={() => setShowEditModal(false)} className="btn-outline">Cancel</button>
                                         <button type="submit" className="btn-primary shadow-md">Save Changes</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Bulk Edit Modal */}
+                    {showBulkEditModal && (
+                        <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all">
+                                <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-socrates-dark">Bulk Edit {selectedEmpCodes.length} Executives</h3>
+                                        <p className="text-xs text-slate-500 mt-0.5">Fields left blank/empty will remain unchanged.</p>
+                                    </div>
+                                    <button onClick={() => setShowBulkEditModal(false)} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
+                                </div>
+                                <form onSubmit={handleBulkEditSubmit}>
+                                    <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Role / Designation</label>
+                                            <select value={bulkRole} onChange={e => setBulkRole(e.target.value)} className="input-field bg-white">
+                                                <option value="">-- No Change --</option>
+                                                <option value="PL Exe">PL Exe</option>
+                                                <option value="SPH / SBH">SPH / SBH</option>
+                                                <option value="CSE">CSE</option>
+                                                <option value="BTL">BTL</option>
+                                                <option value="DBH / DPH">DBH / DPH</option>
+                                                <option value="BH / BPH">BH / BPH</option>
+                                                <option value="CPU Team">CPU Team</option>
+                                                <option value="DTL">DTL</option>
+                                            </select>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
+                                                <input type="text" value={bulkBranchName} onChange={e => setBulkBranchName(e.target.value.toUpperCase())} placeholder="e.g. AHMEDABAD RF" className="input-field uppercase" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
+                                                <input type="text" value={bulkDivision} onChange={e => setBulkDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
+                                                <select value={bulkZone} onChange={e => setBulkZone(e.target.value)} className="input-field bg-white">
+                                                    <option value="">-- No Change --</option>
+                                                    <option value="NORTH ZONE">NORTH ZONE</option>
+                                                    <option value="WEST ZONE">WEST ZONE</option>
+                                                    <option value="EAST ZONE">EAST ZONE</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
+                                                <select value={bulkBu} onChange={e => setBulkBu(e.target.value)} className="input-field bg-white">
+                                                    <option value="">-- No Change --</option>
+                                                    <option value="TWO-WHEELER">TWO-WHEELER</option>
+                                                    <option value="PERSONAL LOAN">PERSONAL LOAN</option>
+                                                    <option value="GOLD LOAN">GOLD LOAN</option>
+                                                    <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
+                                                    <option value="RETAIL">RETAIL</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Product / Local Detail</label>
+                                                <input type="text" value={bulkProductName} onChange={e => setBulkProductName(e.target.value.toUpperCase())} placeholder="e.g. ACTIVA 6G" className="input-field uppercase" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Status</label>
+                                                <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} className="input-field bg-white font-bold text-slate-800">
+                                                    <option value="">-- No Change --</option>
+                                                    <option value="ACTIVE">ACTIVE</option>
+                                                    <option value="DELETED">DELETED</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Change Details / Deletion Reason</label>
+                                            <input type="text" value={bulkChangeDetail} onChange={e => setBulkChangeDetail(e.target.value.toUpperCase())} placeholder="e.g. Regional realignment" className="input-field uppercase" />
+                                        </div>
+                                    </div>
+                                    <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+                                        <button type="button" onClick={() => setShowBulkEditModal(false)} className="btn-outline">Cancel</button>
+                                        <button type="submit" className="btn-primary shadow-md">Apply Bulk Changes</button>
                                     </div>
                                 </form>
                             </div>
@@ -1950,6 +2159,14 @@
                                 <table className="w-full text-left text-sm border-collapse">
                                     <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                                         <tr>
+                                            <th className="px-6 py-4 w-12 text-center">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={emps.length > 0 && emps.every(e => selectedEmpCodes.includes(e.emp_code))} 
+                                                    onChange={handleSelectAll} 
+                                                    className="rounded border-slate-300 text-socrates-primary focus:ring-socrates-primary cursor-pointer w-4 h-4"
+                                                />
+                                            </th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Emp Code</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Name</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Role</th>
@@ -1965,6 +2182,7 @@
                                         {isLoadingEmps ? (
                                             [...Array(5)].map((_, index) => (
                                                 <tr key={index} className="animate-pulse">
+                                                    <td className="px-6 py-5 w-12 text-center"><div className="h-4 bg-slate-200 rounded w-4 mx-auto animate-pulse"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-32"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
@@ -1981,7 +2199,7 @@
                                             ))
                                         ) : emps.length === 0 ? (
                                             <tr>
-                                                <td colSpan="9" className="px-6 py-12 text-center text-slate-400 font-medium">
+                                                <td colSpan="10" className="px-6 py-12 text-center text-slate-400 font-medium">
                                                     <i className="fas fa-users text-4xl text-slate-200 mb-3 block"></i>
                                                     No employees registered yet. Upload a CSV roster to begin.
                                                 </td>
@@ -1989,6 +2207,14 @@
                                         ) : (
                                             emps.map((e, i) => (
                                                 <tr key={i} className={`hover:bg-slate-50 transition-colors ${e.status === 'DELETED' ? 'bg-slate-50/50 opacity-70' : ''}`}>
+                                                    <td className="px-6 py-4 w-12 text-center">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={selectedEmpCodes.includes(e.emp_code)} 
+                                                            onChange={() => handleSelectEmp(e.emp_code)} 
+                                                            className="rounded border-slate-300 text-socrates-primary focus:ring-socrates-primary cursor-pointer w-4 h-4"
+                                                        />
+                                                    </td>
                                                     <td className="px-6 py-4 font-semibold text-socrates-primary">{e.emp_code}</td>
                                                     <td className="px-6 py-4 font-medium text-socrates-dark">{e.emp_name}</td>
                                                     <td className="px-6 py-4 font-medium text-slate-700">{e.role || 'N/A'}</td>
@@ -2084,6 +2310,54 @@
                             </div>
                         </div>
                     </div>
+                    
+                    {/* Floating Bulk Actions Ribbon */}
+                    {selectedEmpCodes.length > 0 && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 text-white rounded-2xl shadow-2xl border border-slate-700/80 px-6 py-4 flex items-center justify-between gap-8 z-50 backdrop-blur-xl min-w-[340px] md:min-w-[480px]">
+                            <div className="flex items-center gap-3">
+                                <span className="h-8 w-8 rounded-lg bg-socrates-primary/20 text-socrates-primary flex items-center justify-center font-bold text-sm">
+                                    {selectedEmpCodes.length}
+                                </span>
+                                <div>
+                                    <h4 className="font-extrabold text-xs tracking-wider uppercase text-slate-350">Selected Executives</h4>
+                                    <p className="text-[10px] text-slate-400 mt-0.5">Ready for batch operations</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    type="button"
+                                    onClick={() => {
+                                        setBulkZone('');
+                                        setBulkDivision('');
+                                        setBulkBranchName('');
+                                        setBulkBu('');
+                                        setBulkRole('');
+                                        setBulkProductName('');
+                                        setBulkStatus('ACTIVE');
+                                        setBulkChangeDetail('');
+                                        setShowBulkEditModal(true);
+                                    }} 
+                                    className="bg-blue-600 hover:bg-blue-500 active:scale-[0.97] text-white px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-blue-900/30"
+                                >
+                                    <i className="fas fa-edit"></i> Edit
+                                </button>
+                                <button 
+                                    type="button"
+                                    onClick={handleBulkDelete} 
+                                    className="bg-rose-600 hover:bg-rose-500 active:scale-[0.97] text-white px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md shadow-rose-900/30"
+                                >
+                                    <i className="fas fa-trash-alt"></i> Delete
+                                </button>
+                                <button 
+                                    type="button"
+                                    onClick={() => setSelectedEmpCodes([])} 
+                                    className="text-slate-400 hover:text-white px-2 py-1.5 rounded-lg text-xs font-bold transition-all"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
