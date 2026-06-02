@@ -16,13 +16,13 @@
                 extend: {
                     colors: {
                         socrates: {
-                            primary: '#2563EB',
-                            primaryHover: '#1D4ED8',
-                            dark: '#0F172A',
-                            light: '#F8FAFC',
+                            primary: '#D97706',
+                            primaryHover: '#B45309',
+                            dark: '#090D16',
+                            light: '#F3F6FA',
                             accent: '#10B981',
-                            border: '#E2E8F0',
-                            text: '#334155'
+                            border: 'rgba(255,255,255,0.06)',
+                            text: '#F8FAFC'
                         }
                     },
                     fontFamily: {
@@ -43,8 +43,8 @@
 
         html, body { 
             font-family: 'Inter', sans-serif; 
-            background-color: #0F172A; 
-            color: #0F172A;
+            background-color: #090D16; 
+            color: #F8FAFC;
             margin: 0;
             padding: 0;
             width: 100%;
@@ -56,54 +56,66 @@
         .font-outfit { font-family: 'Outfit', sans-serif; }
         
         .card { 
-            background: white; 
-            border: 1px solid rgba(226, 232, 240, 0.8); 
+            background: rgba(13, 17, 28, 0.7); 
+            border: 1px solid rgba(255, 255, 255, 0.05); 
             border-radius: 24px; 
-            box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.03), 0 8px 10px -6px rgba(15, 23, 42, 0.03); 
+            box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.5), inset 0 1px 0 0 rgba(255, 255, 255, 0.05); 
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+            backdrop-filter: blur(20px);
         }
 
         .btn-primary { 
-            background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%); 
-            color: white; 
+            background: linear-gradient(135deg, #F59E0B 0%, #D97706 50%, #B45309 100%); 
+            color: #090D16; 
             border-radius: 18px; 
             padding: 14px 28px; 
-            font-weight: 700; 
+            font-weight: 800; 
             font-size: 15px; 
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); 
             cursor: pointer; 
-            box-shadow: 0 4px 12px -2px rgba(37,99,235,0.25); 
-            border: none; 
+            box-shadow: 0 4px 20px -2px rgba(217,119,6,0.3); 
+            border: 1px solid rgba(255, 255, 255, 0.1); 
             outline: none; 
             display: inline-flex; 
             align-items: center; 
             justify-content: center; 
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
         .btn-primary:active { transform: scale(0.97); }
 
         .btn-outline { 
-            border: 1.5px solid #E2E8F0; 
-            background: white; 
-            color: #475569; 
+            border: 1.5px solid rgba(255, 255, 255, 0.08); 
+            background: rgba(255, 255, 255, 0.02); 
+            color: #E2E8F0; 
             border-radius: 18px; 
             padding: 13px 28px; 
             font-weight: 700; 
             font-size: 15px; 
             transition: all 0.2s ease; 
         }
+        .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
 
         .input-field { 
-            border: 2px solid #F1F5F9; 
+            border: 1.5px solid rgba(255, 255, 255, 0.05); 
             border-radius: 18px; 
             padding: 14px 20px; 
             font-size: 15px; 
             width: 100%; 
             outline: none; 
             transition: all 0.25s ease; 
-            background: #F8FAFC; 
+            background: rgba(255, 255, 255, 0.03); 
+            color: #F8FAFC;
         }
-        .input-field:focus { border-color: #3B82F6; background: white; box-shadow: 0 0 0 4px rgba(59,130,246,0.06); }
+        .input-field:focus { 
+            border-color: #D97706; 
+            background: rgba(255, 255, 255, 0.05); 
+            box-shadow: 0 0 0 4px rgba(217, 119, 6, 0.15); 
+        }
 
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -115,9 +127,9 @@
         .animate-fall { animation: fall linear infinite; }
         
         .backdrop-blur-header {
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            background-color: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            background-color: rgba(9, 13, 22, 0.7);
         }
 
         /* Auto-set height helper */
@@ -278,21 +290,25 @@
             if (view === 'login') return <Login onLogin={(id, details, sessionPin) => { setEmpId(id); setEmpDetails(details); setPin(sessionPin); setView('dashboard'); socket.emit('join_session', {pin: sessionPin, emp_id: id}); }} />;
 
             return (
-                <div className="w-full h-[100dvh] bg-slate-50 flex flex-col relative overflow-hidden transition-all duration-300">
-                    <div className="backdrop-blur-header border-b border-slate-200/60 px-5 py-4 flex justify-between items-center z-50 shrink-0">
+                <div className="w-full h-[100dvh] bg-[#090D16] flex flex-col relative overflow-hidden transition-all duration-300">
+                    {/* Ambient glows inside classroom */}
+                    <div className="absolute top-1/4 left-1/4 w-[35rem] h-[35rem] bg-amber-500/5 rounded-full blur-[140px] pointer-events-none"></div>
+                    <div className="absolute bottom-1/4 right-1/4 w-[35rem] h-[35rem] bg-yellow-500/3 rounded-full blur-[140px] pointer-events-none"></div>
+                    
+                    <div className="backdrop-blur-header border-b border-white/5 px-6 py-4 flex justify-between items-center z-50 shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl flex items-center justify-center text-white text-base shadow-lg shadow-blue-500/20"><i className="fas fa-brain"></i></div>
-                            <span className="font-outfit font-extrabold text-xl tracking-tight text-slate-900">Socrates</span>
+                            <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-2xl flex items-center justify-center text-[#090D16] text-base shadow-lg shadow-amber-500/10 border border-white/10"><i className="fas fa-brain"></i></div>
+                            <span className="font-outfit font-extrabold text-xl tracking-tight text-white">Socrates</span>
                         </div>
-                        <div className="flex items-center gap-2.5 bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="flex items-center gap-2.5 bg-white/5 backdrop-blur-xl px-4 py-2 rounded-2xl border border-white/5 shadow-md">
                             <span className="relative flex h-2.5 w-2.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10B981] opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#10B981]"></span>
                             </span>
-                            <span className="text-[11px] text-slate-800 font-black tracking-wider uppercase">{empDetails?.emp_name?.split(' ')[0] || 'Trainee'}</span>
+                            <span className="text-[11px] text-slate-200 font-black tracking-wider uppercase">{empDetails?.emp_name?.split(' ')[0] || 'Trainee'}</span>
                         </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto p-4 md:p-6 w-full max-w-2xl mx-auto flex flex-col no-scrollbar">
+                    <div className="flex-1 overflow-y-auto p-4 md:p-6 w-full max-w-2xl mx-auto flex flex-col no-scrollbar z-10">
                         {renderContent()}
                     </div>
                 </div>
@@ -305,6 +321,15 @@
             const [searchResults, setSearchResults] = useState([]);
             const [selectedEmp, setSelectedEmp] = useState(null);
             const [showDropdown, setShowDropdown] = useState(false);
+            const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+            useEffect(() => {
+                const handleMouseMove = (e) => {
+                    setMousePos({ x: e.clientX, y: e.clientY });
+                };
+                window.addEventListener('mousemove', handleMouseMove);
+                return () => window.removeEventListener('mousemove', handleMouseMove);
+            }, []);
 
             useEffect(() => {
                 const term = searchQuery.trim();
@@ -315,19 +340,30 @@
             }, [searchQuery]);
 
             return (
-                <div className="w-full h-[100dvh] bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 flex flex-col relative overflow-hidden">
-                    {/* Visual background decorative glows */}
-                    <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse"></div>
-                    <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none animate-pulse" style={{ animationDelay: '2s' }}></div>
+                <div className="w-full h-[100dvh] bg-[#090D16] flex flex-col relative overflow-hidden">
+                    {/* Highly responsive dynamic glow */}
+                    <div className="absolute pointer-events-none rounded-full blur-[130px] opacity-35 transition-opacity duration-300" style={{
+                        left: `${mousePos.x}px`,
+                        top: `${mousePos.y}px`,
+                        width: '450px',
+                        height: '450px',
+                        background: 'radial-gradient(circle, rgba(217,119,6,0.15) 0%, rgba(234,179,8,0.04) 50%, transparent 100%)',
+                        transform: 'translate(-50%, -50%)',
+                        zIndex: 1
+                    }}></div>
 
-                    <div className="border-b border-slate-800/80 px-5 py-4 flex justify-between items-center z-50 shrink-0 bg-slate-950/40 backdrop-blur-md">
+                    <div className="absolute top-1/6 left-1/5 w-96 h-96 bg-amber-500/[0.03] rounded-full blur-[120px] pointer-events-none"></div>
+                    <div className="absolute bottom-1/6 right-1/5 w-96 h-96 bg-yellow-500/[0.02] rounded-full blur-[120px] pointer-events-none"></div>
+
+                    <div className="border-b border-white/5 px-6 py-4 flex justify-between items-center z-50 shrink-0 bg-[#090D16]/40 backdrop-blur-md">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white text-base shadow-lg shadow-blue-500/20 border border-blue-400/20"><i className="fas fa-brain"></i></div>
+                            <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-2xl flex items-center justify-center text-[#090D16] text-base shadow-lg shadow-amber-500/10 border border-white/10"><i className="fas fa-brain"></i></div>
                             <span className="font-outfit font-extrabold text-xl tracking-tight text-white">Socrates AI</span>
                         </div>
                     </div>
+                    
                     <div className="flex-1 overflow-y-auto flex flex-col justify-center p-6 w-full max-w-md mx-auto z-10">
-                        <div className="bg-slate-900/60 backdrop-blur-xl border border-slate-800/80 rounded-[2.5rem] shadow-2xl p-8 space-y-6 transition-all duration-300 hover:border-slate-700/80">
+                        <div className="bg-slate-950/70 border border-white/5 backdrop-blur-2xl rounded-[2.5rem] shadow-3xl p-8 space-y-6 transition-all duration-300 hover:border-amber-500/20 shadow-amber-500/5">
                             <div className="text-center space-y-1">
                                 <h2 className="font-outfit font-black text-2xl text-white tracking-tight">Executive Login</h2>
                                 <p className="text-slate-400 font-bold text-[10px] tracking-widest uppercase">Institutional Training Portal</p>
@@ -335,20 +371,20 @@
                             <div className="space-y-4">
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Session Access PIN</label>
-                                    <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="0000" className="w-full bg-slate-950/50 border border-slate-800 focus:border-blue-500 rounded-2xl px-4 py-3 text-center tracking-[0.5em] font-black text-3xl text-slate-100 outline-none transition-all focus:ring-4 focus:ring-blue-500/10" />
+                                    <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="0000" className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-2xl px-4 py-3 text-center tracking-[0.5em] font-black text-3xl text-slate-100 outline-none transition-all focus:ring-4 focus:ring-amber-500/10" />
                                 </div>
                                 <div className="relative">
                                     <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Find Your Profile</label>
-                                    <input type="text" placeholder="NAME OR EMPLOYEE CODE" value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="w-full bg-slate-950/50 border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all focus:ring-4 focus:ring-blue-500/10 font-bold uppercase" />
+                                    <input type="text" placeholder="NAME OR EMPLOYEE CODE" value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all focus:ring-4 focus:ring-amber-500/10 font-bold uppercase" />
                                     {showDropdown && searchResults.length > 0 && (
-                                        <div className="absolute left-0 right-0 mt-2 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-slate-800">
+                                        <div className="absolute left-0 right-0 mt-2 bg-slate-950 border border-white/5 rounded-2xl shadow-2xl z-50 max-h-60 overflow-y-auto divide-y divide-white/5 backdrop-blur-xl">
                                             {searchResults.map((emp) => (
-                                                <div key={emp.emp_code} onClick={() => { setSelectedEmp(emp); setSearchQuery(emp.emp_name); setShowDropdown(false); }} className="px-4 py-4 hover:bg-slate-800/60 transition-colors cursor-pointer flex justify-between items-center">
+                                                <div key={emp.emp_code} onClick={() => { setSelectedEmp(emp); setSearchQuery(emp.emp_name); setShowDropdown(false); }} className="px-4 py-4 hover:bg-white/5 transition-colors cursor-pointer flex justify-between items-center">
                                                     <div>
                                                         <div className="font-black text-slate-200 text-xs">{emp.emp_name}</div>
                                                         <div className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">{emp.branch_name} &bull; {emp.business_unit}</div>
                                                     </div>
-                                                    <span className="text-[10px] font-black text-blue-400 bg-blue-500/10 px-2.5 py-1.5 rounded-xl border border-blue-500/20">{emp.emp_code}</span>
+                                                    <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 px-2.5 py-1.5 rounded-xl border border-amber-500/20">{emp.emp_code}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -360,7 +396,7 @@
                                         <div className="text-xs font-black text-slate-200 uppercase">{selectedEmp.emp_name} ({selectedEmp.emp_code})</div>
                                     </div>
                                 )}
-                                <button onClick={() => selectedEmp && pin && onLogin(selectedEmp.emp_code, selectedEmp, pin)} className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl h-14 font-extrabold text-base transition-all active:scale-[0.98] shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2 mt-6 uppercase tracking-wider">
+                                <button onClick={() => selectedEmp && pin && onLogin(selectedEmp.emp_code, selectedEmp, pin)} className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-slate-950 rounded-xl h-14 font-extrabold text-base transition-all active:scale-[0.98] shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2 mt-6 uppercase tracking-wider">
                                     <span>Enter Classroom</span>
                                     <i className="fas fa-door-open text-sm"></i>
                                 </button>
@@ -373,27 +409,27 @@
 
         const Dashboard = ({ empDetails, assignmentDay }) => (
             <div className="animate-fade-in flex flex-col gap-6 mt-2">
-                <div className="text-center md:text-left bg-white p-6 sm:p-8 rounded-3xl sm:rounded-[32px] border border-slate-200/60 shadow-sm space-y-4">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-50 text-blue-600 rounded-2xl sm:rounded-3xl flex items-center justify-center text-2xl sm:text-3xl mx-auto md:mx-0 shadow-inner"><i className="fas fa-id-badge"></i></div>
+                <div className="text-center md:text-left bg-white/5 backdrop-blur-xl p-6 sm:p-8 rounded-3xl sm:rounded-[32px] border border-white/5 shadow-xl space-y-4">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-2xl sm:rounded-3xl flex items-center justify-center text-2xl sm:text-3xl mx-auto md:mx-0 shadow-inner"><i className="fas fa-id-badge"></i></div>
                     <div>
-                        <h2 className="font-outfit font-black text-2xl sm:text-3xl text-slate-900 leading-tight">Welcome, {empDetails?.emp_name?.split(' ')[0] || 'Executive'}</h2>
+                        <h2 className="font-outfit font-black text-2xl sm:text-3xl text-white leading-tight">Welcome, {empDetails?.emp_name?.split(' ')[0] || 'Executive'}</h2>
                         <p className="text-[10px] sm:text-[11px] text-slate-400 font-black uppercase tracking-widest mt-1">{empDetails?.role || 'Executive'} &bull; {empDetails?.branch_name}</p>
                     </div>
-                    <div className="bg-slate-50 p-4 rounded-xl sm:rounded-2xl border border-slate-100 text-center md:text-left">
-                        <p className="text-xs text-slate-500 font-bold leading-relaxed">Stay tuned to the main screen. Your Socratic Trainer will begin the live module shortly.</p>
+                    <div className="bg-white/[0.02] p-4 rounded-xl sm:rounded-2xl border border-white/5 text-center md:text-left">
+                        <p className="text-xs text-slate-300 font-bold leading-relaxed">Stay tuned to the main screen. Your Socratic Trainer will begin the live module shortly.</p>
                     </div>
                 </div>
-                <div className="card p-6 sm:p-8 border-l-8 sm:border-l-[12px] border-blue-600 bg-white relative overflow-hidden min-h-[160px] sm:min-h-[180px] flex flex-col justify-center">
-                    <div className="absolute -top-4 -right-4 opacity-[0.03] rotate-12 text-[100px] sm:text-[120px] text-blue-900"><i className="fas fa-book-open"></i></div>
-                    <span className="text-[9px] sm:text-[10px] font-black text-blue-600 bg-blue-50 w-fit px-3 py-1.5 rounded-full uppercase tracking-widest mb-3 sm:mb-4">Live Module Status</span>
-                    <h4 className="font-outfit font-black text-lg sm:text-xl text-slate-900">{assignmentDay?.toUpperCase() || 'GENERAL'} REFRESHER SESSION</h4>
-                    <p className="text-xs text-slate-400 mt-2 font-bold flex items-center gap-2"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span> Cloud Link Active</p>
+                <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border-l-8 sm:border-l-[12px] border-amber-500 rounded-[2rem] p-6 sm:p-8 shadow-xl border border-white/5 relative overflow-hidden flex flex-col justify-center min-h-[160px] sm:min-h-[180px]">
+                    <div className="absolute -top-4 -right-4 opacity-[0.03] rotate-12 text-[100px] sm:text-[120px] text-amber-500"><i className="fas fa-book-open"></i></div>
+                    <span className="text-[9px] sm:text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 w-fit px-3 py-1.5 rounded-full uppercase tracking-widest mb-3 sm:mb-4">Live Module Status</span>
+                    <h4 className="font-outfit font-black text-lg sm:text-xl text-white">{assignmentDay?.toUpperCase() || 'GENERAL'} REFRESHER SESSION</h4>
+                    <p className="text-xs text-slate-300 mt-2 font-bold flex items-center gap-2"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span> Cloud Link Active</p>
                 </div>
             </div>
         );
 
         const Confetti = () => {
-            const colors = ['#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#ef4444'];
+            const colors = ['#d97706', '#f59e0b', '#10b981', '#fbbf24', '#f59e0b', '#f8fafc'];
             return (
                 <div className="absolute inset-0 pointer-events-none overflow-hidden z-40">
                     {Array.from({ length: 40 }).map((_, i) => (
@@ -408,11 +444,8 @@
             const [submitted, setSubmitted] = useState(false);
             const [scoreInfo, setScoreInfo] = useState(null);
             const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-            const [rating, setRating] = useState(0);
             const [understanding, setUnderstanding] = useState('Fully Clear');
             const [manpowerSaved, setManpowerSaved] = useState('Yes, much faster!');
-            const [comments, setComments] = useState('');
-            const [submittingFeedback, setSubmittingFeedback] = useState(false);
             
             const qText = cleanQuestionText((translations?.[activeLanguage]?.question) || question || (fallbackQuestions[assignmentDay]?.question) || fallbackQuestions['zero day'].question);
             const qOpts = ((translations?.[activeLanguage]?.options) || (options?.length ? options : (fallbackQuestions[assignmentDay]?.options || fallbackQuestions['zero day'].options))).map(cleanOptionText);
@@ -438,43 +471,43 @@
             };
             
             return (
-                <div className="card flex-1 flex flex-col overflow-hidden relative border-none shadow-2xl bg-white mb-4 animate-fade-in">
+                <div className="bg-slate-900/40 backdrop-blur-xl flex-1 flex flex-col overflow-hidden relative border border-white/5 shadow-2xl rounded-[2rem] mb-4 animate-fade-in">
                     {submitted && scoreInfo?.is_correct && <Confetti />}
-                    <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+                    <div className="px-6 py-5 border-b border-white/5 flex items-center justify-between bg-slate-950/40 shrink-0">
                         <div className="flex items-center gap-2.5">
-                            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-                            <span className="font-outfit font-black text-[13px] tracking-widest text-slate-800 uppercase">{type}</span>
+                            <span className="w-3 h-3 bg-rose-500 rounded-full animate-pulse"></span>
+                            <span className="font-outfit font-black text-[13px] tracking-widest text-slate-200 uppercase">{type}</span>
                         </div>
-                        <span className="text-[10px] font-black text-slate-500 bg-white px-3 py-1.5 border border-slate-200 rounded-xl uppercase tracking-widest">{assignmentDay}</span>
+                        <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 px-3 py-1.5 border border-amber-500/20 rounded-xl uppercase tracking-widest">{assignmentDay}</span>
                     </div>
-                    <div className="px-6 py-4 bg-white border-b border-slate-50 flex items-center gap-3 shrink-0 overflow-x-auto no-scrollbar">
+                    <div className="px-6 py-4 bg-slate-950/20 border-b border-white/5 flex items-center gap-3 shrink-0 overflow-x-auto no-scrollbar">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0"><i className="fas fa-language mr-1"></i> Lang:</span>
                         {['en', 'hindi', 'hinglish', 'punjabi', 'bengali', 'marathi', 'telugu', 'tamil', 'gujarati', 'kannada'].map(l => (
-                            <button key={l} onClick={() => setActiveLanguage(l)} className={`px-4 py-1.5 rounded-full text-[10px] font-black border transition-all whitespace-nowrap ${activeLanguage === l ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-200' : 'bg-white border-slate-200 text-slate-500'}`}>{l.toUpperCase()}</button>
+                            <button key={l} onClick={() => setActiveLanguage(l)} className={`px-4 py-1.5 rounded-full text-[10px] font-black border transition-all whitespace-nowrap ${activeLanguage === l ? 'bg-amber-500 border-amber-500 text-slate-950 font-extrabold shadow-lg shadow-amber-500/25' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'}`}>{l.toUpperCase()}</button>
                         ))}
                     </div>
                     <div className="p-6 md:p-8 flex-1 overflow-y-auto no-scrollbar">
                         {submitted ? (
                             <div className="h-full flex flex-col items-center justify-center text-center p-4 animate-fade-in w-full max-w-xl mx-auto space-y-8">
                                 {!scoreInfo ? (
-                                    <div className="space-y-4"><div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div><h4 className="font-black text-sm text-slate-600 animate-pulse uppercase tracking-widest">Evaluating response...</h4></div>
+                                    <div className="space-y-4"><div className="w-12 h-12 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto"></div><h4 className="font-black text-sm text-slate-400 animate-pulse uppercase tracking-widest">Evaluating response...</h4></div>
                                 ) : (
                                     <div className="space-y-8 w-full">
-                                        <div className={`w-24 h-24 rounded-[32px] flex items-center justify-center text-5xl mx-auto shadow-xl ${scoreInfo.is_correct ? 'bg-emerald-50 text-emerald-500 border border-emerald-100 animate-bounce' : 'bg-red-50 text-red-500 border border-red-100'}`}><i className={`fas ${scoreInfo.is_correct ? 'fa-check-circle' : 'fa-times-circle'}`}></i></div>
+                                        <div className={`w-24 h-24 rounded-[32px] flex items-center justify-center text-5xl mx-auto shadow-xl ${scoreInfo.is_correct ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 animate-bounce' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}><i className={`fas ${scoreInfo.is_correct ? 'fa-check-circle' : 'fa-times-circle'}`}></i></div>
                                         <div className="space-y-2">
-                                            <h4 className={`font-outfit font-black text-3xl tracking-tight ${scoreInfo.is_correct ? 'text-emerald-600' : 'text-red-600'}`}>{scoreInfo.is_correct ? 'CORRECT!' : 'INCORRECT'}</h4>
+                                            <h4 className={`font-outfit font-black text-3xl tracking-tight ${scoreInfo.is_correct ? 'text-emerald-400' : 'text-rose-400'}`}>{scoreInfo.is_correct ? 'CORRECT!' : 'INCORRECT'}</h4>
                                             <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{scoreInfo.is_correct ? 'Institutional Knowledge Verified' : 'Concept Needs Trainer Review'}</p>
                                         </div>
-                                        <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 flex justify-between items-center"><span className="text-xs font-black text-slate-500 uppercase tracking-widest">Current Accuracy</span><span className="font-outfit font-black text-2xl text-slate-900">{scoreInfo.total_score} PTS</span></div>
+                                        <div className="bg-white/5 rounded-3xl p-6 border border-white/5 flex justify-between items-center"><span className="text-xs font-black text-slate-400 uppercase tracking-widest">Current Accuracy</span><span className="font-outfit font-black text-2xl text-white">{scoreInfo.total_score} PTS</span></div>
                                     </div>
                                 )}
                                 {type === 'Post-Test' && (
-                                    <div className="w-full pt-8 border-t border-slate-100 animate-fade-in">
-                                        {feedbackSubmitted ? <div className="bg-emerald-50 p-6 rounded-3xl text-emerald-800 font-black text-sm uppercase tracking-widest shadow-inner"><i className="fas fa-heart mr-2"></i> Feedback Received</div> : (
+                                    <div className="w-full pt-8 border-t border-white/5 animate-fade-in">
+                                        {feedbackSubmitted ? <div className="bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-3xl text-emerald-400 font-black text-sm uppercase tracking-widest shadow-inner"><i className="fas fa-heart mr-2"></i> Feedback Received</div> : (
                                             <div className="space-y-6 text-left">
-                                                <h5 className="font-outfit font-black text-slate-900 uppercase tracking-widest text-xs border-l-4 border-blue-600 pl-3">Session Feedback</h5>
+                                                <h5 className="font-outfit font-black text-white uppercase tracking-widest text-xs border-l-4 border-amber-500 pl-3">Session Feedback</h5>
                                                 <div className="grid grid-cols-3 gap-3">{['Fully Clear', 'Partially', 'Need Help'].map(l => (
-                                                    <button key={l} onClick={() => setUnderstanding(l)} className={`p-4 rounded-2xl text-[10px] font-black border-2 transition-all ${understanding===l?'border-blue-600 bg-blue-50 text-blue-700':'border-slate-100 bg-white text-slate-500'}`}>{l.toUpperCase()}</button>
+                                                    <button key={l} onClick={() => setUnderstanding(l)} className={`p-4 rounded-2xl text-[10px] font-black border-2 transition-all ${understanding===l?'border-amber-500 bg-amber-500/10 text-amber-400':'border-white/5 bg-white/5 text-slate-400 hover:bg-white/10'}`}>{l.toUpperCase()}</button>
                                                 ))}</div>
                                                 <button onClick={() => { setFeedbackSubmitted(true); fetch('/api/feedback/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({emp_code:empId, session_id:pin, rating:5, understanding, manpower_saved:manpowerSaved, comments:''}) }); }} className="w-full btn-primary h-14 text-sm tracking-widest">SUBMIT FEEDBACK <i className="fas fa-check-circle ml-2"></i></button>
                                             </div>
@@ -485,17 +518,17 @@
                         ) : (
                             <div className="flex flex-col h-full justify-between gap-10">
                                 <div className="space-y-8">
-                                    <h3 className="text-xl md:text-2xl font-outfit font-black text-slate-900 leading-tight text-center md:text-left">{qText}</h3>
+                                    <h3 className="text-xl md:text-2xl font-outfit font-black text-white leading-tight text-center md:text-left">{qText}</h3>
                                     <div className="grid grid-cols-1 gap-4">
                                         {qOpts.map((opt, i) => (
-                                            <button key={i} onClick={() => setSelected(i)} className={`w-full text-left p-6 rounded-[24px] border-2 transition-all active:scale-[0.98] flex items-center gap-5 ${selected === i ? 'border-blue-600 bg-blue-50/50 shadow-xl shadow-blue-500/10' : 'border-slate-50 bg-slate-50/30 hover:border-slate-200'}`}>
-                                                <div className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center text-sm font-black transition-all shrink-0 ${selected === i ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'border-slate-200 text-slate-400 bg-white'}`}>{String.fromCharCode(65 + i)}</div>
-                                                <span className={`text-[13px] leading-snug font-bold ${selected === i ? 'text-blue-900' : 'text-slate-600'}`}>{opt}</span>
+                                            <button key={i} onClick={() => setSelected(i)} className={`w-full text-left p-6 rounded-[24px] border-2 transition-all active:scale-[0.98] flex items-center gap-5 ${selected === i ? 'border-amber-500 bg-amber-500/10 shadow-2xl shadow-amber-500/5' : 'border-white/5 bg-white/5 hover:border-white/10 hover:bg-white/10'}`}>
+                                                <div className={`w-10 h-10 rounded-2xl border-2 flex items-center justify-center text-sm font-black transition-all shrink-0 ${selected === i ? 'border-amber-500 bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/35' : 'border-white/10 text-slate-400 bg-white/5'}`}>{String.fromCharCode(65 + i)}</div>
+                                                <span className={`text-[13px] leading-snug font-bold ${selected === i ? 'text-amber-400 font-extrabold' : 'text-slate-300'}`}>{opt}</span>
                                             </button>
                                         ))}
                                     </div>
                                 </div>
-                                <div className="sticky bottom-0 bg-white pt-4 pb-2"><button onClick={submitAnswer} disabled={selected === null} className={`w-full h-16 rounded-[24px] font-black text-base tracking-widest transition-all ${selected !== null ? 'btn-primary shadow-xl shadow-blue-500/25' : 'bg-slate-100 text-slate-300 border-none cursor-not-allowed uppercase'}`}>CONFIRM SELECTION <i className="fas fa-bolt ml-2"></i></button></div>
+                                <div className="sticky bottom-0 bg-transparent pt-4 pb-2"><button onClick={submitAnswer} disabled={selected === null} className={`w-full h-16 rounded-[24px] font-black text-base tracking-widest transition-all ${selected !== null ? 'btn-primary shadow-xl shadow-amber-500/25' : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed uppercase'}`}>CONFIRM SELECTION <i className="fas fa-bolt ml-2"></i></button></div>
                             </div>
                         )}
                     </div>
@@ -505,35 +538,39 @@
 
         const Training = ({assignmentDay}) => (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-8 animate-fade-in">
-                <div className="w-24 h-24 bg-blue-600 text-white rounded-[32px] flex items-center justify-center text-4xl shadow-2xl shadow-blue-500/30 animate-pulse"><i className="fas fa-chalkboard-teacher"></i></div>
+                <div className="w-24 h-24 bg-amber-50 text-slate-950 rounded-[32px] flex items-center justify-center text-4xl shadow-2xl shadow-amber-500/30 animate-pulse"><i className="fas fa-chalkboard-teacher"></i></div>
                 <div className="space-y-2">
-                    <h2 className="font-outfit font-black text-3xl text-slate-900 uppercase tracking-tighter">Gap Analysis</h2>
+                    <h2 className="font-outfit font-black text-3xl text-white uppercase tracking-tighter">Gap Analysis</h2>
                     <p className="text-slate-400 font-bold text-xs uppercase tracking-[0.2em]">Live Training Phase</p>
                 </div>
-                <div className="card w-full p-8 border-none shadow-xl bg-white text-left space-y-4">
-                    <div className="text-[10px] font-black text-blue-600 bg-blue-50 px-3 py-1.5 rounded-full w-fit uppercase tracking-widest">Key Takeaway</div>
-                    <p className="text-base text-slate-700 font-bold leading-relaxed">{assignmentDay === 'zero day' ? "Max LTV 85%. 90% only for CIBIL > 750." : assignmentDay === 'six days' ? "Min CIBIL 750 for 90% LTV." : "ITR strictly mandatory for loans > ₹2L."}</p>
+                <div className="bg-white/5 backdrop-blur-xl w-full p-8 border border-white/5 shadow-2xl rounded-[2rem] text-left space-y-4">
+                    <div className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full w-fit uppercase tracking-widest">Key Takeaway</div>
+                    <p className="text-base text-slate-200 font-bold leading-relaxed">{assignmentDay === 'zero day' ? "Max LTV 85%. 90% only for CIBIL > 750." : assignmentDay === 'six days' ? "Min CIBIL 750 for 90% LTV." : "ITR strictly mandatory for loans > ₹2L."}</p>
                 </div>
-                <div className="flex items-center gap-3 text-[10px] font-black text-slate-300 uppercase tracking-widest"><i className="fas fa-circle-notch fa-spin"></i> Awaiting Next Protocol</div>
+                <div className="flex items-center gap-3 text-[10px] font-black text-slate-400 uppercase tracking-widest"><i className="fas fa-circle-notch fa-spin"></i> Awaiting Next Protocol</div>
             </div>
         );
 
         const Result = ({preScore, postScore, counts, onFinish}) => (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-10 animate-fade-in">
-                <div className="w-28 h-28 bg-gradient-to-tr from-emerald-500 to-teal-400 text-white rounded-[40px] flex items-center justify-center text-5xl shadow-2xl shadow-emerald-500/20 animate-bounce"><i className="fas fa-trophy"></i></div>
+                <div className="w-28 h-28 bg-gradient-to-tr from-amber-500 to-yellow-400 text-[#090D16] rounded-[40px] flex items-center justify-center text-5xl shadow-2xl shadow-amber-500/20 animate-bounce"><i className="fas fa-trophy"></i></div>
                 <div className="space-y-2">
-                    <h2 className="font-outfit font-black text-3xl text-slate-900 tracking-tight">MISSION COMPLETE</h2>
+                    <h2 className="font-outfit font-black text-3xl text-white tracking-tight">MISSION COMPLETE</h2>
                     <p className="text-slate-400 font-bold text-xs uppercase tracking-[0.3em]">Knowledge Metrics Recorded</p>
                 </div>
                 <div className="grid grid-cols-3 gap-4 w-full">
-                    {[ {l:'CORRECT', v:counts.correctCount, c:'emerald'}, {l:'WRONG', v:counts.wrongCount, c:'red'}, {l:'UNATTEMPTED', v:counts.unattemptedCount, c:'slate'} ].map(s => (
-                        <div key={s.l} className={`bg-white p-5 rounded-[32px] border-2 border-${s.c}-50 shadow-sm space-y-1`}>
-                            <div className={`text-[9px] font-black text-${s.c}-600 uppercase tracking-widest`}>{s.l}</div>
-                            <div className="text-3xl font-black text-slate-900 font-outfit">{s.v}</div>
+                    {[ 
+                        {l:'CORRECT', v:counts.correctCount, border:'border-emerald-500/20 text-emerald-400 bg-emerald-500/5'}, 
+                        {l:'WRONG', v:counts.wrongCount, border:'border-rose-500/20 text-rose-400 bg-rose-500/5'}, 
+                        {l:'UNATTEMPTED', v:counts.unattemptedCount, border:'border-slate-500/20 text-slate-400 bg-slate-500/5'} 
+                    ].map(s => (
+                        <div key={s.l} className={`p-5 rounded-[32px] border ${s.border} shadow-sm space-y-1`}>
+                            <div className="text-[9px] font-black uppercase tracking-widest">{s.l}</div>
+                            <div className="text-3xl font-black text-white font-outfit">{s.v}</div>
                         </div>
                     ))}
                 </div>
-                <button onClick={onFinish} className="w-full h-16 btn-primary shadow-blue-500/30 text-base font-black tracking-widest">DASHBOARD EXIT <i className="fas fa-home ml-2"></i></button>
+                <button onClick={onFinish} className="w-full h-16 btn-primary shadow-amber-500/25 text-base font-black tracking-widest">DASHBOARD EXIT <i className="fas fa-home ml-2"></i></button>
             </div>
         );
 
