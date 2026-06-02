@@ -1065,7 +1065,13 @@
             const [selZone, setSelZone] = useState('');
             const [selDiv, setSelDiv] = useState('');
             const [selBranch, setSelBranch] = useState('');
-            const [filterOptions, setFilterOptions] = useState({ zones: [], divisions: [], branches: [], divisions_meta: [], branches_meta: [] });
+            const [selBu, setSelBu] = useState('');
+            const [selRole, setSelRole] = useState('');
+            const [selProduct, setSelProduct] = useState('');
+            const [filterOptions, setFilterOptions] = useState({ 
+                zones: [], divisions: [], branches: [], divisions_meta: [], branches_meta: [],
+                business_units: [], roles: [], products: []
+            });
 
             // Search & counters state
             const [searchQuery, setSearchQuery] = useState('');
@@ -1092,12 +1098,15 @@
                     .catch(err => console.error("Error loading roster filters:", err));
             };
 
-            const loadEmps = (zoneVal = selZone, divVal = selDiv, branchVal = selBranch, searchVal = searchQuery) => {
+             const loadEmps = (zoneVal = selZone, divVal = selDiv, branchVal = selBranch, searchVal = searchQuery, buVal = selBu, roleVal = selRole, productVal = selProduct) => {
                 setIsLoadingEmps(true);
                 let url = '/api/roster?';
                 if (zoneVal) url += `zone=${encodeURIComponent(zoneVal)}&`;
                 if (divVal) url += `division=${encodeURIComponent(divVal)}&`;
                 if (branchVal) url += `branch=${encodeURIComponent(branchVal)}&`;
+                if (buVal) url += `business_unit=${encodeURIComponent(buVal)}&`;
+                if (roleVal) url += `role=${encodeURIComponent(roleVal)}&`;
+                if (productVal) url += `product_name=${encodeURIComponent(productVal)}&`;
                 if (searchVal) url += `q=${encodeURIComponent(searchVal)}&`;
                 
                 fetch(url)
@@ -1105,7 +1114,7 @@
                     .then(data => {
                         setEmps(data);
                         setFilteredCount(data.length);
-                        if (!zoneVal && !divVal && !branchVal && !searchVal) {
+                        if (!zoneVal && !divVal && !branchVal && !searchVal && !buVal && !roleVal && !productVal) {
                             setTotalCount(data.length);
                         }
                         setIsLoadingEmps(false);
@@ -1115,7 +1124,7 @@
                         const fallbackData = db.get('s_roster') || [];
                         setEmps(fallbackData);
                         setFilteredCount(fallbackData.length);
-                        if (!zoneVal && !divVal && !branchVal && !searchVal) {
+                        if (!zoneVal && !divVal && !branchVal && !searchVal && !buVal && !roleVal && !productVal) {
                             setTotalCount(fallbackData.length);
                         }
                         setIsLoadingEmps(false);
@@ -1126,6 +1135,9 @@
                 let newZone = selZone;
                 let newDiv = selDiv;
                 let newBranch = selBranch;
+                let newBu = selBu;
+                let newRole = selRole;
+                let newProduct = selProduct;
                 
                 if (type === 'zone') {
                     newZone = val;
@@ -1142,14 +1154,23 @@
                 } else if (type === 'branch') {
                     newBranch = val;
                     setSelBranch(val);
+                } else if (type === 'bu') {
+                    newBu = val;
+                    setSelBu(val);
+                } else if (type === 'role') {
+                    newRole = val;
+                    setSelRole(val);
+                } else if (type === 'product') {
+                    newProduct = val;
+                    setSelProduct(val);
                 }
                 
-                loadEmps(newZone, newDiv, newBranch, searchQuery);
+                loadEmps(newZone, newDiv, newBranch, searchQuery, newBu, newRole, newProduct);
             };
 
             const handleSearch = (val) => {
                 setSearchQuery(val);
-                loadEmps(selZone, selDiv, selBranch, val);
+                loadEmps(selZone, selDiv, selBranch, val, selBu, selRole, selProduct);
             };
 
             useEffect(() => { 
@@ -1853,7 +1874,7 @@
                                 </div>
                             </div>
                             {/* Dynamic Auditing Filter Bar */}
-                            <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 grid grid-cols-1 md:grid-cols-4 gap-4 items-center shadow-inner">
+                            <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 items-center shadow-inner">
                                 <div>
                                     <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Zone</label>
                                     <select value={selZone} onChange={e => handleFilterChange('zone', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
@@ -1879,14 +1900,35 @@
                                             .map((br, idx) => <option key={idx} value={br.name}>{br.name} ({br.division})</option>)}
                                     </select>
                                 </div>
-                                <div className="flex items-end justify-start md:justify-end h-full pt-4 md:pt-0">
-                                    {(selZone || selDiv || selBranch || searchQuery) && (
-                                        <button onClick={() => { setSelZone(''); setSelDiv(''); setSelBranch(''); setSearchQuery(''); loadEmps('', '', '', ''); }} className="text-xs text-red-600 hover:text-white hover:bg-red-600 font-bold flex items-center justify-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-4 py-2 transition-all shadow-sm">
-                                            <i className="fas fa-times-circle"></i> Clear Filters
-                                        </button>
-                                    )}
+                                <div>
+                                    <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Business Unit</label>
+                                    <select value={selBu} onChange={e => handleFilterChange('bu', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
+                                        <option value="">All Business Units</option>
+                                        {filterOptions.business_units && filterOptions.business_units.map((bu, idx) => <option key={idx} value={bu}>{bu}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Role</label>
+                                    <select value={selRole} onChange={e => handleFilterChange('role', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
+                                        <option value="">All Roles</option>
+                                        {filterOptions.roles && filterOptions.roles.map((r, idx) => <option key={idx} value={r}>{r}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Product</label>
+                                    <select value={selProduct} onChange={e => handleFilterChange('product', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
+                                        <option value="">All Products</option>
+                                        {filterOptions.products && filterOptions.products.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
+                                    </select>
                                 </div>
                             </div>
+                            {(selZone || selDiv || selBranch || selBu || selRole || selProduct || searchQuery) && (
+                                <div className="bg-red-50/50 border-b border-red-100 px-6 py-2 flex items-center justify-end">
+                                    <button onClick={() => { setSelZone(''); setSelDiv(''); setSelBranch(''); setSelBu(''); setSelRole(''); setSelProduct(''); setSearchQuery(''); loadEmps('', '', '', '', '', '', ''); }} className="text-xs text-red-600 hover:text-white hover:bg-red-600 font-bold flex items-center justify-center gap-1.5 bg-red-50 border border-red-200 rounded-lg px-4 py-1.5 transition-all shadow-sm">
+                                        <i className="fas fa-times-circle"></i> Clear All Active Filters
+                                    </button>
+                                </div>
+                            )}
                             {/* Search & Audit Counters Bar */}
                             <div className="bg-white border-b border-slate-100 px-6 py-3.5 flex flex-wrap justify-between items-center gap-4">
                                 <div className="relative w-full max-w-sm">

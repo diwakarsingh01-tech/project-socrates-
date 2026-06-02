@@ -1113,6 +1113,9 @@ def get_roster():
     zone = request.args.get('zone', '').strip()
     branch = request.args.get('branch', '').strip()
     division = request.args.get('division', '').strip()
+    business_unit = request.args.get('business_unit', '').strip()
+    role = request.args.get('role', '').strip()
+    product_name = request.args.get('product_name', '').strip()
     search = request.args.get('q', '').strip()
     
     query = "SELECT * FROM employees WHERE 1=1"
@@ -1126,6 +1129,15 @@ def get_roster():
     if division:
         query += " AND division = ?"
         params.append(division)
+    if business_unit:
+        query += " AND business_unit = ?"
+        params.append(business_unit)
+    if role:
+        query += " AND role = ?"
+        params.append(role)
+    if product_name:
+        query += " AND product_name = ?"
+        params.append(product_name)
     if search:
         query += " AND (emp_code LIKE ? OR emp_name LIKE ? OR product_name LIKE ?)"
         params.append(f"%{search}%")
@@ -1171,6 +1183,11 @@ def get_roster_filters():
     zones = conn.execute("SELECT DISTINCT zone FROM employees WHERE zone IS NOT NULL AND zone != '' ORDER BY zone").fetchall()
     divisions = conn.execute("SELECT DISTINCT division, zone FROM employees WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()
     branches = conn.execute("SELECT DISTINCT branch_name, division FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()
+    
+    # Advanced filters for all roster headers
+    business_units = conn.execute("SELECT DISTINCT business_unit FROM employees WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit").fetchall()
+    roles = conn.execute("SELECT DISTINCT role FROM employees WHERE role IS NOT NULL AND role != '' ORDER BY role").fetchall()
+    products = conn.execute("SELECT DISTINCT product_name FROM employees WHERE product_name IS NOT NULL AND product_name != '' ORDER BY product_name").fetchall()
     conn.close()
     
     zones_list = [r[0] for r in zones]
@@ -1224,7 +1241,10 @@ def get_roster_filters():
         "divisions": divisions_list,
         "branches": branches_list,
         "divisions_meta": divisions_meta,
-        "branches_meta": branches_meta
+        "branches_meta": branches_meta,
+        "business_units": [r[0] for r in business_units],
+        "roles": [r[0] for r in roles],
+        "products": [r[0] for r in products]
     })
 
 def normalize_enums(zone, division, branch):
@@ -1366,7 +1386,7 @@ def upload_roster():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        REQUIRED_HEADERS = ['Employee Code', 'Employee Name', 'Branch Name', 'Zone', 'Division', 'Business Unit', 'Role']
+        REQUIRED_HEADERS = ['Employee Code', 'Employee Name', 'Business Unit', 'Zone', 'Division', 'Branch Name', 'Role', 'Product Name']
         
         # Read and Validate CSV
         rows = []
@@ -1407,10 +1427,6 @@ def upload_roster():
                 
             # Map columns by index, supporting missing columns gracefully
             hdr_indices = {h: headers.index(h) if h in headers else None for h in REQUIRED_HEADERS}
-            if 'Product Name' in headers:
-                hdr_indices['Product Name'] = headers.index('Product Name')
-            else:
-                hdr_indices['Product Name'] = None
             
             final_rows = []
             
@@ -1424,10 +1440,7 @@ def upload_roster():
                     else:
                         row_data[h] = ''
                 
-                idx_pn = hdr_indices.get('Product Name')
-                if idx_pn is not None and idx_pn < len(r):
-                    row_data['Product Name'] = r[idx_pn].strip()
-                else:
+                if not row_data.get('Product Name') or row_data['Product Name'] == 'N/A':
                     row_data['Product Name'] = 'N/A'
                 
                 emp_code = row_data['Employee Code'].upper().strip()
