@@ -1390,107 +1390,81 @@ def upload_roster():
                             continue
                         rows.append((row_idx, r))
             
-            # Check for header format
-            missing_headers = [req for req in REQUIRED_HEADERS if req not in headers]
-            if missing_headers:
-                return jsonify({
-                    "status": "error", 
-                    "message": f"Invalid CSV format. Missing column headers: {', '.join(missing_headers)}"
-                }), 400
+            # Check for critical header: Employee Code
+            if 'Employee Code' not in headers:
+                found_emp_code_hdr = None
+                for h in headers:
+                    if h.lower().strip().replace('_', ' ').replace('-', ' ') == 'employee code':
+                        found_emp_code_hdr = h
+                        break
+                if found_emp_code_hdr:
+                    headers[headers.index(found_emp_code_hdr)] = 'Employee Code'
+                else:
+                    return jsonify({
+                        "status": "error", 
+                        "message": "Invalid CSV format. Missing critical column header: 'Employee Code'"
+                    }), 400
                 
-            # Map columns by index
-            hdr_indices = {h: headers.index(h) for h in headers}
+            # Map columns by index, supporting missing columns gracefully
+            hdr_indices = {h: headers.index(h) if h in headers else None for h in REQUIRED_HEADERS}
+            if 'Product Name' in headers:
+                hdr_indices['Product Name'] = headers.index('Product Name')
+            else:
+                hdr_indices['Product Name'] = None
             
-            formatting_errors = []
             final_rows = []
             
-            import re
-            
-            # Form final row data and validate formats
+            # Form final row data
             for row_idx, r in rows:
-                row_data = {h: r[hdr_indices[h]].strip() if h in hdr_indices else '' for h in REQUIRED_HEADERS}
-                row_data['Product Name'] = r[hdr_indices['Product Name']].strip() if 'Product Name' in hdr_indices else 'N/A'
+                row_data = {}
+                for h in REQUIRED_HEADERS:
+                    idx = hdr_indices.get(h)
+                    if idx is not None and idx < len(r):
+                        row_data[h] = r[idx].strip()
+                    else:
+                        row_data[h] = ''
                 
-                emp_code = row_data['Employee Code'].upper()
-                emp_name = row_data['Employee Name'].upper()
-                zone_val = row_data['Zone'].upper()
-                div_val = row_data['Division'].upper()
-                br_val = row_data['Branch Name'].upper()
+                idx_pn = hdr_indices.get('Product Name')
+                if idx_pn is not None and idx_pn < len(r):
+                    row_data['Product Name'] = r[idx_pn].strip()
+                else:
+                    row_data['Product Name'] = 'N/A'
                 
-                # 1. Employee Code format check
+                emp_code = row_data['Employee Code'].upper().strip()
+                emp_name = row_data['Employee Name'].upper().strip()
+                zone_val = row_data['Zone'].upper().strip()
+                div_val = row_data['Division'].upper().strip()
+                br_val = row_data['Branch Name'].upper().strip()
+                
                 if not emp_code:
-                    formatting_errors.append(f"Row {row_idx}: Employee Code is required.")
-                elif not re.match(r"^[A-Z0-9\-]{3,15}$", emp_code):
-                    formatting_errors.append(f"Row {row_idx}: Employee Code '{emp_code}' is invalid. Must be alphanumeric and 3-15 characters long.")
-                    
-                # 2. Employee Name check
+                    continue
+                
                 if not emp_name:
-                    formatting_errors.append(f"Row {row_idx}: Employee Name is required.")
-                elif len(emp_name) < 2:
-                    formatting_errors.append(f"Row {row_idx}: Employee Name '{emp_name}' is too short.")
-                    
+                    row_data['Employee Name'] = "N/A"
+                    emp_name = "N/A"
+                
                 # Standardize using the normalize_enums helper
                 norm_zone, norm_div, norm_br = normalize_enums(zone_val, div_val, br_val)
                 
-                VALID_ZONES = {'NORTH ZONE', 'WEST ZONE', 'EAST ZONE'}
-                VALID_DIVISIONS = {'DELHI DIVISION', 'GUJARAT DIVISION', 'PUNJAB DIVISION', 'BENGAL DIVISION', 'MUMBAI DIVISION'}
-                VALID_BRANCHES = {'DELHI RF', 'AHMEDABAD RF', 'CHANDIGARH RF', 'KOLKATA RF', 'MUMBAI RF'}
+                # Accept whatever is supplied, falling back to parsed values
+                row_data['Zone'] = norm_zone if norm_zone else zone_val
+                row_data['Division'] = norm_div if norm_div else div_val
+                row_data['Branch Name'] = norm_br if norm_br else br_val
                 
-                # 3. Zone validation
-                zone_items = [z.strip() for z in (norm_zone or "").split(",") if z.strip()]
-                all_zones_valid = all(z in VALID_ZONES for z in zone_items)
-                if not zone_items or not all_zones_valid:
-                    formatting_errors.append(f"Row {row_idx}: Invalid Zone '{row_data['Zone']}'. Must be NORTH ZONE, WEST ZONE, or EAST ZONE.")
-                else:
-                    row_data['Zone'] = norm_zone
-                    
-                # 4. Division validation
-                div_items = [d.strip() for d in (norm_div or "").split(",") if d.strip()]
-                all_divs_valid = all(d in VALID_DIVISIONS for d in div_items)
-                if not div_items or not all_divs_valid:
-                    formatting_errors.append(f"Row {row_idx}: Invalid Division '{row_data['Division']}'. Must be DELHI DIVISION, GUJARAT DIVISION, PUNJAB DIVISION, BENGAL DIVISION, or MUMBAI DIVISION.")
-                else:
-                    row_data['Division'] = norm_div
-                    
-                # 5. Branch validation
-                br_items = [b.strip() for b in (norm_br or "").split(",") if b.strip()]
-                all_branches_valid = all(b in VALID_BRANCHES for b in br_items)
-                if not br_items or not all_branches_valid:
-                    formatting_errors.append(f"Row {row_idx}: Invalid Branch '{row_data['Branch Name']}'. Must be DELHI RF, AHMEDABAD RF, CHANDIGARH RF, KOLKATA RF, or MUMBAI RF.")
-                else:
-                    row_data['Branch Name'] = norm_br
-                    
                 final_rows.append((row_idx, row_data))
-                
-            if formatting_errors:
-                return jsonify({
-                    "status": "error",
-                    "message": "CSV data formatting validation failed.",
-                    "details": formatting_errors
-                }), 400
                 
             rows = final_rows
 
         except Exception as e:
             return jsonify({"status": "error", "message": f"Failed to parse CSV: {str(e)}"}), 400
             
-        # Check for duplication within CSV and database
-        seen_codes_in_csv = {}
-        duplicates = []
-        
+        # Check for name similarity to auto-correct variations, but do not block duplicates
         conn = get_db_connection()
         for idx, row in rows:
-            code = row['Employee Code'].upper()
+            code = row['Employee Code'].upper().strip()
             if not code:
                 continue
-            
-            # Duplication within the CSV itself
-            if code in seen_codes_in_csv:
-                duplicates.append(f"Row {idx}: Employee Code '{code}' is duplicated in the file.")
-            else:
-                seen_codes_in_csv[code] = idx
                 
-            # Duplication check against SQLite database
             db_match = conn.execute("SELECT emp_name FROM employees WHERE emp_code=?", (code,)).fetchone()
             if db_match:
                 import difflib
@@ -1498,18 +1472,7 @@ def upload_roster():
                 input_name = row['Employee Name'].strip().upper()
                 ratio = difflib.SequenceMatcher(None, input_name, db_name).ratio()
                 if ratio >= 0.8:
-                    # Auto-correct to match the master database name to avoid duplicate confusion
                     row['Employee Name'] = db_name
-                else:
-                    duplicates.append(f"Row {idx}: Employee Code '{code}' ({row['Employee Name']}) already exists in the database as '{db_match['emp_name']}'.")
-        
-        if duplicates:
-            conn.close()
-            return jsonify({
-                "status": "error", 
-                "message": "This is the duplicacy. You remove that.",
-                "details": duplicates
-            }), 400
             
         # Insert or replace records if no duplicates found
         now_str = datetime.datetime.now().strftime("%Y-%m-%d")
