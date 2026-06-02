@@ -1474,7 +1474,7 @@ def upload_roster():
                 if ratio >= 0.8:
                     row['Employee Name'] = db_name
             
-        # Insert or replace records if no duplicates found
+        # Insert or replace records database-agnostically
         now_str = datetime.datetime.now().strftime("%Y-%m-%d")
         for _, row in rows:
             try:
@@ -1484,10 +1484,22 @@ def upload_roster():
                     row.get('Product Name', ''),
                     row.get('Division', '')
                 )
-                conn.execute(
-                    "INSERT OR REPLACE INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
-                    (row['Employee Code'].upper(), row['Employee Name'].upper(), b_name, row['Zone'], row['Division'], bu_name, row['Role'].upper(), p_name, f"UPLOADED VIA CSV ON {now_str}")
-                )
+                emp_code_upper = row['Employee Code'].upper().strip()
+                
+                cursor = conn.cursor()
+                cursor.execute("SELECT emp_code FROM employees WHERE emp_code = ?", (emp_code_upper,))
+                exists = cursor.fetchone()
+                
+                if exists:
+                    conn.execute(
+                        "UPDATE employees SET emp_name = ?, branch_name = ?, zone = ?, division = ?, business_unit = ?, role = ?, product_name = ?, status = 'ACTIVE', change_detail = ? WHERE emp_code = ?",
+                        (row['Employee Name'].upper(), b_name, row['Zone'], row['Division'], bu_name, row['Role'].upper(), p_name, f"UPLOADED VIA CSV ON {now_str}", emp_code_upper)
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, status, change_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
+                        (emp_code_upper, row['Employee Name'].upper(), b_name, row['Zone'], row['Division'], bu_name, row['Role'].upper(), p_name, f"UPLOADED VIA CSV ON {now_str}")
+                    )
             except Exception as e:
                 conn.rollback()
                 conn.close()
