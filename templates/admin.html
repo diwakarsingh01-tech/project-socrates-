@@ -1044,6 +1044,10 @@
             const [errorDetails, setErrorDetails] = useState([]);
             const [successMsg, setSuccessMsg] = useState('');
             const [isUploading, setIsUploading] = useState(false);
+            const [isRosterUploading, setIsRosterUploading] = useState(false);
+            const [isHistoricalUploading, setIsHistoricalUploading] = useState(false);
+            const [uploadStep, setUploadStep] = useState(0);
+            const [isLoadingEmps, setIsLoadingEmps] = useState(false);
             const [showManualModal, setShowManualModal] = useState(false);
             
             // Manual form fields
@@ -1085,10 +1089,11 @@
                 fetch('/api/roster/filters')
                     .then(res => res.json())
                     .then(data => setFilterOptions(data))
-                    .catch(err => console.error("Error loading roster roster filters:", err));
+                    .catch(err => console.error("Error loading roster filters:", err));
             };
 
             const loadEmps = (zoneVal = selZone, divVal = selDiv, branchVal = selBranch, searchVal = searchQuery) => {
+                setIsLoadingEmps(true);
                 let url = '/api/roster?';
                 if (zoneVal) url += `zone=${encodeURIComponent(zoneVal)}&`;
                 if (divVal) url += `division=${encodeURIComponent(divVal)}&`;
@@ -1103,6 +1108,7 @@
                         if (!zoneVal && !divVal && !branchVal && !searchVal) {
                             setTotalCount(data.length);
                         }
+                        setIsLoadingEmps(false);
                     })
                     .catch(err => {
                         console.log("Using offline fallback", err);
@@ -1112,6 +1118,7 @@
                         if (!zoneVal && !divVal && !branchVal && !searchVal) {
                             setTotalCount(fallbackData.length);
                         }
+                        setIsLoadingEmps(false);
                     });
             };
 
@@ -1187,9 +1194,17 @@
                 setErrorDetails([]);
                 setSuccessMsg('');
                 setIsUploading(true);
+                setIsRosterUploading(true);
+                setUploadStep(1);
 
                 const formData = new FormData();
                 formData.append('file', file);
+
+                const t1 = setTimeout(() => setUploadStep(2), 700);
+                const t2 = setTimeout(() => setUploadStep(3), 1400);
+                const t3 = setTimeout(() => setUploadStep(4), 2100);
+
+                const startTime = Date.now();
 
                 fetch('/api/roster/upload', {
                     method: 'POST',
@@ -1197,18 +1212,33 @@
                 })
                 .then(res => res.json())
                 .then(data => {
-                    setIsUploading(false);
-                    if (data.status === 'success') {
-                        setSuccessMsg(data.message);
-                        loadEmps();
-                        loadFilterOptions();
-                    } else {
-                        setErrorMsg(data.message);
-                        setErrorDetails(data.details || []);
-                    }
+                    const elapsed = Date.now() - startTime;
+                    const remainingDelay = Math.max(0, 2800 - elapsed);
+                    
+                    setTimeout(() => {
+                        clearTimeout(t1);
+                        clearTimeout(t2);
+                        clearTimeout(t3);
+                        setIsUploading(false);
+                        setIsRosterUploading(false);
+                        setUploadStep(0);
+                        if (data.status === 'success') {
+                            setSuccessMsg(data.message);
+                            loadEmps();
+                            loadFilterOptions();
+                        } else {
+                            setErrorMsg(data.message);
+                            setErrorDetails(data.details || []);
+                        }
+                    }, remainingDelay);
                 })
                 .catch(err => {
+                    clearTimeout(t1);
+                    clearTimeout(t2);
+                    clearTimeout(t3);
                     setIsUploading(false);
+                    setIsRosterUploading(false);
+                    setUploadStep(0);
                     setErrorMsg("Server error uploading file. Duplicacy or network check failed.");
                 });
             };
@@ -1231,9 +1261,17 @@
                 setErrorDetails([]);
                 setSuccessMsg('');
                 setIsUploading(true);
+                setIsHistoricalUploading(true);
+                setUploadStep(1);
 
                 const formData = new FormData();
                 formData.append('file', file);
+
+                const t1 = setTimeout(() => setUploadStep(2), 700);
+                const t2 = setTimeout(() => setUploadStep(3), 1400);
+                const t3 = setTimeout(() => setUploadStep(4), 2100);
+
+                const startTime = Date.now();
 
                 fetch('/api/assessments/upload-historical', {
                     method: 'POST',
@@ -1241,17 +1279,32 @@
                 })
                 .then(res => res.json())
                 .then(data => {
-                    setIsUploading(false);
-                    if (data.status === 'success') {
-                        setSuccessMsg(data.message);
-                        loadEmps();
-                    } else {
-                        setErrorMsg(data.message);
-                        setErrorDetails(data.details || []);
-                    }
+                    const elapsed = Date.now() - startTime;
+                    const remainingDelay = Math.max(0, 2800 - elapsed);
+                    
+                    setTimeout(() => {
+                        clearTimeout(t1);
+                        clearTimeout(t2);
+                        clearTimeout(t3);
+                        setIsUploading(false);
+                        setIsHistoricalUploading(false);
+                        setUploadStep(0);
+                        if (data.status === 'success') {
+                            setSuccessMsg(data.message);
+                            loadEmps();
+                        } else {
+                            setErrorMsg(data.message);
+                            setErrorDetails(data.details || []);
+                        }
+                    }, remainingDelay);
                 })
                 .catch(err => {
+                    clearTimeout(t1);
+                    clearTimeout(t2);
+                    clearTimeout(t3);
                     setIsUploading(false);
+                    setIsHistoricalUploading(false);
+                    setUploadStep(0);
                     setErrorMsg("Server error importing historical dataset. Ensure CSV formatting is valid.");
                 });
             };
@@ -1559,20 +1612,182 @@
                     )}
 
                     {/* Alert Notifications */}
-                    {isUploading && (
-                        <div className="p-6 bg-blue-50 border-l-4 border-blue-500 rounded-xl shadow-md text-blue-900 animate-pulse flex flex-col md:flex-row items-center gap-5 justify-between">
-                            <div className="flex items-center gap-4">
-                                <div className="relative flex items-center justify-center">
-                                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent shadow-lg shadow-blue-500/20"></div>
-                                    <i className="fas fa-cloud-upload-alt text-blue-500 text-xs absolute"></i>
+                    {isRosterUploading && (
+                        <div className="p-6 bg-gradient-to-br from-indigo-50/90 to-blue-50/90 border border-indigo-100 rounded-2xl shadow-xl text-slate-800 animate-fade-in space-y-5 backdrop-blur-md">
+                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-indigo-100/50 pb-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="relative flex items-center justify-center">
+                                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent shadow-lg shadow-indigo-600/20"></div>
+                                        <i className="fas fa-cloud-upload-alt text-indigo-600 text-sm absolute"></i>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-black text-indigo-950 text-base flex items-center gap-2">
+                                            Syncing & Processing Employee Roster
+                                            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-indigo-600 animate-ping"></span>
+                                        </h4>
+                                        <p className="text-xs text-slate-500 mt-0.5">Uploading CSV dataset to the production server and syncing tables.</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h4 className="font-extrabold text-blue-800 text-sm">Processing & Syncing Roster...</h4>
-                                    <p className="text-xs text-blue-600 mt-1">Unified database tables are being updated. Running secure PostgreSQL schema checks and Google Drive cloud synchronizations. Please keep this tab open.</p>
+                                <div className="text-[10px] font-black bg-indigo-100 border border-indigo-200 rounded-full px-4 py-1.5 uppercase tracking-widest text-indigo-700 shadow-sm animate-pulse">
+                                    Supabase Live Active
                                 </div>
                             </div>
-                            <div className="text-[10px] font-black bg-blue-100 border border-blue-200 rounded-full px-4 py-1.5 uppercase tracking-widest text-blue-700 animate-pulse">
-                                Live Sync Active
+                            
+                            {/* Modern Step Visualizer */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-all ${uploadStep >= 1 ? 'bg-white shadow-sm border border-slate-100' : 'opacity-50'}`}>
+                                    <div className="flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold shrink-0">
+                                        {uploadStep > 1 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 h-6 w-6 rounded-full flex items-center justify-center"><i className="fas fa-check text-[10px]"></i></span>
+                                        ) : uploadStep === 1 ? (
+                                            <span className="bg-indigo-600 text-white h-6 w-6 rounded-full flex items-center justify-center animate-spin border-2 border-white border-t-transparent"></span>
+                                        ) : (
+                                            <span className="bg-slate-100 text-slate-400 h-6 w-6 rounded-full flex items-center justify-center">1</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h5 className={`text-xs font-bold ${uploadStep === 1 ? 'text-indigo-600' : uploadStep > 1 ? 'text-slate-800' : 'text-slate-400'}`}>1. Validate Roster</h5>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Reading structures & validating CSV columns.</p>
+                                    </div>
+                                </div>
+
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-all ${uploadStep >= 2 ? 'bg-white shadow-sm border border-slate-100' : 'opacity-50'}`}>
+                                    <div className="flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold shrink-0">
+                                        {uploadStep > 2 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 h-6 w-6 rounded-full flex items-center justify-center"><i className="fas fa-check text-[10px]"></i></span>
+                                        ) : uploadStep === 2 ? (
+                                            <span className="bg-indigo-600 text-white h-6 w-6 rounded-full flex items-center justify-center animate-spin border-2 border-white border-t-transparent"></span>
+                                        ) : (
+                                            <span className="bg-slate-100 text-slate-400 h-6 w-6 rounded-full flex items-center justify-center">2</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h5 className={`text-xs font-bold ${uploadStep === 2 ? 'text-indigo-600' : uploadStep > 2 ? 'text-slate-800' : 'text-slate-400'}`}>2. Cloud Connection</h5>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">DB handshake & SSL protocol validation.</p>
+                                    </div>
+                                </div>
+
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-all ${uploadStep >= 3 ? 'bg-white shadow-sm border border-slate-100' : 'opacity-50'}`}>
+                                    <div className="flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold shrink-0">
+                                        {uploadStep > 3 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 h-6 w-6 rounded-full flex items-center justify-center"><i className="fas fa-check text-[10px]"></i></span>
+                                        ) : uploadStep === 3 ? (
+                                            <span className="bg-indigo-600 text-white h-6 w-6 rounded-full flex items-center justify-center animate-spin border-2 border-white border-t-transparent"></span>
+                                        ) : (
+                                            <span className="bg-slate-100 text-slate-400 h-6 w-6 rounded-full flex items-center justify-center">3</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h5 className={`text-xs font-bold ${uploadStep === 3 ? 'text-indigo-600' : uploadStep > 3 ? 'text-slate-800' : 'text-slate-400'}`}>3. Sync Database</h5>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Merging columns & running upsert records.</p>
+                                    </div>
+                                </div>
+
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-all ${uploadStep >= 4 ? 'bg-white shadow-sm border border-slate-100' : 'opacity-50'}`}>
+                                    <div className="flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold shrink-0">
+                                        {uploadStep > 4 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 h-6 w-6 rounded-full flex items-center justify-center"><i className="fas fa-check text-[10px]"></i></span>
+                                        ) : uploadStep === 4 ? (
+                                            <span className="bg-indigo-600 text-white h-6 w-6 rounded-full flex items-center justify-center animate-spin border-2 border-white border-t-transparent"></span>
+                                        ) : (
+                                            <span className="bg-slate-100 text-slate-400 h-6 w-6 rounded-full flex items-center justify-center">4</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h5 className={`text-xs font-bold ${uploadStep === 4 ? 'text-indigo-600' : uploadStep > 4 ? 'text-slate-800' : 'text-slate-400'}`}>4. Cloud Backup</h5>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Triggering Google Drive auto-sync daemon.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {isHistoricalUploading && (
+                        <div className="p-6 bg-gradient-to-br from-violet-50/90 to-purple-50/90 border border-violet-100 rounded-2xl shadow-xl text-slate-800 animate-fade-in space-y-5 backdrop-blur-md">
+                            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-violet-100/50 pb-4">
+                                <div className="flex items-center gap-4">
+                                    <div className="relative flex items-center justify-center">
+                                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-violet-600 border-t-transparent shadow-lg shadow-violet-600/20"></div>
+                                        <i className="fas fa-history text-violet-600 text-sm absolute"></i>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-black text-violet-950 text-base flex items-center gap-2">
+                                            Importing Historical Assessments
+                                            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-violet-600 animate-ping"></span>
+                                        </h4>
+                                        <p className="text-xs text-slate-500 mt-0.5">Analyzing pre-tests, post-tests, calculating Socratic deltas, and populating analytics.</p>
+                                    </div>
+                                </div>
+                                <div className="text-[10px] font-black bg-violet-100 border border-violet-200 rounded-full px-4 py-1.5 uppercase tracking-widest text-violet-700 shadow-sm animate-pulse">
+                                    Delta Engine Active
+                                </div>
+                            </div>
+                            
+                            {/* Modern Step Visualizer */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-all ${uploadStep >= 1 ? 'bg-white shadow-sm border border-slate-100' : 'opacity-50'}`}>
+                                    <div className="flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold shrink-0">
+                                        {uploadStep > 1 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 h-6 w-6 rounded-full flex items-center justify-center"><i className="fas fa-check text-[10px]"></i></span>
+                                        ) : uploadStep === 1 ? (
+                                            <span className="bg-violet-600 text-white h-6 w-6 rounded-full flex items-center justify-center animate-spin border-2 border-white border-t-transparent"></span>
+                                        ) : (
+                                            <span className="bg-slate-100 text-slate-400 h-6 w-6 rounded-full flex items-center justify-center">1</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h5 className={`text-xs font-bold ${uploadStep === 1 ? 'text-violet-600' : uploadStep > 1 ? 'text-slate-800' : 'text-slate-400'}`}>1. Read CSV Data</h5>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Parsing offline assessment metrics & entries.</p>
+                                    </div>
+                                </div>
+
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-all ${uploadStep >= 2 ? 'bg-white shadow-sm border border-slate-100' : 'opacity-50'}`}>
+                                    <div className="flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold shrink-0">
+                                        {uploadStep > 2 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 h-6 w-6 rounded-full flex items-center justify-center"><i className="fas fa-check text-[10px]"></i></span>
+                                        ) : uploadStep === 2 ? (
+                                            <span className="bg-violet-600 text-white h-6 w-6 rounded-full flex items-center justify-center animate-spin border-2 border-white border-t-transparent"></span>
+                                        ) : (
+                                            <span className="bg-slate-100 text-slate-400 h-6 w-6 rounded-full flex items-center justify-center">2</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h5 className={`text-xs font-bold ${uploadStep === 2 ? 'text-violet-600' : uploadStep > 2 ? 'text-slate-800' : 'text-slate-400'}`}>2. Align Profiles</h5>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Matching inputs to the active Employee Roster.</p>
+                                    </div>
+                                </div>
+
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-all ${uploadStep >= 3 ? 'bg-white shadow-sm border border-slate-100' : 'opacity-50'}`}>
+                                    <div className="flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold shrink-0">
+                                        {uploadStep > 3 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 h-6 w-6 rounded-full flex items-center justify-center"><i className="fas fa-check text-[10px]"></i></span>
+                                        ) : uploadStep === 3 ? (
+                                            <span className="bg-violet-600 text-white h-6 w-6 rounded-full flex items-center justify-center animate-spin border-2 border-white border-t-transparent"></span>
+                                        ) : (
+                                            <span className="bg-slate-100 text-slate-400 h-6 w-6 rounded-full flex items-center justify-center">3</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h5 className={`text-xs font-bold ${uploadStep === 3 ? 'text-violet-600' : uploadStep > 3 ? 'text-slate-800' : 'text-slate-400'}`}>3. Calculate Deltas</h5>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Computing improvement curves (0, 6, 20 Days).</p>
+                                    </div>
+                                </div>
+
+                                <div className={`flex items-start gap-3 p-3 rounded-xl transition-all ${uploadStep >= 4 ? 'bg-white shadow-sm border border-slate-100' : 'opacity-50'}`}>
+                                    <div className="flex items-center justify-center h-6 w-6 rounded-full text-xs font-bold shrink-0">
+                                        {uploadStep > 4 ? (
+                                            <span className="bg-emerald-100 text-emerald-700 h-6 w-6 rounded-full flex items-center justify-center"><i className="fas fa-check text-[10px]"></i></span>
+                                        ) : uploadStep === 4 ? (
+                                            <span className="bg-violet-600 text-white h-6 w-6 rounded-full flex items-center justify-center animate-spin border-2 border-white border-t-transparent"></span>
+                                        ) : (
+                                            <span className="bg-slate-100 text-slate-400 h-6 w-6 rounded-full flex items-center justify-center">4</span>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h5 className={`text-xs font-bold ${uploadStep === 4 ? 'text-violet-600' : uploadStep > 4 ? 'text-slate-800' : 'text-slate-400'}`}>4. Commit & Link</h5>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Storing historical metrics & building logs.</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1621,10 +1836,10 @@
                                     </button>
                                     <div className="relative overflow-hidden inline-block">
                                         <button className={`btn-primary text-sm flex items-center shadow-sm ${isUploading ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`} disabled={isUploading}>
-                                            {isUploading ? (
+                                            {isRosterUploading ? (
                                                 <>
                                                     <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
-                                                    <span>Syncing...</span>
+                                                    <span>Processing Roster...</span>
                                                 </>
                                             ) : (
                                                 <>
@@ -1705,7 +1920,24 @@
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 bg-white">
-                                        {emps.length === 0 ? (
+                                        {isLoadingEmps ? (
+                                            [...Array(5)].map((_, index) => (
+                                                <tr key={index} className="animate-pulse">
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-32"></div></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-24"></div></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-12"></div></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-20"></div></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-24"></div></td>
+                                                    <td className="px-6 py-5">
+                                                        <div className="h-5 bg-slate-200 rounded-full w-14 mb-1"></div>
+                                                        <div className="h-3 bg-slate-100 rounded w-20"></div>
+                                                    </td>
+                                                    <td className="px-6 py-5 text-right"><div className="h-8 bg-slate-200 rounded w-16 ml-auto"></div></td>
+                                                </tr>
+                                            ))
+                                        ) : emps.length === 0 ? (
                                             <tr>
                                                 <td colSpan="9" className="px-6 py-12 text-center text-slate-400 font-medium">
                                                     <i className="fas fa-users text-4xl text-slate-200 mb-3 block"></i>
@@ -1768,10 +2000,23 @@
                                     </button>
                                     
                                     <div className="relative overflow-hidden w-full">
-                                        <button type="button" className="w-full btn-primary py-2.5 px-4 text-xs font-bold flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl shadow-md hover:shadow-indigo-200/50">
-                                            <i className="fas fa-cloud-upload-alt text-sm"></i> Upload Historical CSV
+                                        <button 
+                                            type="button" 
+                                            className={`w-full btn-primary py-2.5 px-4 text-xs font-bold flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl shadow-md hover:shadow-indigo-200/50 ${isUploading ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                                            disabled={isUploading}
+                                        >
+                                            {isHistoricalUploading ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent mr-2"></div>
+                                                    <span>Importing Assessments...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <i className="fas fa-cloud-upload-alt text-sm"></i> Upload Historical CSV
+                                                </>
+                                            )}
                                         </button>
-                                        <input type="file" accept=".csv" onChange={handleAssessmentUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+                                        {!isUploading && <input type="file" accept=".csv" onChange={handleAssessmentUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />}
                                     </div>
                                 </div>
                                 
