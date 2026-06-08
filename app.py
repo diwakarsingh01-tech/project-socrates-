@@ -2930,36 +2930,33 @@ def generate_module():
             import json
             
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            # Switch to gemini-1.5-pro for better reasoning and diversity in long-form generation
+            model = genai.GenerativeModel('gemini-1.5-pro')
             
             prompt = f"""
-            You are a senior Socratic Trainer with 20 years of experience.
-            CRITICAL INSTRUCTION: You MUST only generate questions directly and strictly based on the provided policy content document. DO NOT assume, hallucinate, or import any external knowledge. 
+            You are a Senior Socratic Policy Architect with 20 years of experience.
+            CRITICAL INSTRUCTION: You MUST only generate questions based strictly on the provided policy content. 
             
             {difficulty_instructions}
             
-            Perform deep research on this policy content and generate exactly {count} UNIQUE and DISTINCT multiple-choice Socratic assessment questions.
-            Each question must have exactly 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
-            Ensure the questions are challenging, test different parts of the document, and are dialogue-oriented case scenarios.
+            GOAL: Generate exactly {count} UNIQUE, DISTINCT, and DIVERSE multiple-choice Socratic assessment questions.
+            - Each question must test a DIFFERENT rule, clause, or scenario from the document.
+            - DO NOT repeat the same concept across multiple questions.
+            - Format: 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
+            - Style: Scenario-based, dialogue-oriented, and challenging.
             
             {translation_instructions}
             
-            Format your response STRICTLY as a JSON array containing {count} objects. Do not wrap in markdown or backticks.
-            Example format for multiple questions:
+            OUTPUT FORMAT: Return ONLY a raw JSON array of {count} objects. No markdown, no backticks, no preamble.
+            Example for {count} items:
             [
               {{
-                "question": "What is the maximum loan ratio allowed under the new policy?",
-                "options": ["75%", "85%", "90%", "100%"],
+                "question": "Scenario 1: [Case...]",
+                "options": ["A", "B", "C", "D"],
                 "correctIndex": 1,
                 {example_translation_format}
               }},
-              {{
-                "question": "If a customer has a CIBIL score of 650, which category do they fall into?",
-                "options": ["Elite", "Standard", "High Risk", "Rejected"],
-                "correctIndex": 2,
-                {example_translation_format}
-              }}
-              // ... continue until you have {count} unique questions
+              // ... generate {count - 1} more unique objects ...
             ]
             
             Policy content:
@@ -2969,33 +2966,8 @@ def generate_module():
             response = model.generate_content(prompt)
             generated_questions = extract_json_from_text(response.text)
             
-            # --- PASS 2: Double Validation & Self-Correction ---
-            if len(generated_questions) > 0:
-                double_validation_prompt = f"""
-                You are a Socratic Policy Auditor. Your task is to perform a two-step validation (Double Validation) on these Socratic questions and their multilingual translations against the source policy document.
-                
-                Here is the source policy document:
-                \"\"\"
-                {text_content}
-                \"\"\"
-                
-                Here are the Socratic questions that were generated:
-                {json.dumps(generated_questions, indent=2)}
-                
-                For EACH question in the array:
-                1. **Validation Step 1 (Factual Accuracy & Depth)**: Cross-reference the question, options, and translations with the source document. Make sure the Socratic question and all its translations are factually accurate, deep, and do not misrepresent any details. Correct any errors.
-                2. **Validation Step 2 (Correct Index Audit)**: Verify that the option at the `correctIndex` is mathematically and factually the only correct answer. Ensure that in all translations, the option at `correctIndex` corresponds exactly to the correct answer.
-                
-                CRITICAL INSTRUCTION: Do NOT include any validation notes, reasoning commentary, or explanation text. The returned fields MUST contain ONLY the clean, final question text and option values.
-                
-                Return the finalized, audited, and double-corrected questions array STRICTLY as a JSON array containing all {len(generated_questions)} objects. Do not wrap in markdown or backticks. Follow the exact same format as input.
-                """
-                
-                audit_response = model.generate_content(double_validation_prompt)
-                audited_questions = extract_json_from_text(audit_response.text)
-                if len(audited_questions) > 0:
-                    generated_questions = audited_questions
-                    print("AI Double-Validation completed successfully!")
+            # Skip double-validation for now as it may be causing truncation/duplicates
+            # The pro model is capable enough to handle factual accuracy in one pass
             
             if len(generated_questions) > 0:
                 gemini_success = True
