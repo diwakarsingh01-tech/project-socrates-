@@ -2995,7 +2995,7 @@
                                             className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
                                         >
                                             <option value="">Awaiting Audit</option>
-                                            {trainers.map(t => (
+                                            {(trainers || []).filter(t => t && t.id).map(t => (
                                                 <option key={t.id} value={t.name}>{t.name} ({t.id})</option>
                                             ))}
                                         </select>

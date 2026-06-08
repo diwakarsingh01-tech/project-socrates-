@@ -492,13 +492,13 @@ def enforce_authentication():
             
         # Role-based restriction: Access Management, DB Reset, Roster Upload/Modifications are Admin only!
         superadmin_routes = [
-            '/api/trainers',
             '/api/trainers/upload',
             '/api/admin/reset-database'
         ]
         
         is_superadmin_route = request.path in superadmin_routes or \
                                request.path.startswith('/api/trainers/') or \
+                               (request.path == '/api/trainers' and request.method != 'GET') or \
                                (request.path.startswith('/api/roster') and request.method in ['POST', 'PUT', 'DELETE'])
                                
         if is_superadmin_route:
