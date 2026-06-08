@@ -2934,25 +2934,32 @@ def generate_module():
             
             prompt = f"""
             You are a senior Socratic Trainer with 20 years of experience.
-            CRITICAL INSTRUCTION: You MUST only generate questions directly and strictly based on the provided policy content document. DO NOT assume, hallucinate, or import any external knowledge, other bank/lending policies, or generic rules. If the subject of the document is different (e.g. KYC, credit approval, compliance), ONLY base your questions on that specific subject. Every numeric limit, threshold, rule, or exception in your questions MUST be directly traceable to the provided text below.
+            CRITICAL INSTRUCTION: You MUST only generate questions directly and strictly based on the provided policy content document. DO NOT assume, hallucinate, or import any external knowledge. 
             
             {difficulty_instructions}
             
-            Perform deep research on this policy content and generate exactly {count} multiple-choice Socratic assessment questions.
+            Perform deep research on this policy content and generate exactly {count} UNIQUE and DISTINCT multiple-choice Socratic assessment questions.
             Each question must have exactly 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
-            Ensure the questions are challenging, dialogue-oriented, and directly based on the key rules, constraints, numeric thresholds, and exceptions inside the text.
+            Ensure the questions are challenging, test different parts of the document, and are dialogue-oriented case scenarios.
             
             {translation_instructions}
             
-            Format your response STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks.
-            Example format:
+            Format your response STRICTLY as a JSON array containing {count} objects. Do not wrap in markdown or backticks.
+            Example format for multiple questions:
             [
               {{
                 "question": "What is the maximum loan ratio allowed under the new policy?",
                 "options": ["75%", "85%", "90%", "100%"],
                 "correctIndex": 1,
                 {example_translation_format}
+              }},
+              {{
+                "question": "If a customer has a CIBIL score of 650, which category do they fall into?",
+                "options": ["Elite", "Standard", "High Risk", "Rejected"],
+                "correctIndex": 2,
+                {example_translation_format}
               }}
+              // ... continue until you have {count} unique questions
             ]
             
             Policy content:
@@ -2979,9 +2986,9 @@ def generate_module():
                 1. **Validation Step 1 (Factual Accuracy & Depth)**: Cross-reference the question, options, and translations with the source document. Make sure the Socratic question and all its translations are factually accurate, deep, and do not misrepresent any details. Correct any errors.
                 2. **Validation Step 2 (Correct Index Audit)**: Verify that the option at the `correctIndex` is mathematically and factually the only correct answer. Ensure that in all translations, the option at `correctIndex` corresponds exactly to the correct answer.
                 
-                CRITICAL INSTRUCTION: Do NOT include any validation notes, reasoning commentary, step labels (such as 'Validation Step 1:', 'Step 1:', 'Audited:', 'Corrected:', 'Factual accuracy:'), or explanation text inside the 'question' or 'options' fields of the final JSON objects. The returned fields MUST contain ONLY the clean, final question text and option values to be presented to the trainee.
+                CRITICAL INSTRUCTION: Do NOT include any validation notes, reasoning commentary, or explanation text. The returned fields MUST contain ONLY the clean, final question text and option values.
                 
-                Return the finalized, audited, and double-corrected questions array STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks. Follow the exact same format as input.
+                Return the finalized, audited, and double-corrected questions array STRICTLY as a JSON array containing all {len(generated_questions)} objects. Do not wrap in markdown or backticks. Follow the exact same format as input.
                 """
                 
                 audit_response = model.generate_content(double_validation_prompt)
