@@ -2934,29 +2934,33 @@ def generate_module():
             model = genai.GenerativeModel('gemini-1.5-pro')
             
             prompt = f"""
-            You are a Senior Socratic Policy Architect with 20 years of experience.
-            CRITICAL INSTRUCTION: You MUST only generate questions based strictly on the provided policy content. 
+            You are a Senior Socratic Training Expert with 20 years of experience in Institutional Fintech Training.
+            
+            GOAL: Create a high-stakes professional assessment module based ONLY on the provided policy document.
+            
+            CRITICAL FORMATTING RULES:
+            1. NO "Fill-in-the-blanks": Do not use "_____" or ask to complete a sentence.
+            2. NO Text Fragments: Do not use random phrases from the PDF as options.
+            3. SCENARIO-BASED: Every question MUST be a "Case Study" or "Real-life Scenario". 
+               - Example: "A customer arrives with a CIBIL score of 700 but has 5 inquiries in the last month. Based on the SOP, how should the executive proceed?"
+            4. LOGICAL OPTIONS: Options A, B, C, and D must be full, logical, and distinct actions or conclusions.
+            5. SOCRATIC DEPTH: Questions should test the trainee's *understanding* and *application* of the policy, not just their memory.
             
             {difficulty_instructions}
             
-            GOAL: Generate exactly {count} UNIQUE, DISTINCT, and DIVERSE multiple-choice Socratic assessment questions.
-            - Each question must test a DIFFERENT rule, clause, or scenario from the document.
-            - DO NOT repeat the same concept across multiple questions.
-            - Format: 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
-            - Style: Scenario-based, dialogue-oriented, and challenging.
+            Generate exactly {count} UNIQUE and DIVERSE scenario questions.
             
             {translation_instructions}
             
-            OUTPUT FORMAT: Return ONLY a raw JSON array of {count} objects. No markdown, no backticks, no preamble.
-            Example for {count} items:
+            OUTPUT FORMAT: Return ONLY a raw JSON array of {count} objects. No preamble or markdown.
+            Format:
             [
               {{
-                "question": "Scenario 1: [Case...]",
-                "options": ["A", "B", "C", "D"],
-                "correctIndex": 1,
+                "question": "Scenario: [Describe a specific customer case or situation here]. Based on the policy, what is the correct action?",
+                "options": ["Action 1 (Detailed)", "Action 2 (Detailed)", "Action 3 (Detailed)", "Action 4 (Detailed)"],
+                "correctIndex": 0,
                 {example_translation_format}
-              }},
-              // ... generate {count - 1} more unique objects ...
+              }}
             ]
             
             Policy content:
