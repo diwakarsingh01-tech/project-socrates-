@@ -265,7 +265,7 @@
             };
 
             const downloadTemplate = () => {
-                const csvData = "Employee Code,Employee Name,Business Unit,Zone,Division,Branch Name,Role,Product Name\nSF-1001,RAHUL SINGH,TWO-WHEELER,NORTH ZONE,DELHI DIVISION,DELHI RF,PL EXE,SPLENDOR V2\nSF-1002,NEHA SHARMA,TWO-WHEELER,WEST ZONE,GUJARAT DIVISION,AHMEDABAD RF,PL EXE,ACTIVA 6G\nSF-1003,AMIT PATEL,TWO-WHEELER,NORTH ZONE,PUNJAB DIVISION,CHANDIGARH RF,PL EXE,ACTIVA 6G\nSF-1004,PRIYA DAS,TWO-WHEELER,EAST ZONE,BENGAL DIVISION,KOLKATA RF,PL EXE,ACTIVA 6G";
+                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name\nSF-1001,RAHUL SINGH,DELHI RF,NORTH ZONE,DELHI DIVISION,TWO-WHEELER,PL EXE,SPLENDOR V2\nSF-1002,NEHA SHARMA,AHMEDABAD RF,WEST ZONE,GUJARAT DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G\nSF-1003,AMIT PATEL,CHANDIGARH RF,NORTH ZONE,PUNJAB DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G\nSF-1004,PRIYA DAS,KOLKATA RF,EAST ZONE,BENGAL DIVISION,TWO-WHEELER,PL EXE,ACTIVA 6G";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -1126,10 +1126,10 @@
             const [empCode, setEmpCode] = useState('');
             const [empName, setEmpName] = useState('');
             const [branchName, setBranchName] = useState('');
-            const [zone, setZone] = useState('NORTH ZONE');
+            const [zone, setZone] = useState('');
             const [division, setDivision] = useState('');
-            const [bu, setBu] = useState('TWO-WHEELER');
-            const [role, setRole] = useState('PL Exe');
+            const [bu, setBu] = useState('');
+            const [role, setRole] = useState('');
             const [productName, setProductName] = useState('');
             const [changeDetail, setChangeDetail] = useState('');
 
@@ -1337,7 +1337,7 @@
             };
 
             const downloadAssessmentTemplate = () => {
-                const csvData = "Employee Code,Employee Name,Business Unit,Zone,Division,Branch Name,Role,Product Name,Trainer ID,Trainer Name,Date of Visit,Module ID,Zero Day Pre-Test,Zero Day Post-Test,Six Days Pre-Test,Six Days Post-Test,Twenty Days Pre-Test,Twenty Days Post-Test\nSF-1001,Rahul Singh,TWO-WHEELER,NORTH ZONE,DELHI DIVISION,DELHI RF,PL Exe,SPLENDOR V2,TR-1001,AMIT SHARMA,2026-03-15,1,45.0,85.0,55.0,90.0,60.0,95.0\nSF-1002,Neha Sharma,TWO-WHEELER,WEST ZONE,GUJARAT DIVISION,AHMEDABAD RF,PL Exe,ACTIVA 6G,TR-1002,PRIYA GUPTA,2026-03-16,1,50.0,90.0,N/A,N/A,N/A,N/A";
+                const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business Unit,Role,Product Name,Trainer ID,Trainer Name,Date of Visit,Module ID,Zero Day Pre-Test,Zero Day Post-Test,Six Days Pre-Test,Six Days Post-Test,Twenty Days Pre-Test,Twenty Days Post-Test\nSF-1001,Rahul Singh,DELHI RF,NORTH ZONE,DELHI DIVISION,TWO-WHEELER,PL Exe,SPLENDOR V2,TR-1001,AMIT SHARMA,2026-03-15,1,45.0,85.0,55.0,90.0,60.0,95.0\nSF-1002,Neha Sharma,AHMEDABAD RF,WEST ZONE,GUJARAT DIVISION,TWO-WHEELER,PL Exe,ACTIVA 6G,TR-1002,PRIYA GUPTA,2026-03-16,1,50.0,90.0,N/A,N/A,N/A,N/A";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -1401,6 +1401,22 @@
                     setErrorMsg("Server error importing historical dataset. Ensure CSV formatting is valid.");
                 });
             };
+            const openAddManualModal = () => {
+                setErrorMsg('');
+                setErrorDetails([]);
+                setSuccessMsg('');
+                setEmpCode('');
+                setEmpName('');
+                setBranchName('');
+                setZone('');
+                setDivision('');
+                setBu('');
+                setRole('');
+                setProductName('');
+                setChangeDetail('');
+                
+                setShowManualModal(true);
+            };
 
             const handleManualSubmit = (e) => {
                 e.preventDefault();
@@ -1435,8 +1451,9 @@
                         setEmpName('');
                         setBranchName('');
                         setDivision('');
-                        setRole('PL Exe');
-                        setZone('NORTH ZONE');
+                        setRole('');
+                        setZone('');
+                        setBu('');
                         setProductName('');
                         setChangeDetail('');
                         loadEmps();
@@ -1654,61 +1671,68 @@
                                 </div>
                                 <form onSubmit={handleManualSubmit}>
                                     <div className="p-6 space-y-4">
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Employee Code (Required)</label>
-                                            <input type="text" value={empCode} onChange={e => setEmpCode(e.target.value.toUpperCase())} required placeholder="e.g. SF-1008" className="input-field uppercase font-bold" />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Employee Code</label>
+                                                <input type="text" value={empCode} onChange={e => setEmpCode(e.target.value.toUpperCase())} required placeholder="e.g. SF-1008" className="input-field uppercase font-bold" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Employee Name</label>
+                                                <input type="text" value={empName} onChange={e => setEmpName(e.target.value.toUpperCase())} required placeholder="e.g. RAJESH KUMAR" className="input-field uppercase" />
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Employee Name (Required)</label>
-                                            <input type="text" value={empName} onChange={e => setEmpName(e.target.value.toUpperCase())} required placeholder="e.g. RAJESH KUMAR" className="input-field uppercase" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Role / Designation</label>
-                                            <select value={role} onChange={e => setRole(e.target.value)} className="input-field bg-white">
-                                                <option value="PL Exe">PL Exe</option>
-                                                <option value="SPH / SBH">SPH / SBH</option>
-                                                <option value="CSE">CSE</option>
-                                                <option value="BTL">BTL</option>
-                                                <option value="DBH / DPH">DBH / DPH</option>
-                                                <option value="BH / BPH">BH / BPH</option>
-                                                <option value="CPU Team">CPU Team</option>
-                                                <option value="DTL">DTL</option>
-                                            </select>
-                                        </div>
+
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
-                                                <input type="text" value={branchName} onChange={e => setBranchName(e.target.value.toUpperCase())} placeholder="e.g. AHMEDABAD" className="input-field uppercase" />
+                                                <input type="text" list="manual-branches" value={branchName} onChange={e => setBranchName(e.target.value.toUpperCase())} placeholder="e.g. DELHI RF" className="input-field uppercase" />
+                                                <datalist id="manual-branches">
+                                                    {filterOptions.branches && filterOptions.branches.map((b, idx) => <option key={idx} value={b} />)}
+                                                </datalist>
                                             </div>
-                                            <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
-                                                <input type="text" value={division} onChange={e => setDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
-                                                <select value={zone} onChange={e => setZone(e.target.value)} className="input-field bg-white">
-                                                    <option value="NORTH ZONE">NORTH ZONE</option>
-                                                    <option value="WEST ZONE">WEST ZONE</option>
-                                                    <option value="EAST ZONE">EAST ZONE</option>
-                                                </select>
+                                                <input type="text" list="manual-zones" value={zone} onChange={e => setZone(e.target.value.toUpperCase())} placeholder="e.g. NORTH ZONE" className="input-field uppercase" />
+                                                <datalist id="manual-zones">
+                                                    {filterOptions.zones && filterOptions.zones.map((z, idx) => <option key={idx} value={z} />)}
+                                                </datalist>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
+                                                <input type="text" list="manual-divisions" value={division} onChange={e => setDivision(e.target.value.toUpperCase())} placeholder="e.g. DELHI DIVISION" className="input-field uppercase" />
+                                                <datalist id="manual-divisions">
+                                                    {filterOptions.divisions && filterOptions.divisions.map((d, idx) => <option key={idx} value={d} />)}
+                                                </datalist>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
-                                                <select value={bu} onChange={e => setBu(e.target.value)} className="input-field bg-white">
-                                                    <option value="TWO-WHEELER">TWO-WHEELER</option>
-                                                    <option value="PERSONAL LOAN">PERSONAL LOAN</option>
-                                                    <option value="GOLD LOAN">GOLD LOAN</option>
-                                                    <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
-                                                    <option value="RETAIL">RETAIL</option>
-                                                </select>
+                                                <input type="text" list="manual-bus" value={bu} onChange={e => setBu(e.target.value.toUpperCase())} placeholder="e.g. TWO-WHEELER" className="input-field uppercase" />
+                                                <datalist id="manual-bus">
+                                                    {filterOptions.business_units && filterOptions.business_units.map((b, idx) => <option key={idx} value={b} />)}
+                                                </datalist>
                                             </div>
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Product / Local Branch Name Detail</label>
-                                            <input type="text" value={productName} onChange={e => setProductName(e.target.value.toUpperCase())} placeholder="e.g. TIJAR / ACTIVA 6G" className="input-field uppercase" />
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Role / Designation</label>
+                                                <input type="text" list="manual-roles" value={role} onChange={e => setRole(e.target.value.toUpperCase())} placeholder="e.g. PL EXE" className="input-field uppercase" />
+                                                <datalist id="manual-roles">
+                                                    {filterOptions.roles && filterOptions.roles.map((r, idx) => <option key={idx} value={r} />)}
+                                                </datalist>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Product Name</label>
+                                                <input type="text" list="manual-products" value={productName} onChange={e => setProductName(e.target.value.toUpperCase())} placeholder="e.g. SPLENDOR V2" className="input-field uppercase" />
+                                                <datalist id="manual-products">
+                                                    {filterOptions.products && filterOptions.products.map((p, idx) => <option key={idx} value={p} />)}
+                                                </datalist>
+                                            </div>
                                         </div>
+
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Addition Details / Remarks</label>
                                             <input type="text" value={changeDetail} onChange={e => setChangeDetail(e.target.value.toUpperCase())} placeholder="e.g. NEW HIRE, JOINED ON 2026-05-25" className="input-field uppercase" />
@@ -1747,14 +1771,20 @@
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Role / Designation</label>
                                             <select value={editRole} onChange={e => setEditRole(e.target.value)} className="input-field bg-white">
-                                                <option value="PL Exe">PL Exe</option>
-                                                <option value="SPH / SBH">SPH / SBH</option>
-                                                <option value="CSE">CSE</option>
-                                                <option value="BTL">BTL</option>
-                                                <option value="DBH / DPH">DBH / DPH</option>
-                                                <option value="BH / BPH">BH / BPH</option>
-                                                <option value="CPU Team">CPU Team</option>
-                                                <option value="DTL">DTL</option>
+                                                {filterOptions.roles && filterOptions.roles.length > 0 ? (
+                                                    filterOptions.roles.map((r, idx) => <option key={idx} value={r}>{r}</option>)
+                                                ) : (
+                                                    <>
+                                                        <option value="PL Exe">PL Exe</option>
+                                                        <option value="SPH / SBH">SPH / SBH</option>
+                                                        <option value="CSE">CSE</option>
+                                                        <option value="BTL">BTL</option>
+                                                        <option value="DBH / DPH">DBH / DPH</option>
+                                                        <option value="BH / BPH">BH / BPH</option>
+                                                        <option value="CPU Team">CPU Team</option>
+                                                        <option value="DTL">DTL</option>
+                                                    </>
+                                                )}
                                             </select>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
@@ -1764,26 +1794,55 @@
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
-                                                <input type="text" value={editDivision} onChange={e => setEditDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
+                                                {filterOptions.divisions_meta && filterOptions.divisions_meta.length > 0 ? (
+                                                    <select value={editDivision} onChange={e => setEditDivision(e.target.value)} className="input-field bg-white">
+                                                        {filterOptions.divisions_meta
+                                                            .filter(d => !editZone || d.zone === editZone)
+                                                            .map((d, idx) => <option key={idx} value={d.name}>{d.name}</option>)}
+                                                    </select>
+                                                ) : (
+                                                    <input type="text" value={editDivision} onChange={e => setEditDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
+                                                )}
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
-                                                <select value={editZone} onChange={e => setEditZone(e.target.value)} className="input-field bg-white">
-                                                    <option value="NORTH ZONE">NORTH ZONE</option>
-                                                    <option value="WEST ZONE">WEST ZONE</option>
-                                                    <option value="EAST ZONE">EAST ZONE</option>
+                                                <select value={editZone} onChange={e => {
+                                                    const newZone = e.target.value;
+                                                    setEditZone(newZone);
+                                                    const possibleDivs = filterOptions.divisions_meta.filter(d => d.zone === newZone);
+                                                    if (possibleDivs.length > 0) {
+                                                        setEditDivision(possibleDivs[0].name);
+                                                    } else {
+                                                        setEditDivision('');
+                                                    }
+                                                }} className="input-field bg-white">
+                                                    {filterOptions.zones && filterOptions.zones.length > 0 ? (
+                                                        filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
+                                                    ) : (
+                                                        <>
+                                                            <option value="NORTH ZONE">NORTH ZONE</option>
+                                                            <option value="WEST ZONE">WEST ZONE</option>
+                                                            <option value="EAST ZONE">EAST ZONE</option>
+                                                        </>
+                                                    )}
                                                 </select>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
                                                 <select value={editBu} onChange={e => setEditBu(e.target.value)} className="input-field bg-white">
-                                                    <option value="TWO-WHEELER">TWO-WHEELER</option>
-                                                    <option value="PERSONAL LOAN">PERSONAL LOAN</option>
-                                                    <option value="GOLD LOAN">GOLD LOAN</option>
-                                                    <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
-                                                    <option value="RETAIL">RETAIL</option>
+                                                    {filterOptions.business_units && filterOptions.business_units.length > 0 ? (
+                                                        filterOptions.business_units.map((b, idx) => <option key={idx} value={b}>{b}</option>)
+                                                    ) : (
+                                                        <>
+                                                            <option value="TWO-WHEELER">TWO-WHEELER</option>
+                                                            <option value="PERSONAL LOAN">PERSONAL LOAN</option>
+                                                            <option value="GOLD LOAN">GOLD LOAN</option>
+                                                            <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
+                                                            <option value="RETAIL">RETAIL</option>
+                                                        </>
+                                                    )}
                                                 </select>
                                             </div>
                                         </div>
@@ -1831,14 +1890,20 @@
                                             <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Role / Designation</label>
                                             <select value={bulkRole} onChange={e => setBulkRole(e.target.value)} className="input-field bg-white">
                                                 <option value="">-- No Change --</option>
-                                                <option value="PL Exe">PL Exe</option>
-                                                <option value="SPH / SBH">SPH / SBH</option>
-                                                <option value="CSE">CSE</option>
-                                                <option value="BTL">BTL</option>
-                                                <option value="DBH / DPH">DBH / DPH</option>
-                                                <option value="BH / BPH">BH / BPH</option>
-                                                <option value="CPU Team">CPU Team</option>
-                                                <option value="DTL">DTL</option>
+                                                {filterOptions.roles && filterOptions.roles.length > 0 ? (
+                                                    filterOptions.roles.map((r, idx) => <option key={idx} value={r}>{r}</option>)
+                                                ) : (
+                                                    <>
+                                                        <option value="PL Exe">PL Exe</option>
+                                                        <option value="SPH / SBH">SPH / SBH</option>
+                                                        <option value="CSE">CSE</option>
+                                                        <option value="BTL">BTL</option>
+                                                        <option value="DBH / DPH">DBH / DPH</option>
+                                                        <option value="BH / BPH">BH / BPH</option>
+                                                        <option value="CPU Team">CPU Team</option>
+                                                        <option value="DTL">DTL</option>
+                                                    </>
+                                                )}
                                             </select>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
@@ -1848,28 +1913,62 @@
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
-                                                <input type="text" value={bulkDivision} onChange={e => setBulkDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
+                                                {filterOptions.divisions_meta && filterOptions.divisions_meta.length > 0 ? (
+                                                    <select value={bulkDivision} onChange={e => setBulkDivision(e.target.value)} className="input-field bg-white">
+                                                        <option value="">-- No Change --</option>
+                                                        {filterOptions.divisions_meta
+                                                            .filter(d => !bulkZone || d.zone === bulkZone)
+                                                            .map((d, idx) => <option key={idx} value={d.name}>{d.name}</option>)}
+                                                    </select>
+                                                ) : (
+                                                    <input type="text" value={bulkDivision} onChange={e => setBulkDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
+                                                )}
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
-                                                <select value={bulkZone} onChange={e => setBulkZone(e.target.value)} className="input-field bg-white">
+                                                <select value={bulkZone} onChange={e => {
+                                                    const newZone = e.target.value;
+                                                    setBulkZone(newZone);
+                                                    if (newZone) {
+                                                        const possibleDivs = filterOptions.divisions_meta.filter(d => d.zone === newZone);
+                                                        if (possibleDivs.length > 0) {
+                                                            setBulkDivision(possibleDivs[0].name);
+                                                        } else {
+                                                            setBulkDivision('');
+                                                        }
+                                                    } else {
+                                                        setBulkDivision('');
+                                                    }
+                                                }} className="input-field bg-white">
                                                     <option value="">-- No Change --</option>
-                                                    <option value="NORTH ZONE">NORTH ZONE</option>
-                                                    <option value="WEST ZONE">WEST ZONE</option>
-                                                    <option value="EAST ZONE">EAST ZONE</option>
+                                                    {filterOptions.zones && filterOptions.zones.length > 0 ? (
+                                                        filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
+                                                    ) : (
+                                                        <>
+                                                            <option value="NORTH ZONE">NORTH ZONE</option>
+                                                            <option value="WEST ZONE">WEST ZONE</option>
+                                                            <option value="EAST ZONE">EAST ZONE</option>
+                                                        </>
+                                                    )}
                                                 </select>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
                                                 <select value={bulkBu} onChange={e => setBulkBu(e.target.value)} className="input-field bg-white">
                                                     <option value="">-- No Change --</option>
-                                                    <option value="TWO-WHEELER">TWO-WHEELER</option>
-                                                    <option value="PERSONAL LOAN">PERSONAL LOAN</option>
-                                                    <option value="GOLD LOAN">GOLD LOAN</option>
-                                                    <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
-                                                    <option value="RETAIL">RETAIL</option>
+                                                    {filterOptions.business_units && filterOptions.business_units.length > 0 ? (
+                                                        filterOptions.business_units.map((b, idx) => <option key={idx} value={b}>{b}</option>)
+                                                    ) : (
+                                                        <>
+                                                            <option value="TWO-WHEELER">TWO-WHEELER</option>
+                                                            <option value="PERSONAL LOAN">PERSONAL LOAN</option>
+                                                            <option value="GOLD LOAN">GOLD LOAN</option>
+                                                            <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
+                                                            <option value="RETAIL">RETAIL</option>
+                                                        </>
+                                                    )}
                                                 </select>
                                             </div>
                                         </div>
@@ -2121,7 +2220,7 @@
                                     <p className="text-xs text-slate-500 mt-0.5">Upload a CSV roster or add executives manually on the fly.</p>
                                 </div>
                                 <div className="flex gap-3">
-                                    <button onClick={() => { setErrorMsg(''); setErrorDetails([]); setSuccessMsg(''); setShowManualModal(true); }} className="btn-outline text-sm flex items-center shadow-sm hover:border-amber-400">
+                                    <button onClick={openAddManualModal} className="btn-outline text-sm flex items-center shadow-sm hover:border-amber-400">
                                         <i className="fas fa-user-plus mr-2 text-amber-500"></i> Add Manually
                                     </button>
                                     <div className="relative overflow-hidden inline-block">
@@ -2229,10 +2328,11 @@
                                             </th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Emp Code</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Name</th>
-                                            <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Role</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Branch</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Zone</th>
+                                            <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Division</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Business Unit</th>
+                                            <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Role</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Product Name</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px]">Status & Details</th>
                                             <th className="px-6 py-4 font-bold uppercase tracking-wider text-[11px] text-right">Actions</th>
@@ -2245,10 +2345,11 @@
                                                     <td className="px-6 py-5 w-12 text-center"><div className="h-4 bg-slate-200 rounded w-4 mx-auto animate-pulse"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-32"></div></td>
-                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-24"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-12"></div></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-20"></div></td>
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
                                                     <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-24"></div></td>
                                                     <td className="px-6 py-5">
                                                         <div className="h-5 bg-slate-200 rounded-full w-14 mb-1"></div>
@@ -2277,10 +2378,11 @@
                                                     </td>
                                                     <td className="px-6 py-4 font-semibold text-socrates-primary">{e.emp_code}</td>
                                                     <td className="px-6 py-4 font-medium text-socrates-dark">{e.emp_name}</td>
-                                                    <td className="px-6 py-4 font-medium text-slate-700">{e.role || 'N/A'}</td>
                                                     <td className="px-6 py-4 text-slate-600">{e.branch_name}</td>
                                                     <td className="px-6 py-4 text-slate-600">{e.zone}</td>
+                                                    <td className="px-6 py-4 text-slate-600">{e.division || 'N/A'}</td>
                                                     <td className="px-6 py-4 text-slate-600">{e.business_unit}</td>
+                                                    <td className="px-6 py-4 font-medium text-slate-700">{e.role || 'N/A'}</td>
                                                     <td className="px-6 py-4 text-slate-600 font-semibold text-xs text-socrates-primary">{e.product_name || 'N/A'}</td>
                                                     <td className="px-6 py-4">
                                                         <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-widest ${e.status === 'ACTIVE' || !e.status ? 'bg-emerald-100 text-emerald-700 shadow-sm' : 'bg-rose-100 text-rose-700 shadow-sm'}`}>{e.status || 'ACTIVE'}</span>
@@ -3092,6 +3194,7 @@
             const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
             const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
             const [trainers, setTrainers] = useState([]);
+            const [isUploading, setIsUploading] = useState(false);
             const [tid, setTid] = useState('');
             const [name, setName] = useState('');
             const [password, setPassword] = useState('password123');
@@ -3249,6 +3352,7 @@
                 const file = e.target.files[0];
                 if (!file) return;
                 
+                setIsUploading(true);
                 const formData = new FormData();
                 formData.append('file', file);
                 
@@ -3258,6 +3362,7 @@
                 })
                 .then(res => res.json())
                 .then(data => {
+                    setIsUploading(false);
                     if (data.status === 'success') {
                         alert(data.message);
                         loadTrainers();
@@ -3266,13 +3371,14 @@
                     }
                 })
                 .catch(err => {
+                    setIsUploading(false);
                     console.error("Bulk upload trainers failed:", err);
                     alert("System error uploading trainers CSV.");
                 });
             };
 
             const downloadTrainerTemplate = () => {
-                const csvData = "Trainer ID,Trainer Name,Password\nTR-1002,AMIT SHARMA,pass123\nTR-1003,PRIYA GUPTA,pass456";
+                const csvData = "Trainer ID,Trainer Name,Password,Role\nTR-1002,AMIT SHARMA,pass123,Trainer\nTR-1003,PRIYA GUPTA,pass456,Leader";
                 const blob = new Blob([csvData], { type: 'text/csv' });
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -3305,7 +3411,32 @@
             };
 
             return (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in relative">
+                    {/* Bulk Processing Overlay */}
+                    {isUploading && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+                            <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] p-6 bg-gradient-to-br from-purple-50/90 to-blue-50/90 border border-purple-100 rounded-2xl shadow-2xl text-slate-800 animate-fade-in space-y-5 backdrop-blur-md pointer-events-auto border-l-4 border-l-purple-500">
+                                <div className="flex items-center gap-4">
+                                    <div className="relative flex items-center justify-center">
+                                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent shadow-lg shadow-purple-600/20"></div>
+                                        <i className="fas fa-user-plus text-purple-600 text-sm absolute"></i>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-black text-purple-950 text-base flex items-center gap-2">
+                                            Syncing Trainers & Leaders
+                                            <span className="inline-flex h-2.5 w-2.5 rounded-full bg-purple-600 animate-ping"></span>
+                                        </h4>
+                                        <p className="text-xs text-slate-500 mt-0.5 font-medium">Validating credentials and mapping permissions in Supabase...</p>
+                                    </div>
+                                </div>
+                                <div className="bg-white/50 rounded-xl p-3 border border-purple-100/50 flex items-center justify-between">
+                                    <span className="text-[10px] font-black text-purple-700 uppercase tracking-widest">Protocol</span>
+                                    <span className="text-[10px] font-bold text-slate-600">ENCRYPTED_AUTH_SYNC</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
                     {/* Edit Trainer Modal */}
                     {showEditModal && (
                         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
@@ -3380,7 +3511,27 @@
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 bg-white">
-                                    {trainers.map(tr => {
+                                    {isUploading ? (
+                                        [...Array(5)].map((_, index) => (
+                                            <tr key={index} className="animate-pulse">
+                                                <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-24 mb-1.5"></div><div className="h-3 bg-slate-100 rounded w-32"></div></td>
+                                                <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-16"></div></td>
+                                                {(isSuperAdmin || isLeader) && (
+                                                    <td className="px-6 py-5"><div className="h-4 bg-slate-200 rounded w-20"></div></td>
+                                                )}
+                                                <td className="px-6 py-5"><div className="h-5 bg-slate-200 rounded-full w-20"></div></td>
+                                                <td className="px-6 py-5 text-right"><div className="h-8 bg-slate-200 rounded w-16 ml-auto"></div></td>
+                                            </tr>
+                                        ))
+                                    ) : trainers.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="10" className="px-6 py-12 text-center text-slate-400 font-medium">
+                                                <i className="fas fa-user-shield text-4xl text-slate-200 mb-3 block"></i>
+                                                No trainers registered yet. Add one manually or upload a CSV.
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        trainers.map(tr => {
                                         const isAllBUs = !tr.business_units || tr.business_units === 'ALL';
                                         const isAllZones = !tr.zones || tr.zones === 'ALL';
                                         const isAllDivs = !tr.divisions || tr.divisions === 'ALL';
@@ -3425,7 +3576,8 @@
                                                 </td>
                                             </tr>
                                         );
-                                    })}
+                                    })
+                                )}
                                 </tbody>
                             </table>
                         </div>
@@ -3494,6 +3646,12 @@
             const [visits, setVisits] = useState([]);
             const [loading, setLoading] = useState(true);
             const [showPlanModal, setShowPlanModal] = useState(false);
+            
+            // Bulk upload & MoM states
+            const [isUploadingVisits, setIsUploadingVisits] = useState(false);
+            const [showMomModal, setShowMomModal] = useState(false);
+            const [momVisitId, setMomVisitId] = useState(null);
+            const [momDetails, setMomDetails] = useState('');
             
             // Plan form states
             const [branchName, setBranchName] = useState('');
@@ -3682,6 +3840,67 @@
                 window.open('/api/visits/export?period=ALL', '_blank');
             };
 
+            const downloadVisitTemplate = () => {
+                const csvData = "Trainer Name,Month,BU,Date of Visit From,Date of Visit To,Branch Code,Meeting Agenda,Meeting with Role,Overnight Stay,Travel From,Travel To,Travel Mode\nRAHUL SINGH,2026-06,TWO-WHEELER,2026-06-15,2026-06-16,DELHI RF,Refresher Training,Branch Manager;Sales Head,Yes,Delhi HQ,Delhi RF,Car";
+                const blob = new Blob([csvData], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Socrates_Travel_Plan_Template.csv';
+                a.click();
+            };
+
+            const handleBulkUploadVisits = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                setIsUploadingVisits(true);
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                fetch('/api/visits/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    setIsUploadingVisits(false);
+                    if (data.status === 'success') {
+                        alert(data.message + (data.details ? "\nErrors/Skipped:\n" + data.details.join('\n') : ''));
+                        loadVisits();
+                    } else {
+                        alert("Bulk Upload failed:\n" + data.message + (data.details ? "\n" + data.details.join('\n') : ''));
+                    }
+                })
+                .catch(err => {
+                    setIsUploadingVisits(false);
+                    console.error("Bulk upload visits failed:", err);
+                    alert("System error uploading travel plans CSV.");
+                });
+            };
+
+            const handleSaveMom = (e) => {
+                e.preventDefault();
+                if (!momVisitId) return;
+                
+                fetch(`/api/visits/${momVisitId}/mom`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mom_notes: momDetails })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert('Minutes of Meeting saved & formatted for management mail!');
+                        setShowMomModal(false);
+                        loadVisits();
+                    } else {
+                        alert("Failed to save MoM: " + data.message);
+                    }
+                })
+                .catch(err => alert('Error saving MoM'));
+            };
+
             useEffect(() => {
                 loadVisits();
                 // Load roster filters to get branch list options
@@ -3863,6 +4082,15 @@
                             <button onClick={() => setShowFilters(!showFilters)} className={`btn-outline flex items-center gap-2 py-2.5 px-4 font-black text-[10px] rounded-xl transition-all uppercase tracking-widest ${showFilters ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700'}`}>
                                 <i className={`fas fa-${showFilters ? 'times' : 'filter'}`}></i> {showFilters ? 'Hide Filters' : 'Adjust Filters'}
                             </button>
+                            <button onClick={downloadVisitTemplate} className="btn-outline flex items-center gap-2 py-2.5 px-4 font-black text-[10px] rounded-xl transition-all shadow-sm uppercase tracking-widest bg-white hover:bg-slate-50 text-slate-600 border-slate-200">
+                                <i className="fas fa-download text-sm"></i> Template
+                            </button>
+                            <div className="relative">
+                                <button className="btn-outline flex items-center gap-2 py-2.5 px-4 font-black text-[10px] rounded-xl transition-all shadow-sm uppercase tracking-widest bg-white hover:bg-indigo-50 text-indigo-700 border-indigo-200 cursor-pointer">
+                                    <i className="fas fa-upload text-sm"></i> Bulk Upload
+                                </button>
+                                <input type="file" accept=".csv" onChange={handleBulkUploadVisits} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" title="Upload Plan CSV" />
+                            </div>
                             {isSuperAdmin && (
                                 <button onClick={handleExportMasterReport} className="btn-outline flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 py-2.5 px-4 font-black text-[10px] rounded-xl transition-all shadow-sm uppercase tracking-widest">
                                     <i className="fas fa-file-invoice text-sm text-emerald-600"></i> Master Report
@@ -4035,6 +4263,7 @@
                                                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-black uppercase tracking-widest text-[8px]">
                                                     <th className="py-4 px-6">Destination</th>
                                                     <th className="py-4 px-6">Schedule</th>
+                                                    <th className="py-4 px-6">Agenda & Meeting</th>
                                                     <th className="py-4 px-6">Trainer</th>
                                                     <th className="py-4 px-6 text-center">Compliance</th>
                                                     <th className="py-4 px-6 text-center">Actions</th>
@@ -4047,16 +4276,20 @@
                                                         <td className="py-3 px-6 font-bold text-slate-600">
                                                             {visit.end_date && visit.end_date !== visit.planned_date ? `${visit.planned_date} to ${visit.end_date}` : visit.planned_date}
                                                         </td>
+                                                        <td className="py-3 px-6 max-w-[150px] truncate"><div className="text-slate-700 font-bold" title={visit.meeting_agenda || visit.purpose}>{visit.meeting_agenda || visit.purpose}</div><div className="text-[8px] font-medium text-slate-500 uppercase" title={visit.meeting_with}>{visit.meeting_with || 'N/A'}</div></td>
                                                         <td className="py-3 px-6"><div className="text-slate-700 font-bold">{visit.trainer_name}</div><div className="text-[8px] font-mono text-blue-500 uppercase">{visit.trainer_id}</div></td>
                                                         <td className="py-3 px-6 text-center">
                                                             <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${visit.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : visit.status === 'GEOFENCED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{visit.status}</span>
                                                         </td>
                                                         <td className="py-3 px-6 text-center">
                                                             <div className="flex items-center justify-center gap-2">
+                                                                <button onClick={() => { setMomVisitId(visit.id); setMomDetails(visit.mom_notes || ''); setShowMomModal(true); }} className="border border-indigo-200 text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-sm flex items-center gap-1" title="Minutes of Meeting">
+                                                                    <i className="fas fa-file-signature text-[10px]"></i> MoM
+                                                                </button>
                                                                 {visit.status === 'VERIFIED' ? (
                                                                     <span className="flex items-center gap-1"><i className="fas fa-check-circle text-emerald-500"></i> <span className="text-[9px] font-black text-emerald-600 uppercase">Passed</span></span>
                                                                 ) : isSuperAdmin ? (
-                                                                    <button onClick={() => setActiveCheckinVisit(visit)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase shadow-sm transition-all">Admin Approve</button>
+                                                                    <button onClick={() => setActiveCheckinVisit(visit)} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase shadow-sm transition-all">Approve</button>
                                                                 ) : (
                                                                     <button onClick={() => setActiveCheckinVisit(visit)} className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-sm">Check-in</button>
                                                                 )}
@@ -4075,6 +4308,40 @@
                                 </div>
                             )}
                         </div>
+
+                        {/* MoM Modal */}
+                        {showMomModal && (
+                            <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all">
+                                    <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                        <div>
+                                            <h3 className="font-bold text-lg text-socrates-dark">Minutes of Meeting (MoM)</h3>
+                                            <p className="text-xs text-slate-500 mt-0.5">Format and mail meeting highlights to management.</p>
+                                        </div>
+                                        <button onClick={() => setShowMomModal(false)} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
+                                    </div>
+                                    <form onSubmit={handleSaveMom}>
+                                        <div className="p-6 space-y-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Key Takeaways & Action Items</label>
+                                                <textarea value={momDetails} onChange={e => setMomDetails(e.target.value)} required rows="5" placeholder="e.g. Discussed branch audit findings. Required management support for..." className="input-field"></textarea>
+                                            </div>
+                                        </div>
+                                        <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 font-semibold">
+                                            <button type="button" onClick={() => {
+                                                const visit = visits.find(v => v.id === momVisitId);
+                                                if (visit) {
+                                                    const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trainer_name}\nLocation: ${visit.branch_name} (${visit.division} / ${visit.zone})\nDates: ${visit.planned_date} to ${visit.end_date || visit.planned_date}\nAgenda: ${visit.meeting_agenda || visit.purpose}\nMet With: ${visit.meeting_with || 'N/A'}\n\nKey Minutes of Meeting:\n${momDetails}\n\n---\nAuto-generated via Socratic Travel Hub`;
+                                                    navigator.clipboard.writeText(mailBody).then(() => alert("Formatted Mail copied to clipboard!"));
+                                                }
+                                            }} className="btn-outline flex items-center gap-2"><i className="fas fa-copy"></i> Copy Mail Format</button>
+                                            <button type="button" onClick={() => setShowMomModal(false)} className="btn-outline">Cancel</button>
+                                            <button type="submit" className="btn-primary shadow-md flex items-center gap-2"><i className="fas fa-paper-plane"></i> Save MoM</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
 
                         {/* RIGHT: INSIGHTS & COMPLIANCE (1/3 width) */}
                         <div className="space-y-6">
@@ -5620,9 +5887,23 @@
                     localStorage.removeItem('socrates_active_module');
                 }
 
-                const pin = Math.floor(1000 + Math.random() * 9000).toString();
+                // Check for existing session in localStorage
+                let pin = localStorage.getItem('socrates_active_pin');
+                if (!pin) {
+                    pin = Math.floor(1000 + Math.random() * 9000).toString();
+                    localStorage.setItem('socrates_active_pin', pin);
+                }
                 setSessionId(pin);
-                socket.emit('join_session', {pin: pin, emp_id: 'TRAINER'});
+                
+                socket.on('session_state_response', (data) => {
+                    if (data.active_module) setActiveModule(data.active_module);
+                    if (data.current_view) setStage(data.current_view);
+                    if (data.current_question_idx !== undefined) setActiveQIdx(data.current_question_idx);
+                    if (data.language_override) setSelectedLanguageOverride(data.language_override);
+                    if (data.connected_trainees) setConnectedTrainees(data.connected_trainees);
+                });
+
+                socket.emit('get_session_state', { pin: pin });
                 
                 socket.on('user_connected', (data) => {
                     if (data.emp_id && data.emp_id !== 'TRAINER') {
@@ -5645,12 +5926,28 @@
                 socket.on('client_command', (data) => { if (data.command === 'show_podium') setShowPodium(true); });
 
                 return () => {
+                    socket.off('session_state_response');
                     socket.off('user_connected');
                     socket.off('vote_update');
                     socket.off('leaderboard_update');
                     socket.off('client_command');
                 };
             }, []);
+
+            useEffect(() => {
+                if (sessionId) {
+                    const handleConnect = () => {
+                        socket.emit('join_session', {pin: sessionId, emp_id: 'TRAINER'});
+                    };
+                    socket.on('connect', handleConnect);
+                    if (socket.connected) {
+                        socket.emit('join_session', {pin: sessionId, emp_id: 'TRAINER'});
+                    }
+                    return () => {
+                        socket.off('connect', handleConnect);
+                    };
+                }
+            }, [sessionId]);
 
             const broadcastLanguageOverride = (lang) => {
                 setSelectedLanguageOverride(lang);
@@ -5689,9 +5986,11 @@
                 setActiveTab('display');
                 
                 let qData;
+                let qIdx = activeQIdx;
                 if (viewName === 'pretest' || viewName === 'posttest') {
                     setVotes({0:0, 1:0, 2:0, 3:0});
                     setActiveQIdx(0);
+                    qIdx = 0;
                     const q = activeModule.questions[0];
                     qData = {
                         question: q.question_text,
@@ -5716,7 +6015,9 @@
                     options: qData.options.map(cleanOptionText),
                     correctIndex: qData.correctIndex,
                     translations: qData.translations,
-                    forceLanguage: selectedLanguageOverride
+                    forceLanguage: selectedLanguageOverride,
+                    activeModule: activeModule,
+                    question_idx: qIdx
                 });
             };
 
@@ -5735,7 +6036,9 @@
                     options: [q.option_a, q.option_b, q.option_c, q.option_d].map(cleanOptionText),
                     correctIndex: q.correct_index,
                     translations: q.translations,
-                    forceLanguage: selectedLanguageOverride
+                    forceLanguage: selectedLanguageOverride,
+                    activeModule: activeModule,
+                    question_idx: newIdx
                 });
             };
 

@@ -436,6 +436,18 @@ def init_db():
     fv_cols = [col[1] for col in cursor.fetchall()]
     if 'end_date' not in fv_cols:
         cursor.execute("ALTER TABLE field_visits ADD COLUMN end_date TEXT")
+    
+    # New Travel Hub fields
+    new_fv_cols = {
+        'month': 'TEXT', 'branch_code': 'TEXT', 'business_unit': 'TEXT',
+        'zone': 'TEXT', 'division': 'TEXT', 'meeting_agenda': 'TEXT',
+        'meeting_with': 'TEXT', 'overnight_stay': 'TEXT',
+        'travel_from': 'TEXT', 'travel_to': 'TEXT', 'travel_mode': 'TEXT',
+        'mom_notes': 'TEXT'
+    }
+    for col, dtype in new_fv_cols.items():
+        if col not in fv_cols:
+            cursor.execute(f"ALTER TABLE field_visits ADD COLUMN {col} {dtype}")
         
     conn.commit()
     conn.close()
@@ -754,7 +766,8 @@ def upload_trainers():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        REQUIRED_HEADERS = ['Trainer ID', 'Trainer Name', 'Password', 'Business Units', 'Zones', 'Divisions', 'Branches']
+        # REQUIRED_HEADERS now strictly enforced as per user request
+        REQUIRED_HEADERS = ['Trainer ID', 'Trainer Name', 'Password', 'Role']
         
         rows = []
         headers = []
@@ -781,36 +794,44 @@ def upload_trainers():
             if missing_headers:
                 return jsonify({
                     "status": "error", 
-                    "message": f"Invalid CSV format. Missing column headers: {', '.join(missing_headers)}"
+                    "message": f"Invalid CSV format. Missing required column headers: {', '.join(missing_headers)}"
                 }), 400
                 
-            hdr_indices = {h: headers.index(h) for h in REQUIRED_HEADERS}
+            hdr_indices = {h: headers.index(h) for h in headers if h in REQUIRED_HEADERS or h in ['Business Units', 'Zones', 'Divisions', 'Branches']}
             
             final_rows = []
             caller_role = session.get('user', {}).get('role')
             for row_idx, r in rows:
-                p_plain = r[hdr_indices['Password']].strip()
-                row_role = 'Trainer'
-                if 'Role' in headers:
-                    row_role = r[headers.index('Role')].strip()
-                    if row_role.upper() == 'SUPERADMIN':
-                        row_role = 'SuperAdmin'
-                    elif row_role.upper() == 'LEADER':
-                        row_role = 'Leader'
-                    else:
-                        row_role = 'Trainer'
+                p_plain = r[headers.index('Password')].strip()
+                row_role = r[headers.index('Role')].strip()
+                
+                if row_role.upper() == 'SUPERADMIN':
+                    row_role = 'SuperAdmin'
+                elif row_role.upper() == 'LEADER':
+                    row_role = 'Leader'
+                else:
+                    row_role = 'Trainer'
+                
+                # Leaders can only create Trainers
                 if caller_role == 'Leader':
                     row_role = 'Trainer'
                     
+                # Helper to get optional columns safely
+                def get_col(name, default='ALL'):
+                    if name in headers:
+                        val = r[headers.index(name)].strip()
+                        return val if val else default
+                    return default
+
                 row_data = {
-                    'id': r[hdr_indices['Trainer ID']].strip().upper(),
-                    'name': r[hdr_indices['Trainer Name']].strip(),
+                    'id': r[headers.index('Trainer ID')].strip().upper(),
+                    'name': r[headers.index('Trainer Name')].strip(),
                     'password': generate_password_hash(p_plain),
                     'plain_password': p_plain,
-                    'business_units': r[hdr_indices['Business Units']].strip(),
-                    'zones': r[hdr_indices['Zones']].strip(),
-                    'divisions': r[hdr_indices['Divisions']].strip(),
-                    'branches': r[hdr_indices['Branches']].strip(),
+                    'business_units': get_col('Business Units'),
+                    'zones': get_col('Zones'),
+                    'divisions': get_col('Divisions'),
+                    'branches': get_col('Branches'),
                     'role': row_role
                 }
                 final_rows.append((row_idx, row_data))
@@ -1191,11 +1212,51 @@ def get_roster_filters():
     conn.close()
     
     zones_list = [r[0] for r in zones]
+    if not zones_list:
+        zones_list = ["NORTH ZONE", "WEST ZONE", "EAST ZONE"]
+        
     divisions_list = [r[0] for r in divisions]
+    if not divisions_list:
+        divisions_list = ["GUJARAT DIVISION", "DELHI DIVISION", "PUNJAB DIVISION", "BENGAL DIVISION", "MAHARASHTRA DIVISION", "MUMBAI DIVISION"]
+        
     branches_list = [r[0] for r in branches]
-    
+    if not branches_list:
+        branches_list = ["AHMEDABAD RF", "DELHI RF", "CHANDIGARH RF", "KOLKATA RF", "MUMBAI RF"]
+        
     branches_meta = [{"name": r[0], "division": r[1]} for r in branches]
+    if not branches_meta:
+        rf_division_mapping = {
+            "AHMEDABAD RF": "GUJARAT DIVISION",
+            "DELHI RF": "DELHI DIVISION",
+            "CHANDIGARH RF": "PUNJAB DIVISION",
+            "KOLKATA RF": "BENGAL DIVISION",
+            "MUMBAI RF": "MUMBAI DIVISION"
+        }
+        branches_meta = [{"name": rf, "division": rf_division_mapping.get(rf, "GUJARAT DIVISION")} for rf in branches_list]
+        
     divisions_meta = [{"name": r[0], "zone": r[1]} for r in divisions]
+    if not divisions_meta:
+        div_zone_mapping = {
+            "GUJARAT DIVISION": "WEST ZONE",
+            "DELHI DIVISION": "NORTH ZONE",
+            "PUNJAB DIVISION": "NORTH ZONE",
+            "BENGAL DIVISION": "EAST ZONE",
+            "MAHARASHTRA DIVISION": "WEST ZONE",
+            "MUMBAI DIVISION": "WEST ZONE"
+        }
+        divisions_meta = [{"name": div, "zone": div_zone_mapping.get(div, "WEST ZONE")} for div in divisions_list]
+
+    business_units_list = [r[0] for r in business_units]
+    if not business_units_list:
+        business_units_list = ["TWO-WHEELER", "PERSONAL LOAN", "GOLD LOAN", "COMMERCIAL VEHICLE", "RETAIL"]
+        
+    roles_list = [r[0] for r in roles]
+    if not roles_list:
+        roles_list = ["PL Exe", "SPH / SBH", "CSE", "BTL", "DBH / DPH", "BH / BPH", "CPU Team", "DTL"]
+        
+    products_list = [r[0] for r in products]
+    if not products_list:
+        products_list = ["N/A"]
             
     return jsonify({
         "zones": zones_list,
@@ -1203,9 +1264,9 @@ def get_roster_filters():
         "branches": branches_list,
         "divisions_meta": divisions_meta,
         "branches_meta": branches_meta,
-        "business_units": [r[0] for r in business_units],
-        "roles": [r[0] for r in roles],
-        "products": [r[0] for r in products]
+        "business_units": business_units_list,
+        "roles": roles_list,
+        "products": products_list
     })
 
 def normalize_enums(zone, division, branch):
@@ -1320,7 +1381,7 @@ def upload_roster():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        REQUIRED_HEADERS = ['Employee Code', 'Employee Name', 'Business Unit', 'Zone', 'Division', 'Branch Name', 'Role', 'Product Name']
+        REQUIRED_HEADERS = ['Employee Code', 'Employee Name', 'Branch Name', 'Zone', 'Division', 'Business Unit', 'Role', 'Product Name']
         
         # Read and Validate CSV
         rows = []
@@ -1893,7 +1954,8 @@ def bulk_action_roster():
     try:
         if action == 'delete':
             reason = data.get('reason', 'BULK DELETION').strip().upper()
-            hard = data.get('hard', False) or data.get('hard', 'false') == 'true'
+            # Hard delete by default as per user requirement
+            hard = data.get('hard', True) if 'hard' in data else True
             now_str = datetime.datetime.now().strftime("%Y-%m-%d")
             
             if hard:
@@ -1989,7 +2051,8 @@ def handle_single_roster_item(emp_code):
     conn = get_db_connection()
     
     if request.method == 'DELETE':
-        hard = request.args.get('hard', 'false').lower() == 'true'
+        # Hard delete by default as per user requirement
+        hard = request.args.get('hard', 'true').lower() == 'true'
         try:
             if hard:
                 conn.execute("DELETE FROM employees WHERE emp_code=?", (emp_code,))
@@ -2522,7 +2585,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             translations = get_offline_translations('percentage', masked_s, choices, choices.index(correct_val), title, language)
             
             questions.append({
-                "question": f"According to the policy document: \"{masked_s}\" What is the correct percentage?",
+                "question": f"Choose the correct percentage to complete the statement:\n\"{masked_s}\"",
                 "options": choices,
                 "correctIndex": choices.index(correct_val),
                 "approved": 0,
@@ -2554,7 +2617,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             translations = get_offline_translations('threshold', masked_s, choices, choices.index(correct_val), title, language)
             
             questions.append({
-                "question": f"Based on the uploaded guidelines: \"{masked_s}\" What is the correct threshold?",
+                "question": f"Choose the correct threshold/value to complete the statement:\n\"{masked_s}\"",
                 "options": choices,
                 "correctIndex": choices.index(correct_val),
                 "approved": 0,
@@ -2587,7 +2650,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
                 translations = get_offline_translations('comprehension', intro_p, choices, choices.index(target_sentence), title, language)
                 
                 questions.append({
-                    "question": f"Given the section: \"{intro_p}\" Which of the following is the most accurate statement according to the uploaded policy?",
+                    "question": f"Which statement is most accurate regarding this policy section?\n\"{intro_p}\"",
                     "options": choices,
                     "correctIndex": choices.index(target_sentence),
                     "approved": 0,
@@ -2621,7 +2684,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
                 translations = get_offline_translations('keyword', masked_s, choices, choices.index(target_word), title, language)
                 
                 questions.append({
-                    "question": f"Based strictly on the {title} documentation: \"{masked_s}\" What is the correct term to fill the blank?",
+                    "question": f"Choose the correct term to complete the statement:\n\"{masked_s}\"",
                     "options": choices,
                     "correctIndex": choices.index(target_word),
                     "approved": 0,
@@ -2643,7 +2706,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         translations = get_offline_translations('audit_fallback', '', choices, 0, title, language)
         
         questions.append({
-            "question": f"[{title} Q{q_idx + 1}] Under the uploaded reference guidelines, what is the primary procedure for compliance audits?",
+            "question": f"Under the reference guidelines, what is the primary procedure for compliance audits?",
             "options": choices,
             "correctIndex": choices.index(f"Perform comprehensive daily reconciliations according to {title} standard guidelines."),
             "approved": 0,
@@ -2651,6 +2714,61 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         })
             
     return questions[:count]
+
+def clean_ai_question_text(text):
+    if not isinstance(text, str):
+        return text
+    import re
+    # Remove markdown bold/italic formatting inside string if any
+    text = text.replace('**', '').replace('*', '')
+    # Remove prefix like "Question 1:", "Q1:", "Here is the first question:"
+    text = re.sub(r'^(?:Question|Q|Ques)\s*\d+[:.-]?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^(?:Here is the first question|First Question|Here is a Socratic question|Socratic Question)[:.-]?\s*', '', text, flags=re.IGNORECASE)
+    # Remove audit/validation step prefixes like "Validation Step 1:", "Step 1:", "Audited:", "Corrected:"
+    text = re.sub(r'^(?:Validation Step \d+|Step \d+|Audited|Corrected|Audit|Commentary|Note|Double Validation)[:.-]?\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'^(?:Factually accurate|Factual accuracy verified|Factual accuracy check|Verified)[:.-]?\s*', '', text, flags=re.IGNORECASE)
+    # Remove leading brackets/meta-tags like "[Product Refresher Q1]"
+    text = re.sub(r'^\[[^\]]+\]\s*', '', text)
+    return text.strip()
+
+def extract_json_from_text(text):
+    text = text.strip()
+    import json
+    # Try parsing directly
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    
+    # Try extracting markdown json code block
+    import re
+    code_block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL | re.IGNORECASE)
+    if code_block_match:
+        try:
+            return json.loads(code_block_match.group(1).strip())
+        except Exception:
+            pass
+            
+    # Try finding outermost array bracket [ ... ]
+    array_match = re.search(r'(\[.*\])', text, re.DOTALL)
+    if array_match:
+        try:
+            return json.loads(array_match.group(1).strip())
+        except Exception:
+            pass
+            
+    # Try finding outermost object brace { ... }
+    object_match = re.search(r'(\{.*\})', text, re.DOTALL)
+    if object_match:
+        try:
+            obj = json.loads(object_match.group(1).strip())
+            if isinstance(obj, dict) and "questions" in obj:
+                return obj["questions"]
+            return obj
+        except Exception:
+            pass
+            
+    raise ValueError("Could not find or parse any valid JSON array or object in the response.")
 
 @app.route('/api/modules/generate', methods=['POST'])
 def generate_module():
@@ -2829,11 +2947,7 @@ def generate_module():
             """
             
             response = model.generate_content(prompt)
-            res_text = response.text.strip()
-            if res_text.startswith("```"):
-                res_text = res_text.split("json")[-1].split("```")[0].strip()
-                
-            generated_questions = json.loads(res_text)
+            generated_questions = extract_json_from_text(response.text)
             
             # --- PASS 2: Double Validation & Self-Correction ---
             if len(generated_questions) > 0:
@@ -2852,15 +2966,13 @@ def generate_module():
                 1. **Validation Step 1 (Factual Accuracy & Depth)**: Cross-reference the question, options, and translations with the source document. Make sure the Socratic question and all its translations are factually accurate, deep, and do not misrepresent any details. Correct any errors.
                 2. **Validation Step 2 (Correct Index Audit)**: Verify that the option at the `correctIndex` is mathematically and factually the only correct answer. Ensure that in all translations, the option at `correctIndex` corresponds exactly to the correct answer.
                 
+                CRITICAL INSTRUCTION: Do NOT include any validation notes, reasoning commentary, step labels (such as 'Validation Step 1:', 'Step 1:', 'Audited:', 'Corrected:', 'Factual accuracy:'), or explanation text inside the 'question' or 'options' fields of the final JSON objects. The returned fields MUST contain ONLY the clean, final question text and option values to be presented to the trainee.
+                
                 Return the finalized, audited, and double-corrected questions array STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks. Follow the exact same format as input.
                 """
                 
                 audit_response = model.generate_content(double_validation_prompt)
-                audit_res_text = audit_response.text.strip()
-                if audit_res_text.startswith("```"):
-                    audit_res_text = audit_res_text.split("json")[-1].split("```")[0].strip()
-                
-                audited_questions = json.loads(audit_res_text)
+                audited_questions = extract_json_from_text(audit_response.text)
                 if len(audited_questions) > 0:
                     generated_questions = audited_questions
                     print("AI Double-Validation completed successfully!")
@@ -2874,6 +2986,11 @@ def generate_module():
     if not gemini_success:
         print("Using Dynamic Offline Socratic Heuristic Generator based on uploaded document...")
         generated_questions = generate_heuristic_questions(text_content, count, title, selected_lang)
+            
+    # Clean all questions to strip any accidental conversational preambles
+    for q in generated_questions:
+        if "question" in q:
+            q["question"] = clean_ai_question_text(q["question"])
             
     return jsonify({
         "status": "success",
@@ -3762,15 +3879,20 @@ def on_join_session(data):
     emp_id = data.get('emp_id')
     join_room(pin)
     print(f"Employee {emp_id} connected to session PIN: {pin}")
-    
+
     # Initialize session registry if trainer starts a new session room
     if pin not in SESSION_REGISTRY:
         SESSION_REGISTRY[pin] = {
             "push_time": 0.0,
             "correct_index": -1,
-            "leaderboard": {}
+            "leaderboard": {},
+            "active_module": None,
+            "current_view": "waiting",
+            "current_question_idx": 0,
+            "language_override": "en",
+            "connected_trainees": {}
         }
-        
+
     # Register trainee in current session leaderboard
     emp_name = emp_id # Default
     if emp_id and emp_id != 'TRAINER':
@@ -3791,25 +3913,83 @@ def on_join_session(data):
                 "last_speed": 0.0,
                 "last_correct": False
             }
-            
+
+        # Track connected trainees for persistence
+        SESSION_REGISTRY[pin]["connected_trainees"][emp_id] = emp_name
+
     emit('user_connected', {'emp_id': emp_id, 'emp_name': emp_name}, room=pin)
+
+    # If a trainee joins and there's an active session state, push it to them immediately
+    if emp_id != 'TRAINER' and SESSION_REGISTRY[pin]["active_module"]:
+        reg = SESSION_REGISTRY[pin]
+        idx = reg["current_question_idx"]
+        q = reg["active_module"]["questions"][idx] if reg["active_module"]["questions"] else None
+
+        state_payload = {
+            "view": reg["current_view"],
+            "assignment_day": reg["active_module"]["title"],
+            "forceLanguage": reg["language_override"],
+            "sync": True # Flag for client to handle as initial sync
+        }
+
+        if q:
+            state_payload.update({
+                "question": q.get("question_text"),
+                "options": [q.get("option_a"), q.get("option_b"), q.get("option_c"), q.get("option_d")],
+                "correctIndex": q.get("correct_index"),
+                "translations": q.get("translations")
+            })
+
+        emit('change_view', state_payload, room=request.sid)
+
+@socketio.on('get_session_state')
+def on_get_session_state(data):
+    pin = str(data.get('pin'))
+    if pin in SESSION_REGISTRY:
+        reg = SESSION_REGISTRY[pin]
+        # Map registry back to trainer expected payload
+        trainees = [{"id": eid, "name": ename} for eid, ename in reg["connected_trainees"].items()]
+
+        emit('session_state_response', {
+            "active_module": reg["active_module"],
+            "current_view": reg["current_view"],
+            "current_question_idx": reg["current_question_idx"],
+            "language_override": reg["language_override"],
+            "connected_trainees": trainees,
+            "leaderboard": reg["leaderboard"]
+        }, room=request.sid)
 
 @socketio.on('trainer_broadcast')
 def on_trainer_broadcast(data):
     pin = str(data.get('pin'))
     view = data.get('view')
-    
+
+    if pin not in SESSION_REGISTRY:
+        SESSION_REGISTRY[pin] = {
+            "push_time": 0.0,
+            "correct_index": -1,
+            "leaderboard": {},
+            "active_module": None,
+            "current_view": "waiting",
+            "current_question_idx": 0,
+            "language_override": "en",
+            "connected_trainees": {}
+        }
+
+    # Update state persistence
+    SESSION_REGISTRY[pin]["current_view"] = view
+    if data.get('activeModule'):
+        SESSION_REGISTRY[pin]["active_module"] = data.get('activeModule')
+    if data.get('question_idx') is not None:
+        SESSION_REGISTRY[pin]["current_question_idx"] = data.get('question_idx')
+    if data.get('forceLanguage'):
+        SESSION_REGISTRY[pin]["language_override"] = data.get('forceLanguage')
+
     # If pushing a live assessment quiz, capture start timing for speed bonus
     if view in ['pretest', 'posttest']:
-        if pin not in SESSION_REGISTRY:
-            SESSION_REGISTRY[pin] = {
-                "push_time": 0.0,
-                "correct_index": -1,
-                "leaderboard": {}
-            }
         SESSION_REGISTRY[pin]["push_time"] = time.time()
         SESSION_REGISTRY[pin]["correct_index"] = int(data.get('correctIndex', -1))
-        
+
     # Broadcast entire dynamic payload (includes questions/options) to trainee screen
     emit('change_view', data, room=pin)
 
@@ -3947,7 +4127,9 @@ def get_visits():
             SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
                    bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
                    v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
-                   v.co_presence_count, v.verification_time, bc.manager_pin, v.details, v.end_date
+                   v.co_presence_count, v.verification_time, bc.manager_pin, v.details, v.end_date,
+                   v.month, v.business_unit, v.meeting_agenda, v.meeting_with, v.overnight_stay,
+                   v.travel_from, v.travel_to, v.travel_mode, v.mom_notes
             FROM field_visits v
             JOIN trainers t ON v.trainer_id = t.trainer_id
             JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
@@ -3958,7 +4140,9 @@ def get_visits():
             SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
                    bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
                    v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
-                   v.co_presence_count, v.verification_time, bc.manager_pin, v.details, v.end_date
+                   v.co_presence_count, v.verification_time, bc.manager_pin, v.details, v.end_date,
+                   v.month, v.business_unit, v.meeting_agenda, v.meeting_with, v.overnight_stay,
+                   v.travel_from, v.travel_to, v.travel_mode, v.mom_notes
             FROM field_visits v
             JOIN trainers t ON v.trainer_id = t.trainer_id
             JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
@@ -4230,6 +4414,23 @@ def verify_visit():
     })
 
 
+@app.route('/api/visits/<int:visit_id>/mom', methods=['POST'])
+def save_visit_mom(visit_id):
+    curr_user = session.get('user')
+    if not curr_user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    data = request.json or {}
+    mom_notes = data.get('mom_notes', '').strip()
+    
+    conn = get_db_connection()
+    conn.execute("UPDATE field_visits SET mom_notes=? WHERE id=?", (mom_notes, visit_id))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"status": "success", "message": "Minutes of Meeting saved successfully!"})
+
+
 @app.route('/api/visits/<int:visit_id>', methods=['DELETE'])
 def delete_visit(visit_id):
     curr_user = session.get('user')
@@ -4420,6 +4621,111 @@ def get_visits_compliance_stats():
         "updated_trainers": updated_trainers,
         "not_updated_trainers": not_updated_trainers
     })
+
+
+@app.route('/api/visits/upload', methods=['POST'])
+def upload_visits():
+    curr_user = session.get('user')
+    if not curr_user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+        
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No selected file"}), 400
+        
+    if file:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        REQUIRED_HEADERS = [
+            'Trainer Name', 'Month', 'BU', 'Date of Visit From', 'Date of Visit To', 
+            'Branch Code', 'Meeting Agenda', 'Meeting with Role', 'Overnight Stay', 
+            'Travel From', 'Travel To', 'Travel Mode'
+        ]
+        
+        rows = []
+        headers = []
+        try:
+            try:
+                with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
+                    reader = csv.reader(csvfile)
+                    headers = [h.strip() for h in next(reader)]
+                    for row_idx, r in enumerate(reader, start=2):
+                        if not r or len(r) < len(headers):
+                            continue
+                        rows.append((row_idx, r))
+            except (UnicodeDecodeError, ValueError):
+                rows = []
+                with open(filepath, 'r', encoding='latin-1') as csvfile:
+                    reader = csv.reader(csvfile)
+                    headers = [h.strip() for h in next(reader)]
+                    for row_idx, r in enumerate(reader, start=2):
+                        if not r or len(r) < len(headers):
+                            continue
+                        rows.append((row_idx, r))
+                        
+            missing_headers = [req for req in REQUIRED_HEADERS if req not in headers]
+            if missing_headers:
+                return jsonify({
+                    "status": "error", 
+                    "message": f"Invalid CSV format. Missing required column headers: {', '.join(missing_headers)}"
+                }), 400
+                
+            conn = get_db_connection()
+            success_count = 0
+            errors = []
+            
+            for row_idx, r in rows:
+                def get_val(col_name):
+                    return r[headers.index(col_name)].strip()
+                
+                trainer_name = get_val('Trainer Name')
+                # Resolve trainer ID
+                trainer = conn.execute("SELECT trainer_id FROM trainers WHERE name=? COLLATE NOCASE", (trainer_name,)).fetchone()
+                if not trainer:
+                    errors.append(f"Row {row_idx}: Trainer Name '{trainer_name}' not found in system.")
+                    continue
+                trainer_id = trainer['trainer_id']
+                
+                branch_code = get_val('Branch Code').upper()
+                # Resolve Zone/Division from branch_coordinates if not provided directly
+                bc = conn.execute("SELECT zone, division FROM branch_coordinates WHERE branch_name=?", (branch_code,)).fetchone()
+                zone = bc['zone'] if bc else 'ALL'
+                division = bc['division'] if bc else 'ALL'
+                
+                try:
+                    conn.execute('''
+                        INSERT INTO field_visits (
+                            trainer_id, branch_name, planned_date, end_date, purpose, key_contacts, 
+                            month, branch_code, business_unit, zone, division, meeting_agenda, 
+                            meeting_with, overnight_stay, travel_from, travel_to, travel_mode
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        trainer_id, branch_code, get_val('Date of Visit From'), get_val('Date of Visit To'),
+                        'Bulk Uploaded Plan', 'N/A',
+                        get_val('Month'), branch_code, get_val('BU'), zone, division,
+                        get_val('Meeting Agenda'), get_val('Meeting with Role'), get_val('Overnight Stay'),
+                        get_val('Travel From'), get_val('Travel To'), get_val('Travel Mode')
+                    ))
+                    success_count += 1
+                except Exception as e:
+                    errors.append(f"Row {row_idx}: Database error - {str(e)}")
+                    
+            conn.commit()
+            conn.close()
+            
+            if errors and success_count == 0:
+                return jsonify({"status": "error", "message": "Upload failed.", "details": errors}), 400
+            elif errors:
+                return jsonify({"status": "success", "message": f"Uploaded {success_count} visits with some errors.", "details": errors})
+            else:
+                return jsonify({"status": "success", "message": f"Successfully uploaded {success_count} field visits!"})
+                
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Failed to parse CSV: {str(e)}"}), 400
 
 
 if __name__ == '__main__':
