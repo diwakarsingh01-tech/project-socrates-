@@ -2715,12 +2715,24 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             
     return questions[:count]
 
-def clean_ai_question_text(text):
+def clean_ai_question_text(text, title=None, filename=None):
     if not isinstance(text, str):
         return text
     import re
     # Remove markdown bold/italic formatting inside string if any
     text = text.replace('**', '').replace('*', '')
+    
+    # Remove module title if it appears at the start (often happens in AI generation)
+    if title:
+        text = re.sub(rf'^{re.escape(title)}[:.-]?\s*', '', text, flags=re.IGNORECASE)
+    
+    # Remove PDF filename if it appears at the start
+    if filename:
+        # Strip extension for better matching
+        base_fn = os.path.splitext(filename)[0]
+        text = re.sub(rf'^{re.escape(base_fn)}[:.-]?\s*', '', text, flags=re.IGNORECASE)
+        text = re.sub(rf'^{re.escape(filename)}[:.-]?\s*', '', text, flags=re.IGNORECASE)
+
     # Remove prefix like "Question 1:", "Q1:", "Here is the first question:"
     text = re.sub(r'^(?:Question|Q|Ques)\s*\d+[:.-]?\s*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'^(?:Here is the first question|First Question|Here is a Socratic question|Socratic Question)[:.-]?\s*', '', text, flags=re.IGNORECASE)
@@ -2779,6 +2791,7 @@ def generate_module():
     selected_lang = request.form.get('language', 'en').strip().lower()
     
     text_content = ""
+    filename = None
     
     # 1. Parse uploaded PDF if present
     if 'file' in request.files:
@@ -2990,7 +3003,7 @@ def generate_module():
     # Clean all questions to strip any accidental conversational preambles
     for q in generated_questions:
         if "question" in q:
-            q["question"] = clean_ai_question_text(q["question"])
+            q["question"] = clean_ai_question_text(q["question"], title=title, filename=filename)
             
     return jsonify({
         "status": "success",
