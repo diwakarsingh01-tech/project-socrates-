@@ -141,7 +141,7 @@
     <div id="root"></div>
     <script type="text/babel">
     {% raw %}
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
         const socket = io();
 
         const cleanQuestionText = (text) => {
@@ -181,7 +181,8 @@
             });
             const [pin, setPin] = useState(() => localStorage.getItem('socrates_pin') || '');
             const [activeQuestion, setActiveQuestion] = useState(() => localStorage.getItem('socrates_activeQuestion') || '');
-            const [activeOptions, setActiveOptions] = useState(() => {
+            const [activeQIdx, setActiveQIdx] = useState(() => parseInt(localStorage.getItem('socrates_activeQIdx') || '-1'));
+            const [activeOptions, setActiveOptions] = useState([]);
                 const saved = localStorage.getItem('socrates_activeOptions');
                 return saved ? JSON.parse(saved) : [];
             });
@@ -205,50 +206,43 @@
             const [preTestScore, setPreTestScore] = useState(null);
             const [postTestScore, setPostTestScore] = useState(null);
 
-            useEffect(() => {
-                localStorage.setItem('socrates_view', view);
-                localStorage.setItem('socrates_empId', empId);
-                localStorage.setItem('socrates_empDetails', JSON.stringify(empDetails));
-                localStorage.setItem('socrates_pin', pin);
-                localStorage.setItem('socrates_activeQuestion', activeQuestion);
-                localStorage.setItem('socrates_activeOptions', JSON.stringify(activeOptions));
-                localStorage.setItem('socrates_activeCorrectIndex', activeCorrectIndex);
-                localStorage.setItem('socrates_activeAssignmentDay', activeAssignmentDay);
-                localStorage.setItem('socrates_activeTranslations', JSON.stringify(activeTranslations));
-                localStorage.setItem('socrates_correctCount', correctCount);
-                localStorage.setItem('socrates_wrongCount', wrongCount);
-                localStorage.setItem('socrates_unattemptedCount', unattemptedCount);
-                localStorage.setItem('socrates_totalQuestions', totalQuestions);
-                localStorage.setItem('socrates_hasSubmittedCurrent', hasSubmittedCurrent);
-            }, [view, empId, empDetails, pin, activeQuestion, activeOptions, activeCorrectIndex, activeAssignmentDay, activeTranslations, correctCount, wrongCount, unattemptedCount, totalQuestions, hasSubmittedCurrent]);
+            // MISSION-CRITICAL: Use refs to access current state inside socket listeners without re-registering
+            // This prevents the "blank question" or "stuck question" issue by keeping listeners stable.
+            const viewRef = useRef(view);
+            const questionRef = useRef(activeQuestion);
+            const qIdxRef = useRef(activeQIdx);
+            const subRef = useRef(hasSubmittedCurrent);
 
-            useEffect(() => {
-                const handleConnect = () => {
-                    if (pin && empId) {
-                        socket.emit('join_session', {pin, emp_id: empId});
-                    }
-                };
-                socket.on('connect', handleConnect);
-                if (socket.connected && pin && empId) {
-                    socket.emit('join_session', {pin, emp_id: empId});
-                }
-                return () => {
-                    socket.off('connect', handleConnect);
-                };
-            }, [pin, empId]);
+            useEffect(() => { viewRef.current = view; }, [view]);
+            useEffect(() => { questionRef.current = activeQuestion; }, [activeQuestion]);
+            useEffect(() => { qIdxRef.current = activeQIdx; }, [activeQIdx]);
+            useEffect(() => { subRef.current = hasSubmittedCurrent; }, [hasSubmittedCurrent]);
 
             useEffect(() => {
                 socket.on('change_view', (data) => {
+                    const cView = viewRef.current;
+                    const cQuestion = questionRef.current;
+                    const cQIdx = qIdxRef.current;
+                    const cHasSub = subRef.current;
+
                     if (data.view) {
-                        if ((view === 'pretest' || view === 'posttest') && !hasSubmittedCurrent && activeQuestion && !data.sync) setUnattemptedCount(prev => prev + 1);
+                        // Increment unattempted if user is moving away from an unanswered question
+                        if ((cView === 'pretest' || cView === 'posttest') && !cHasSub && cQuestion && !data.sync) setUnattemptedCount(prev => prev + 1);
                         setView(data.view);
                     }
-                    if (data.question && data.question !== activeQuestion) {
-                        if (!hasSubmittedCurrent && activeQuestion && !data.sync) setUnattemptedCount(prev => prev + 1);
-                        setActiveQuestion(data.question);
+
+                    // Priority check: Use question_idx if available, otherwise fallback to question text
+                    const isNewQ = (data.question_idx !== undefined && data.question_idx !== cQIdx) || 
+                                   (data.question && data.question !== cQuestion);
+
+                    if (isNewQ) {
+                        if (!cHasSub && cQuestion && !data.sync) setUnattemptedCount(prev => prev + 1);
+                        setActiveQuestion(data.question || '');
+                        if (data.question_idx !== undefined) setActiveQIdx(data.question_idx);
                         if (!data.sync) setTotalQuestions(prev => prev + 1);
                         setHasSubmittedCurrent(false);
                     }
+
                     if (data.options) setActiveOptions(data.options);
                     if (data.correctIndex !== undefined) setActiveCorrectIndex(data.correctIndex);
                     if (data.assignment_day) setActiveAssignmentDay(data.assignment_day);
@@ -259,12 +253,32 @@
                 socket.on('client_command', (data) => {
                     if (data.command === 'reset_scores') {
                         setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0); setTotalQuestions(0); setHasSubmittedCurrent(false);
+                        setActiveQIdx(-1);
                         localStorage.removeItem('socrates_correctCount');
+                        localStorage.removeItem('socrates_activeQIdx');
                     }
                 });
 
                 return () => { socket.off('change_view'); socket.off('client_command'); };
-            }, [view, activeQuestion, hasSubmittedCurrent]);
+            }, []);
+
+            useEffect(() => {
+                localStorage.setItem('socrates_view', view);
+                localStorage.setItem('socrates_empId', empId || '');
+                localStorage.setItem('socrates_empDetails', JSON.stringify(empDetails));
+                localStorage.setItem('socrates_pin', pin || '');
+                localStorage.setItem('socrates_activeQuestion', activeQuestion || '');
+                localStorage.setItem('socrates_activeQIdx', activeQIdx.toString());
+                localStorage.setItem('socrates_activeOptions', JSON.stringify(activeOptions));
+                localStorage.setItem('socrates_activeCorrectIndex', activeCorrectIndex);
+                localStorage.setItem('socrates_activeAssignmentDay', activeAssignmentDay || '');
+                localStorage.setItem('socrates_activeTranslations', JSON.stringify(activeTranslations));
+                localStorage.setItem('socrates_correctCount', correctCount);
+                localStorage.setItem('socrates_wrongCount', wrongCount);
+                localStorage.setItem('socrates_unattemptedCount', unattemptedCount);
+                localStorage.setItem('socrates_totalQuestions', totalQuestions);
+                localStorage.setItem('socrates_hasSubmittedCurrent', hasSubmittedCurrent.toString());
+            }, [view, empId, empDetails, pin, activeQuestion, activeQIdx, activeOptions, activeCorrectIndex, activeAssignmentDay, activeTranslations, correctCount, wrongCount, unattemptedCount, totalQuestions, hasSubmittedCurrent]);
 
             const renderContent = () => {
                 switch(view) {

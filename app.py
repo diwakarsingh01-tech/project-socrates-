@@ -3949,6 +3949,7 @@ def on_join_session(data):
             "view": reg["current_view"],
             "assignment_day": reg["active_module"]["title"],
             "forceLanguage": reg["language_override"],
+            "question_idx": reg["current_question_idx"],
             "sync": True # Flag for client to handle as initial sync
         }
 
