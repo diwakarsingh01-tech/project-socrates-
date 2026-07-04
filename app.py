@@ -166,21 +166,12 @@ def get_db_connection():
             # Manual DNS Resolution: Bypasses buggy eventlet green DNS resolution in Gunicorn
             connection_host = hostname
             try:
-                # First try using eventlet's unmonkeypatched original socket if eventlet is active
-                try:
-                    from eventlet.patcher import original
-                    orig_socket = original('socket')
-                    resolved_ip = orig_socket.gethostbyname(hostname)
-                    print(f"[POSTGRES] Eventlet original socket resolved {hostname} to IP: {resolved_ip}")
-                    connection_host = resolved_ip
-                except Exception:
-                    # Fallback to standard socket
-                    import socket
-                    resolved_ip = socket.gethostbyname(hostname)
-                    print(f"[POSTGRES] Standard socket resolved {hostname} to IP: {resolved_ip}")
-                    connection_host = resolved_ip
+                import socket
+                resolved_ip = socket.gethostbyname(hostname)
+                print(f"[POSTGRES] Resolved {hostname} to IP: {resolved_ip}")
+                connection_host = resolved_ip
             except Exception as dns_err:
-                print(f"[POSTGRES] DNS manual resolution failed: {str(dns_err)}")
+                print(f"[POSTGRES] DNS resolution failed (will try hostname directly): {str(dns_err)}")
                 
             import ssl
             ssl_context = ssl.create_default_context()
@@ -194,7 +185,7 @@ def get_db_connection():
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
-                timeout=10  # Explicit connection timeout to prevent hangs
+                timeout=10
             )
             return PostgresConnectionWrapper(pg_conn)
         except Exception as e:
@@ -448,6 +439,10 @@ def init_db():
     for col, dtype in new_fv_cols.items():
         if col not in fv_cols:
             cursor.execute(f"ALTER TABLE field_visits ADD COLUMN {col} {dtype}")
+    
+    # Run migration to add details column for visit descriptions
+    if 'details' not in fv_cols:
+        cursor.execute("ALTER TABLE field_visits ADD COLUMN details TEXT")
         
     conn.commit()
     conn.close()
@@ -4118,45 +4113,56 @@ def get_visits():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # SuperAdmins and Leaders fetch all field visits, standard trainers only fetch their own schedules
-    if curr_user['role'] in ['SuperAdmin', 'Leader']:
-        cursor.execute('''
-            SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
-                   bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
-                   v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
-                   v.co_presence_count, v.verification_time, bc.manager_pin, v.details, v.end_date,
-                   v.month, v.business_unit, v.meeting_agenda, v.meeting_with, v.overnight_stay,
-                   v.travel_from, v.travel_to, v.travel_mode, v.mom_notes
-            FROM field_visits v
-            JOIN trainers t ON v.trainer_id = t.trainer_id
-            JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
-            ORDER BY v.planned_date DESC
-        ''')
-    else:
-        cursor.execute('''
-            SELECT v.id, v.trainer_id, t.name as trainer_name, v.branch_name, bc.zone, bc.division,
-                   bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
-                   v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
-                   v.co_presence_count, v.verification_time, bc.manager_pin, v.details, v.end_date,
-                   v.month, v.business_unit, v.meeting_agenda, v.meeting_with, v.overnight_stay,
-                   v.travel_from, v.travel_to, v.travel_mode, v.mom_notes
-            FROM field_visits v
-            JOIN trainers t ON v.trainer_id = t.trainer_id
-            JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
-            WHERE v.trainer_id = ?
-            ORDER BY v.planned_date DESC
-        ''', (curr_user['trainer_id'],))
+    try:
+        # SuperAdmins and Leaders fetch all field visits, standard trainers only fetch their own schedules
+        if curr_user['role'] in ['SuperAdmin', 'Leader']:
+            cursor.execute('''
+                SELECT v.id, v.trainer_id, COALESCE(t.name, 'Unknown') as trainer_name,
+                       v.branch_name, COALESCE(bc.zone, v.zone, 'NORTH ZONE') as zone,
+                       COALESCE(bc.division, v.division, 'DELHI DIVISION') as division,
+                       bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
+                       v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
+                       v.co_presence_count, v.verification_time, COALESCE(bc.manager_pin, '1234') as manager_pin,
+                       v.details, v.end_date,
+                       v.month, v.business_unit, v.meeting_agenda, v.meeting_with, v.overnight_stay,
+                       v.travel_from, v.travel_to, v.travel_mode, v.mom_notes
+                FROM field_visits v
+                LEFT JOIN trainers t ON v.trainer_id = t.trainer_id
+                LEFT JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
+                ORDER BY v.planned_date DESC
+            ''')
+        else:
+            cursor.execute('''
+                SELECT v.id, v.trainer_id, COALESCE(t.name, 'Unknown') as trainer_name,
+                       v.branch_name, COALESCE(bc.zone, v.zone, 'NORTH ZONE') as zone,
+                       COALESCE(bc.division, v.division, 'DELHI DIVISION') as division,
+                       bc.latitude, bc.longitude, v.planned_date, v.purpose, v.key_contacts,
+                       v.status, v.checkin_time, v.checkin_latitude, v.checkin_longitude,
+                       v.co_presence_count, v.verification_time, COALESCE(bc.manager_pin, '1234') as manager_pin,
+                       v.details, v.end_date,
+                       v.month, v.business_unit, v.meeting_agenda, v.meeting_with, v.overnight_stay,
+                       v.travel_from, v.travel_to, v.travel_mode, v.mom_notes
+                FROM field_visits v
+                LEFT JOIN trainers t ON v.trainer_id = t.trainer_id
+                LEFT JOIN branch_coordinates bc ON v.branch_name = bc.branch_name
+                WHERE v.trainer_id = ?
+                ORDER BY v.planned_date DESC
+            ''', (curr_user['trainer_id'],))
+            
+        rows = cursor.fetchall()
         
-    rows = cursor.fetchall()
-    
-    # Query branch delta scores (post_test - pre_test average growth)
-    cursor.execute('''
-        SELECT ts.branch_name, AVG(ar.post_test_score - ar.pre_test_score)
-        FROM assessment_results ar
-        JOIN training_sessions ts ON ar.session_id = ts.session_id
-        GROUP BY ts.branch_name
-    ''')
-    deltas = {row[0]: round(row[1], 1) if row[1] is not None else 0.0 for row in cursor.fetchall()}
+        # Query branch delta scores (post_test - pre_test average growth)
+        cursor.execute('''
+            SELECT ts.branch_name, AVG(ar.post_test_score - ar.pre_test_score)
+            FROM assessment_results ar
+            JOIN training_sessions ts ON ar.session_id = ts.session_id
+            GROUP BY ts.branch_name
+        ''')
+        deltas = {row[0]: round(row[1], 1) if row[1] is not None else 0.0 for row in cursor.fetchall()}
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": f"Failed to fetch visits: {str(e)}"}), 500
+        
     conn.close()
     
     visits = []
@@ -4180,7 +4186,7 @@ def get_visits():
             "co_presence_count": r[15],
             "verification_time": r[16],
             "manager_pin": r[17],
-            "details": r[18] if len(r) > 18 else "",
+            "details": r[18] if len(r) > 18 and r[18] else "",
             "end_date": r[19] if len(r) > 19 and r[19] else r[8],
             "socratic_delta": deltas.get(r[3], 0.0)
         })
