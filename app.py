@@ -990,7 +990,9 @@ def get_gdrive_status():
                 ).execute()
                 connected = True
         except Exception as e:
-            print(f"[GDRIVE-STATUS] Integration connection check failed: {str(e)}")
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[GDRIVE-STATUS] Integration connection check failed: {str(e)}\n{tb}")
             connected = False
             
     last_sync_str = "Never"

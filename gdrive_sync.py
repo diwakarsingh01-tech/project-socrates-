@@ -301,10 +301,16 @@ def get_gdrive_service():
         # Load the credentials JSON directly from memory using the robust loader
         info = load_sa_json(sa_json)
         credentials = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-        # Use httplib2 with explicit timeout to prevent hanging on network issues
-        import httplib2
-        http = credentials.authorize(httplib2.Http(timeout=15))
-        service = build('drive', 'v3', http=http, cache_discovery=False)
+        
+        try:
+            # Try with httplib2 timeout first (prevents hangs on network issues)
+            import httplib2
+            http = credentials.authorize(httplib2.Http(timeout=15))
+            service = build('drive', 'v3', http=http, cache_discovery=False)
+        except Exception:
+            # Fall back to default build without custom http
+            service = build('drive', 'v3', credentials=credentials, cache_discovery=False)
+        
         return service
     except Exception as e:
         print(f"[GDRIVE-SYNC] Error initializing Google Drive service: {str(e)}")
