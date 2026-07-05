@@ -982,7 +982,12 @@ def get_gdrive_status():
         try:
             service = get_gdrive_service()
             if service:
-                service.files().get(fileId=folder_id, fields='id, name').execute()
+                # supportsAllDrives=True required for shared folders; timeout prevents hangs
+                service.files().get(
+                    fileId=folder_id,
+                    fields='id, name',
+                    supportsAllDrives=True
+                ).execute()
                 connected = True
         except Exception as e:
             print(f"[GDRIVE-STATUS] Integration connection check failed: {str(e)}")

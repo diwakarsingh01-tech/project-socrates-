@@ -242,10 +242,6 @@ def clean_private_key(key_str):
         key_str = key_str.replace("-----BEGIN PRIVATE KEY-----n", "-----BEGIN PRIVATE KEY-----\n")
     if "n-----END PRIVATE KEY-----" in key_str:
         key_str = key_str.replace("n-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
-        
-    # Normalize headers wrapping
-    key_str = key_str.replace("-----BEGIN PRIVATE KEY-----", "-----BEGIN PRIVATE KEY-----\n")
-    key_str = key_str.replace("-----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
     
     # Normalize multiple newlines
     while "\n\n" in key_str:
@@ -305,7 +301,10 @@ def get_gdrive_service():
         # Load the credentials JSON directly from memory using the robust loader
         info = load_sa_json(sa_json)
         credentials = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-        service = build('drive', 'v3', credentials=credentials)
+        # Use httplib2 with explicit timeout to prevent hanging on network issues
+        import httplib2
+        http = credentials.authorize(httplib2.Http(timeout=15))
+        service = build('drive', 'v3', http=http, cache_discovery=False)
         return service
     except Exception as e:
         print(f"[GDRIVE-SYNC] Error initializing Google Drive service: {str(e)}")
