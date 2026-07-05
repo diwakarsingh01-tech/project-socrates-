@@ -964,7 +964,6 @@ def get_gdrive_status():
     
     configured = bool(folder_id and sa_json)
     connected = False
-    error_detail = None
     service_account_email = "Not Configured"
     masked_folder_id = "Not Configured"
     
@@ -992,10 +991,7 @@ def get_gdrive_status():
                     ).execute()
                 connected = True
         except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            error_detail = f"{type(e).__name__}: {str(e)[:200]}"
-            print(f"[GDRIVE-STATUS] Integration connection check failed: {str(e)}\n{tb}")
+            print(f"[GDRIVE-STATUS] Integration connection check failed: {str(e)}")
             connected = False
             
     last_sync_str = "Never"
@@ -1006,7 +1002,6 @@ def get_gdrive_status():
     return jsonify({
         "configured": configured,
         "connected": connected,
-        "error_detail": error_detail if configured else None,
         "folder_id": masked_folder_id,
         "service_account_email": service_account_email,
         "last_sync": last_sync_str
