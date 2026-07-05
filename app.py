@@ -983,12 +983,13 @@ def get_gdrive_status():
         try:
             service = get_gdrive_service()
             if service:
-                # supportsAllDrives=True required for shared folders; timeout prevents hangs
-                service.files().get(
-                    fileId=folder_id,
-                    fields='id, name',
-                    supportsAllDrives=True
-                ).execute()
+                from gdrive_sync import _original_socket_for_google
+                with _original_socket_for_google():
+                    service.files().get(
+                        fileId=folder_id,
+                        fields='id, name',
+                        supportsAllDrives=True
+                    ).execute()
                 connected = True
         except Exception as e:
             import traceback

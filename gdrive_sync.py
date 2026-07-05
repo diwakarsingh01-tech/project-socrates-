@@ -229,30 +229,30 @@ def load_dotenv():
 # Automatically load environment variables from local .env on import
 load_dotenv()
 
-# --- EVENTLET DNS FIX ---
-# Bypass the buggy eventlet green DNS resolution that can't resolve
-# oauth2.googleapis.com and other Google API hosts.
-# This patches socket.getaddrinfo globally for these specific hosts.
-_GOOGLE_DNS_CACHE = {}
-try:
-    from eventlet.patcher import original
-    orig_socket = original('socket')
-    for hostname in ['oauth2.googleapis.com', 'www.googleapis.com', 'googleapis.com']:
-        try:
-            ip = orig_socket.gethostbyname(hostname)
-            _GOOGLE_DNS_CACHE[hostname] = ip
-        except Exception:
-            pass
-except ImportError:
-    orig_socket = __import__('socket')
+# --- EVENTLET SOCKET FIX ---
+# Context manager that temporarily restores the original (unpatched) socket
+# module for Google API calls, bypassing eventlet's green DNS/connection
+# monkey-patching that can't resolve oauth2.googleapis.com.
+import contextlib
 
-_orig_getaddrinfo = __import__('socket').getaddrinfo
-def _google_dns_patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-    if host in _GOOGLE_DNS_CACHE:
-        host = _GOOGLE_DNS_CACHE[host]
-    return _orig_getaddrinfo(host, port, family, type, proto, flags)
-
-__import__('socket').getaddrinfo = _google_dns_patched_getaddrinfo
+@contextlib.contextmanager
+def _original_socket_for_google():
+    """Temporarily swap patched socket back to real socket for Google API calls."""
+    sm = __import__('socket')
+    saved = {}
+    try:
+        from eventlet.patcher import original
+        orig = original('socket')
+        for attr in ('getaddrinfo', 'create_connection', 'socket'):
+            saved[attr] = getattr(sm, attr)
+            setattr(sm, attr, getattr(orig, attr))
+    except ImportError:
+        pass
+    try:
+        yield
+    finally:
+        for attr, val in saved.items():
+            setattr(sm, attr, val)
 
 def clean_private_key(key_str):
     if not isinstance(key_str, str):
@@ -323,18 +323,16 @@ def get_gdrive_service():
         return None
 
     try:
-        # Load the credentials JSON directly from memory using the robust loader
         info = load_sa_json(sa_json)
         credentials = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
 
-        try:
-            # Try with httplib2 timeout first (prevents hangs on network issues)
-            import httplib2
-            http = credentials.authorize(httplib2.Http(timeout=15))
-            service = build('drive', 'v3', http=http, cache_discovery=False)
-        except Exception:
-            # Fall back to default build without custom http
-            service = build('drive', 'v3', credentials=credentials, cache_discovery=False)
+        with _original_socket_for_google():
+            try:
+                import httplib2
+                http = credentials.authorize(httplib2.Http(timeout=15))
+                service = build('drive', 'v3', http=http, cache_discovery=False)
+            except Exception:
+                service = build('drive', 'v3', credentials=credentials, cache_discovery=False)
 
         return service
     except Exception as e:
