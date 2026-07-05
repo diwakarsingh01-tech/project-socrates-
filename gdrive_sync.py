@@ -229,6 +229,31 @@ def load_dotenv():
 # Automatically load environment variables from local .env on import
 load_dotenv()
 
+# --- EVENTLET DNS FIX ---
+# Bypass the buggy eventlet green DNS resolution that can't resolve
+# oauth2.googleapis.com and other Google API hosts.
+# This patches socket.getaddrinfo globally for these specific hosts.
+_GOOGLE_DNS_CACHE = {}
+try:
+    from eventlet.patcher import original
+    orig_socket = original('socket')
+    for hostname in ['oauth2.googleapis.com', 'www.googleapis.com', 'googleapis.com']:
+        try:
+            ip = orig_socket.gethostbyname(hostname)
+            _GOOGLE_DNS_CACHE[hostname] = ip
+        except Exception:
+            pass
+except ImportError:
+    orig_socket = __import__('socket')
+
+_orig_getaddrinfo = __import__('socket').getaddrinfo
+def _google_dns_patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    if host in _GOOGLE_DNS_CACHE:
+        host = _GOOGLE_DNS_CACHE[host]
+    return _orig_getaddrinfo(host, port, family, type, proto, flags)
+
+__import__('socket').getaddrinfo = _google_dns_patched_getaddrinfo
+
 def clean_private_key(key_str):
     if not isinstance(key_str, str):
         return key_str
@@ -298,32 +323,6 @@ def get_gdrive_service():
         return None
 
     try:
-        # Manual DNS Resolution: Bypasses eventlet green DNS resolution that breaks
-        # connections to oauth2.googleapis.com and www.googleapis.com
-        _GOOGLE_DNS_CACHE = {}
-        try:
-            from eventlet.patcher import original
-            orig_socket = original('socket')
-            for hostname in ['oauth2.googleapis.com', 'www.googleapis.com']:
-                try:
-                    ip = orig_socket.gethostbyname(hostname)
-                    _GOOGLE_DNS_CACHE[hostname] = ip
-                    print(f"[GDRIVE-SYNC] Resolved {hostname} -> {ip}")
-                except Exception as dns_err:
-                    print(f"[GDRIVE-SYNC] DNS resolution failed for {hostname}: {dns_err}")
-        except ImportError:
-            orig_socket = __import__('socket')
-
-        # Patch socket.getaddrinfo to use resolved IPs for Google APIs
-        _orig_getaddrinfo = __import__('socket').getaddrinfo
-        def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-            if host in _GOOGLE_DNS_CACHE:
-                host = _GOOGLE_DNS_CACHE[host]
-            return _orig_getaddrinfo(host, port, family, type, proto, flags)
-
-        import socket as _socket_mod
-        _socket_mod.getaddrinfo = _patched_getaddrinfo
-
         # Load the credentials JSON directly from memory using the robust loader
         info = load_sa_json(sa_json)
         credentials = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
@@ -336,9 +335,6 @@ def get_gdrive_service():
         except Exception:
             # Fall back to default build without custom http
             service = build('drive', 'v3', credentials=credentials, cache_discovery=False)
-
-        # Restore original getaddrinfo
-        _socket_mod.getaddrinfo = _orig_getaddrinfo
 
         return service
     except Exception as e:
