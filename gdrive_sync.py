@@ -298,10 +298,36 @@ def get_gdrive_service():
         return None
 
     try:
+        # Manual DNS Resolution: Bypasses eventlet green DNS resolution that breaks
+        # connections to oauth2.googleapis.com and www.googleapis.com
+        _GOOGLE_DNS_CACHE = {}
+        try:
+            from eventlet.patcher import original
+            orig_socket = original('socket')
+            for hostname in ['oauth2.googleapis.com', 'www.googleapis.com']:
+                try:
+                    ip = orig_socket.gethostbyname(hostname)
+                    _GOOGLE_DNS_CACHE[hostname] = ip
+                    print(f"[GDRIVE-SYNC] Resolved {hostname} -> {ip}")
+                except Exception as dns_err:
+                    print(f"[GDRIVE-SYNC] DNS resolution failed for {hostname}: {dns_err}")
+        except ImportError:
+            orig_socket = __import__('socket')
+
+        # Patch socket.getaddrinfo to use resolved IPs for Google APIs
+        _orig_getaddrinfo = __import__('socket').getaddrinfo
+        def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+            if host in _GOOGLE_DNS_CACHE:
+                host = _GOOGLE_DNS_CACHE[host]
+            return _orig_getaddrinfo(host, port, family, type, proto, flags)
+
+        import socket as _socket_mod
+        _socket_mod.getaddrinfo = _patched_getaddrinfo
+
         # Load the credentials JSON directly from memory using the robust loader
         info = load_sa_json(sa_json)
         credentials = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-        
+
         try:
             # Try with httplib2 timeout first (prevents hangs on network issues)
             import httplib2
@@ -310,7 +336,10 @@ def get_gdrive_service():
         except Exception:
             # Fall back to default build without custom http
             service = build('drive', 'v3', credentials=credentials, cache_discovery=False)
-        
+
+        # Restore original getaddrinfo
+        _socket_mod.getaddrinfo = _orig_getaddrinfo
+
         return service
     except Exception as e:
         print(f"[GDRIVE-SYNC] Error initializing Google Drive service: {str(e)}")
