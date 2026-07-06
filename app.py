@@ -2546,27 +2546,48 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
     import json
 
     def clean_doc_text(text):
-        text = re.sub(r'^\d+\.\s*', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^\d+[\.\)]\s*', '', text, flags=re.MULTILINE)
+        text = re.sub(r'^[-•*]\s*', '', text, flags=re.MULTILINE)
         text = re.sub(r'\b([A-Z][A-Z\s]+):\s*', lambda m: m.group(0).title(), text)
-        return text
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        merged = []
+        buf = ''
+        for line in lines:
+            if buf and (line[0].islower() or line.startswith('and ') or line.startswith('or ') or len(buf) + len(line) < 100):
+                buf += ' ' + line
+            else:
+                if buf:
+                    merged.append(buf)
+                buf = line
+        if buf:
+            merged.append(buf)
+        return '\n'.join(merged)
 
     text_content = clean_doc_text(text_content)
-    paragraphs = [p.strip() for p in text_content.split('\n') if len(p.strip()) > 30]
+    paragraphs = [p.strip() for p in text_content.split('\n') if len(p.strip()) > 10]
     sentences = []
     for p in paragraphs:
-        for s in re.split(r'\. |\n', p):
-            s_clean = s.strip()
-            if len(s_clean) > 20 and len(s_clean) < 220:
+        for s in re.split(r'[.!?\n]', p):
+            s_clean = s.strip().rstrip(',').strip()
+            if len(s_clean) > 10 and len(s_clean) < 300:
                 sentences.append(s_clean)
 
     questions = []
     used_facts = set()
 
-    def make_sentence_fragment(s, max_words=10):
-        words = s.split()
-        if len(words) <= max_words:
-            return s
-        return ' '.join(words[:max_words]) + '...'
+    def extract_value_context(s, value_str, window=8):
+        idx = s.lower().find(value_str.lower())
+        if idx == -1:
+            words = s.split()
+            if len(words) <= window:
+                return s
+            return ' '.join(words[:window]) + '...'
+        start = max(0, idx - 60)
+        end = min(len(s), idx + len(value_str) + 60)
+        ctx = s[start:end].strip()
+        if len(ctx) > 100:
+            ctx = ctx[:100] + '...'
+        return ctx
 
     def perturb_number(s):
         import re
@@ -2643,10 +2664,10 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         correct_pct = f"{val_num}%"
         ctx_before = s[:pct_match.start()].strip().rstrip(':,').lstrip('- ')
         ctx_after = s[pct_match.end():].strip().lstrip(',').strip()
-        fragment = make_sentence_fragment(s)
+        context = extract_value_context(s, correct_pct)
         scenario = (
-            f"A customer case involves {fragment}. "
-            f"What is the correct applicable rate according to policy guidelines?"
+            f"A policy document states {context}. "
+            f"What is the correct applicable rate according to the guidelines?"
         )
         correct_opt = (
             f"As per policy, the applicable rate is {correct_pct} for this scenario."
@@ -2685,23 +2706,23 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         if fact_key in used_facts:
             continue
         used_facts.add(fact_key)
-        fragment = make_sentence_fragment(s)
 
         rule_match = re.search(r'(must|shall|is required|is mandatory|are required|cannot|must not|shall not|not allowed|prohibited|eligible|not eligible)', s, re.IGNORECASE)
         rule_word = rule_match.group(1).lower() if rule_match else 'required'
+        context = extract_value_context(s, rule_word)
 
         if rule_word in ('cannot', 'must not', 'shall not', 'not allowed', 'prohibited'):
             scenario = (
-                f"While processing an application, an executive encounters a situation where {fragment}. "
-                f"Based on policy restrictions, what is the correct course of action?"
+                f"While processing an application, the policy states {context}. "
+                f"Based on this restriction, what is the correct course of action?"
             )
             correct_opt = (
                 f"The executive must comply with the policy restriction: {s}"
             )
         else:
             scenario = (
-                f"An executive is reviewing an application where {fragment}. "
-                f"Based on policy requirements, what should the executive do?"
+                f"While reviewing an application, the policy requires {context}. "
+                f"Based on this requirement, what should the executive do?"
             )
             correct_opt = (
                 f"The executive must follow the policy requirement: {s}"
@@ -2754,11 +2775,11 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         correct_val = num_match.group(0)
         val_num = int(num_match.group(1))
         unit = num_match.group(2).lower()
-        fragment = make_sentence_fragment(s)
+        context = extract_value_context(s, correct_val)
 
         if unit == 'days':
             scenario = (
-                f"For {fragment} "
+                f"The policy says {context}. "
                 f"What is the required timeline?"
             )
             correct_opt = (
@@ -2767,8 +2788,8 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             deltas = [-1, 1, -2, 2, -3, 3, -5, 5]
         elif unit == 'months':
             scenario = (
-                f"While processing {fragment} "
-                f"What tenure or timeline applies according to policy?"
+                f"The policy specifies {context}. "
+                f"What tenure or timeline applies?"
             )
             correct_opt = (
                 f"The applicable tenure under policy is {correct_val}."
@@ -2776,7 +2797,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             deltas = [-3, 3, -6, 6, -12, 12, -2, 2]
         elif unit == 'years':
             scenario = (
-                f"For {fragment} "
+                f"The policy references {context}. "
                 f"What is the correct policy timeline?"
             )
             correct_opt = (
@@ -2785,7 +2806,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             deltas = [-1, 1, -2, 2, -3, 3, -5, 5]
         elif unit in ('lakhs', 'rs', '₹'):
             scenario = (
-                f"An executive is processing {fragment} "
+                f"The policy mentions {context}. "
                 f"What is the correct value the executive should apply?"
             )
             correct_opt = (
