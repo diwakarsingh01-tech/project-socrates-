@@ -2872,62 +2872,161 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
 
     # ----------------------------------------------------------------
     # Heuristic 5 (safety fallback): Generic policy scenarios
+    # Shuffled once and cycled to prevent duplicate questions
     # ----------------------------------------------------------------
     fallback_bank = [
         {
-            "question": f"Under {title}, what is the primary procedure for compliance audits?",
-            "correct": f"Perform comprehensive daily reconciliations according to {title} guidelines.",
-            "wrong": [
-                "Review operational files only at the end of each fiscal quarter.",
-                "Disburse files first and perform manual verification post-facto.",
-                "Audits are conducted purely on a voluntary basis."
-            ]
+            "q": f"Under {title}, what is the first step when processing a new customer application?",
+            "c": f"Verify customer identity and collect all required documents per {title}.",
+            "w": ["Disburse the loan amount immediately to improve satisfaction.",
+                  "Skip documentation for existing customers to speed up processing.",
+                  "Forward the application to legal department for preliminary review."]
         },
         {
-            "question": f"An executive is handling a new customer application under {title}. What is the first step?",
-            "correct": f"Verify customer identity and collect all required documents as per {title} guidelines.",
-            "wrong": [
-                "Disburse the loan amount immediately to improve customer satisfaction.",
-                "Skip documentation for existing customers to speed up processing.",
-                "Forward the application to legal for preliminary review."
-            ]
+            "q": f"A customer disputes a policy decision under {title}. How should the executive proceed?",
+            "c": f"Follow the grievance redressal mechanism outlined in the {title} policy.",
+            "w": ["Ask the customer to submit a completely fresh application.",
+                  "Ignore the dispute and proceed with the original decision.",
+                  "Transfer the case to a different branch without documentation."]
         },
         {
-            "question": f"A customer disputes a decision made under {title}. How should the executive proceed?",
-            "correct": f"Follow the grievance redressal mechanism outlined in the {title} policy document.",
-            "wrong": [
-                "Ask the customer to submit a fresh application from the beginning.",
-                "Ignore the dispute and proceed with the original decision.",
-                "Transfer the case to a different branch without documentation."
-            ]
+            "q": f"What is the executive's documentation responsibility under {title}?",
+            "c": f"Maintain complete records of all customer interactions and approvals per {title}.",
+            "w": ["Destroy outdated files to free up storage space periodically.",
+                  "Submit only digitally signed documents and discard physical copies.",
+                  "Audits are handled entirely by the compliance team alone."]
         },
         {
-            "question": f"During an audit under {title}, what is the executive's documentation responsibility?",
-            "correct": f"Maintain complete and accurate records of all customer interactions and approvals.",
-            "wrong": [
-                "Destroy outdated files to free up storage space.",
-                "Submit only digitally signed documents and discard physical copies.",
-                "Audits are handled entirely by the compliance team; executives have no role."
-            ]
+            "q": f"An application does not meet the standard criteria under {title}. What should the executive do?",
+            "c": f"Escalate the case for manual review and exception handling by the supervisor.",
+            "w": ["Reject the application without any further review or documentation.",
+                  "Modify the customer's documents to meet the eligibility criteria.",
+                  "Process the application anyway and mark it as a special case."]
         },
         {
-            "question": f"An application does not meet the standard criteria under {title}. What action should the executive take?",
-            "correct": f"Escalate the case to the authorized supervisor for manual review and exception handling.",
-            "wrong": [
-                "Reject the application without any further review or documentation.",
-                "Modify the customer's documents to meet the eligibility criteria.",
-                "Process the application anyway and note it as a special case."
-            ]
+            "q": f"What is the correct compliance audit procedure under {title}?",
+            "c": f"Perform comprehensive daily reconciliations according to {title} guidelines.",
+            "w": ["Review operational files only at the end of each fiscal quarter.",
+                  "Disburse files first and perform manual verification after processing.",
+                  "Audits are conducted purely on a voluntary basis when time permits."]
+        },
+        {
+            "q": f"A customer's KYC documents are incomplete under {title} guidelines. What should the executive do?",
+            "c": f"Inform the customer about the missing documents and request resubmission as per {title}.",
+            "w": ["Process the application anyway with a supervisor waiver note.",
+                  "Reject the application immediately without notifying the customer.",
+                  "Ask the customer to visit a different branch for this request."]
+        },
+        {
+            "q": f"An executive discovers a discrepancy in an application under {title}. What is the correct action?",
+            "c": f"Flag the discrepancy, document it, and escalate to the supervisor per {title}.",
+            "w": ["Ignore the discrepancy and process the application as submitted.",
+                  "Silently correct the discrepancy in the system and proceed.",
+                  "Reject the application outright without any explanation."]
+        },
+        {
+            "q": f"A customer asks about disbursement timeline under {title}. What should the executive say?",
+            "c": f"Provide the standard processing timeline as specified in {title} policy.",
+            "w": ["Promise disbursement within 24 hours to ensure customer satisfaction.",
+                  "Tell the customer it depends entirely on the manager's discretion.",
+                  "Refuse to share any timeline information with the customer."]
+        },
+        {
+            "q": f"What documentation is essential before disbursement under {title}?",
+            "c": f"KYC verification, income proof, and loan approval confirmation per {title}.",
+            "w": ["Only the customer's Aadhaar card number is sufficient for verification.",
+                  "A verbal confirmation from the customer is enough to proceed.",
+                  "No documentation is needed for existing repeat customers."]
+        },
+        {
+            "q": f"A customer wants early loan closure under {title}. What should the executive check?",
+            "c": f"Review the foreclosure policy including minimum tenure and applicable charges.",
+            "w": ["Immediately process the closure with no charges applied whatsoever.",
+                  "Refuse early closure under any circumstances without exception.",
+                  "Tell the customer to come back only after the full tenure ends."]
+        },
+        {
+            "q": f"How should an executive handle a low credit score applicant under {title}?",
+            "c": f"Check if the score meets the minimum threshold and advise accordingly per {title}.",
+            "w": ["Automatically reject the application without any further review.",
+                  "Process the application at a higher rate without disclosing the reason.",
+                  "Ask the customer to apply using a different co-applicant name."]
+        },
+        {
+            "q": f"An executive notices a colleague bypassing verification steps under {title}. What should they do?",
+            "c": f"Report the concern to the supervisor to ensure {title} policy compliance.",
+            "w": ["Ignore it since it is not their responsibility to report others.",
+                  "Copy the colleague's approach to save time on their own processing.",
+                  "Confront the colleague aggressively in front of customers."]
+        },
+        {
+            "q": f"A customer provides insufficient income proof under {title}. What is the correct approach?",
+            "c": f"Evaluate against minimum income criteria and inform the customer if it falls short.",
+            "w": ["Accept it without verification to maintain good customer relations.",
+                  "Increase the loan amount to compensate for the low reported income.",
+                  "Reject the application without explaining the reason to the customer."]
+        },
+        {
+            "q": f"A customer requests a policy exception under {title}. What should the executive do?",
+            "c": f"Explain that exceptions require supervisor approval and properly document the request.",
+            "w": ["Grant the exception immediately to satisfy the customer on the spot.",
+                  "Deny the request outright without providing any explanation.",
+                  "Pretend the policy does not apply to this particular case."]
+        },
+        {
+            "q": f"What is the executive's data privacy responsibility under {title}?",
+            "c": f"Keep all customer data confidential and share only on a need-to-know basis.",
+            "w": ["Share customer data freely with anyone within the organization.",
+                  "Post customer success stories on social media as testimonials.",
+                  "Leave customer files open on the desk for anyone to see."]
+        },
+        {
+            "q": f"A complete application is received under {title}. What is the next step in processing?",
+            "c": f"Proceed with verification of details followed by the standard approval workflow.",
+            "w": ["Disburse the amount immediately without any further verification steps.",
+                  "Put the file aside and process it whenever there is free time available.",
+                  "Send the customer to a different branch to apply all over again."]
+        },
+        {
+            "q": f"A customer calls to check application status under {title}. What should the executive share?",
+            "c": f"Provide the current status accurately along with expected next steps and timeline.",
+            "w": ["Share other customers' application statuses as comparison for reference.",
+                  "Promise faster approval in exchange for a positive customer review.",
+                  "Say the application was lost and ask them to submit a fresh one."]
+        },
+        {
+            "q": f"An executive suspects fraudulent documents under {title}. What should they do?",
+            "c": f"Flag the application immediately and escalate to the fraud investigation team.",
+            "w": ["Process the application but make a personal note about the suspicion.",
+                  "Confront the customer directly and accuse them of submitting fraud.",
+                  "Ignore it since document verification is not their responsibility."]
+        },
+        {
+            "q": f"A returning customer with good history applies under {title}. How should this be handled?",
+            "c": f"Process following standard {title} policy while noting the positive repayment history.",
+            "w": ["Waive all documentation requirements for returning customers completely.",
+                  "Automatically reject returning customers to encourage new customer acquisition.",
+                  "Process the loan at double the standard interest rate for safety."]
+        },
+        {
+            "q": f"What is the correct procedure for customer data updates under {title}?",
+            "c": f"Verify the new details with supporting documents and update in the system.",
+            "w": ["Accept the change over the phone without any supporting verification.",
+                  "Ask the customer to visit a different branch for this simple request.",
+                  "Do not update the information until the next loan application."]
         }
     ]
+    random.shuffle(fallback_bank)
+    fb_index = 0
     while len(questions) < count:
-        fb = random.choice(fallback_bank)
-        choices = [fb["correct"]] + fb["wrong"]
+        fb = fallback_bank[fb_index % len(fallback_bank)]
+        fb_index += 1
+        choices = [fb["c"]] + fb["w"]
         random.shuffle(choices)
         questions.append({
-            "question": fb["question"],
+            "question": fb["q"],
             "options": choices,
-            "correctIndex": choices.index(fb["correct"]),
+            "correctIndex": choices.index(fb["c"]),
             "approved": 0,
             "translations": {}
         })
