@@ -2241,303 +2241,118 @@ def delete_module(module_id):
     return jsonify({"status": "success"})
 
 def get_offline_translations(type_flag, masked_s_or_intro, choices, correct_index, title="Module", language='all'):
-    # type_flag can be: 'percentage', 'threshold', 'comprehension', 'keyword', 'audit_fallback'
+    t = {
+        'hindi': {
+            'pct_rate': 'एक ग्राहक बैंक से लोन लेने आता है। नियम कहते हैं: "{text}" बैंक वाले को कितना रेट देना चाहिए?',
+            'rule_require': 'एक ग्राहक फॉर्म भरता है। नियम कहते हैं: "{text}" बैंक वाले को क्या करना चाहिए?',
+            'rule_restrict': 'एक ग्राहक कुछ करना चाहता है। लेकिन नियम कहते हैं: "{text}" बैंक वाले को क्या करना चाहिए?',
+            'value_days': 'एक ग्राहक पूछता है, "कितने दिन लगेंगे?" नियम कहते हैं: "{text}" बैंक वाले को क्या कहना चाहिए?',
+            'value_months': 'एक ग्राहक लोन चुकाने का समय चुनना चाहता है। नियम कहते हैं: "{text}" वे कितने महीने चुन सकते हैं?',
+            'value_years': 'एक ग्राहक पूछता है कि योजना कितने साल की है। नियम कहते हैं: "{text}" कितने साल?',
+            'value_lakhs': 'एक ग्राहक पूछता है, "मुझे कितने पैसे मिल सकते हैं?" नियम कहते हैं: "{text}" बैंक वाले को क्या कहना चाहिए?',
+            'comprehension': 'नियमों का यह भाग पढ़ें:\n{text}\n\nकौन सा वाक्य सही है?',
+        },
+        'hinglish': {
+            'pct_rate': 'Ek customer bank mein loan lene aata hai. Rules kehte hain: "{text}" Bank wale ko kitna rate dena chahiye?',
+            'rule_require': 'Ek customer form bharta hai. Rules kehte hain: "{text}" Bank wale ko kya karna chahiye?',
+            'rule_restrict': 'Ek customer kuch karna chahta hai. Lekin rules kehte hain: "{text}" Bank wale ko kya karna chahiye?',
+            'value_days': 'Ek customer poochta hai, "Kitne din lagenge?" Rules kehte hain: "{text}" Bank wale ko kya kehna chahiye?',
+            'value_months': 'Ek customer loan wapas karne ka time choose karna chahta hai. Rules kehte hain: "{text}" Wo kitne months choose kar sakta hai?',
+            'value_years': 'Ek customer poochta hai ki plan kitne saal ka hai. Rules kehte hain: "{text}" Kitne saal?',
+            'value_lakhs': 'Ek customer poochta hai, "Mujhe kitne paise mil sakte hain?" Rules kehte hain: "{text}" Bank wale ko kya kehna chahiye?',
+            'comprehension': 'Rules ka yeh part padhein:\n{text}\n\nKaunsa sentence sahi hai?',
+        },
+        'punjabi': {
+            'pct_rate': 'ਇੱਕ ਗਾਹਕ ਬੈਂਕ ਤੋਂ ਲੋਨ ਲੈਣ ਆਉਂਦਾ ਹੈ। ਨਿਯਮ ਕਹਿੰਦੇ ਹਨ: "{text}" ਬੈਂਕ ਵਾਲੇ ਨੂੰ ਕਿੰਨਾ ਰੇਟ ਦੇਣਾ ਚਾਹੀਦਾ ਹੈ?',
+            'rule_require': 'ਇੱਕ ਗਾਹਕ ਫਾਰਮ ਭਰਦਾ ਹੈ। ਨਿਯਮ ਕਹਿੰਦੇ ਹਨ: "{text}" ਬੈਂਕ ਵਾਲੇ ਨੂੰ ਕੀ ਕਰਨਾ ਚਾਹੀਦਾ ਹੈ?',
+            'rule_restrict': 'ਇੱਕ ਗਾਹਕ ਕੁਝ ਕਰਨਾ ਚਾਹੁੰਦਾ ਹੈ। ਪਰ ਨਿਯਮ ਕਹਿੰਦੇ ਹਨ: "{text}" ਬੈਂਕ ਵਾਲੇ ਨੂੰ ਕੀ ਕਰਨਾ ਚਾਹੀਦਾ ਹੈ?',
+            'value_days': 'ਇੱਕ ਗਾਹਕ ਪੁੱਛਦਾ ਹੈ, "ਕਿੰਨੇ ਦਿਨ ਲੱਗਣਗੇ?" ਨਿਯਮ ਕਹਿੰਦੇ ਹਨ: "{text}" ਬੈਂਕ ਵਾਲੇ ਨੂੰ ਕੀ ਕਹਿਣਾ ਚਾਹੀਦਾ ਹੈ?',
+            'value_months': 'ਇੱਕ ਗਾਹਕ ਲੋਨ ਵਾਪਸ ਕਰਨ ਦਾ ਸਮਾਂ ਚੁਣਨਾ ਚਾਹੁੰਦਾ ਹੈ। ਨਿਯਮ ਕਹਿੰਦੇ ਹਨ: "{text}" ਉਹ ਕਿੰਨੇ ਮਹੀਨੇ ਚੁਣ ਸਕਦਾ ਹੈ?',
+            'value_years': 'ਇੱਕ ਗਾਹਕ ਪੁੱਛਦਾ ਹੈ ਕਿ ਯੋਜਨਾ ਕਿੰਨੇ ਸਾਲਾਂ ਦੀ ਹੈ। ਨਿਯਮ ਕਹਿੰਦੇ ਹਨ: "{text}" ਕਿੰਨੇ ਸਾਲ?',
+            'value_lakhs': 'ਇੱਕ ਗਾਹਕ ਪੁੱਛਦਾ ਹੈ, "ਮੈਨੂੰ ਕਿੰਨੇ ਪੈਸੇ ਮਿਲ ਸਕਦੇ ਹਨ?" ਨਿਯਮ ਕਹਿੰਦੇ ਹਨ: "{text}" ਬੈਂਕ ਵਾਲੇ ਨੂੰ ਕੀ ਕਹਿਣਾ ਚਾਹੀਦਾ ਹੈ?',
+            'comprehension': 'ਨਿਯਮਾਂ ਦਾ ਇਹ ਹਿੱਸਾ ਪੜ੍ਹੋ:\n{text}\n\nਕਿਹੜਾ ਵਾਕ ਸਹੀ ਹੈ?',
+        },
+        'bengali': {
+            'pct_rate': 'একজন গ্রাহক ব্যাংক থেকে লোন নিতে আসে। নিয়ম বলে: "{text}" ব্যাংক কর্মীকে কত রেট দিতে হবে?',
+            'rule_require': 'একজন গ্রাহক ফর্ম পূরণ করে। নিয়ম বলে: "{text}" ব্যাংক কর্মীর কী করা উচিত?',
+            'rule_restrict': 'একজন গ্রাহক কিছু করতে চায়। কিন্তু নিয়ম বলে: "{text}" ব্যাংক কর্মীর কী করা উচিত?',
+            'value_days': 'একজন গ্রাহক জিজ্ঞাসা করে, "কত দিন লাগবে?" নিয়ম বলে: "{text}" ব্যাংক কর্মীর কী বলা উচিত?',
+            'value_months': 'একজন গ্রাহক লোন পরিশোধের সময় বেছে নিতে চায়। নিয়ম বলে: "{text}" সে কত মাস বেছে নিতে পারে?',
+            'value_years': 'একজন গ্রাহক জিজ্ঞাসা করে পরিকল্পনা কত বছরের। নিয়ম বলে: "{text}" কত বছর?',
+            'value_lakhs': 'একজন গ্রাহক জিজ্ঞাসা করে, "আমি কত টাকা পেতে পারি?" নিয়ম বলে: "{text}" ব্যাংক কর্মীর কী বলা উচিত?',
+            'comprehension': 'নিয়মের এই অংশটি পড়ুন:\n{text}\n\nকোন বাক্যটি সঠিক?',
+        },
+        'marathi': {
+            'pct_rate': 'एक ग्राहक बँकेतून कर्ज घेण्यासाठी येतो. नियम सांगतात: "{text}" बँक कर्मचाऱ्याने किती दर द्यावा?',
+            'rule_require': 'एक ग्राहक फॉर्म भरतो. नियम सांगतात: "{text}" बँक कर्मचाऱ्याने काय करावे?',
+            'rule_restrict': 'एक ग्राहक काहीतरी करू इच्छितो. पण नियम सांगतात: "{text}" बँक कर्मचाऱ्याने काय करावे?',
+            'value_days': 'एक ग्राहक विचारतो, "किती दिवस लागतील?" नियम सांगतात: "{text}" बँक कर्मचाऱ्याने काय म्हणावे?',
+            'value_months': 'एक ग्राहक कर्ज फेडण्याचा कालावधी निवडू इच्छितो. नियम सांगतात: "{text}" तो किती महिने निवडू शकतो?',
+            'value_years': 'एक ग्राहक विचारतो की योजना किती वर्षांची आहे. नियम सांगतात: "{text}" किती वर्षे?',
+            'value_lakhs': 'एक ग्राहक विचारतो, "मला किती पैसे मिळू शकतात?" नियम सांगतात: "{text}" बँक कर्मचाऱ्याने काय म्हणावे?',
+            'comprehension': 'नियमांचा हा भाग वाचा:\n{text}\n\nकोणते वाक्य बरोबर आहे?',
+        },
+        'telugu': {
+            'pct_rate': 'ఒక కస్టమర్ బ్యాంకు నుండి లోన్ తీసుకోవడానికి వస్తాడు. నియమాలు చెప్తాయి: "{text}" బ్యాంకు వ్యక్తి ఎంత రేటు ఇవ్వాలి?',
+            'rule_require': 'ఒక కస్టమర్ ఫారం నింపుతాడు. నియమాలు చెప్తాయి: "{text}" బ్యాంకు వ్యక్తి ఏమి చేయాలి?',
+            'rule_restrict': 'ఒక కస్టమర్ ఏదో చేయాలనుకుంటాడు. కానీ నియమాలు చెప్తాయి: "{text}" బ్యాంకు వ్యక్తి ఏమి చేయాలి?',
+            'value_days': 'ఒక కస్టమర్ అడుగుతాడు, "ఎన్ని రోజులు పడుతుంది?" నియమాలు చెప్తాయి: "{text}" బ్యాంకు వ్యక్తి ఏమి చెప్పాలి?',
+            'value_months': 'ఒక కస్టమర్ లోన్ తిరిగి చెల్లించడానికి సమయాన్ని ఎంచుకోవాలనుకుంటాడు. నియమాలు చెప్తాయి: "{text}" అతను ఎన్ని నెలలు ఎంచుకోవచ్చు?',
+            'value_years': 'ఒక కస్టమర్ ప్లాన్ ఎన్ని సంవత్సరాలది అని అడుగుతాడు. నియమాలు చెప్తాయి: "{text}" ఎన్ని సంవత్సరాలు?',
+            'value_lakhs': 'ఒక కస్టమర్ అడుగుతాడు, "నాకు ఎంత డబ్బు వస్తుంది?" నియమాలు చెప్తాయి: "{text}" బ్యాంకు వ్యక్తి ఏమి చెప్పాలి?',
+            'comprehension': 'నియమాలలో ఈ భాగాన్ని చదవండి:\n{text}\n\nఏ వాక్యం సరైనది?',
+        },
+        'tamil': {
+            'pct_rate': 'ஒரு வாடிக்கையாளர் வங்கியில் கடன் வாங்க வருகிறார். விதிகள் கூறுகின்றன: "{text}" வங்கி ஊழியர் எவ்வளவு வட்டி விகிதம் கொடுக்க வேண்டும்?',
+            'rule_require': 'ஒரு வாடிக்கையாளர் படிவத்தை நிரப்புகிறார். விதிகள் கூறுகின்றன: "{text}" வங்கி ஊழியர் என்ன செய்ய வேண்டும்?',
+            'rule_restrict': 'ஒரு வாடிக்கையாளர் ஏதோ செய்ய விரும்புகிறார். ஆனால் விதிகள் கூறுகின்றன: "{text}" வங்கி ஊழியர் என்ன செய்ய வேண்டும்?',
+            'value_days': 'ஒரு வாடிக்கையாளர் கேட்கிறார், "எத்தனை நாட்கள் ஆகும்?" விதிகள் கூறுகின்றன: "{text}" வங்கி ஊழியர் என்ன சொல்ல வேண்டும்?',
+            'value_months': 'ஒரு வாடிக்கையாளர் கடனை திருப்பிச் செலுத்த நேரத்தை தேர்வு செய்ய விரும்புகிறார். விதிகள் கூறுகின்றன: "{text}" அவர் எத்தனை மாதங்கள் தேர்வு செய்யலாம்?',
+            'value_years': 'ஒரு வாடிக்கையாளர் திட்டம் எத்தனை ஆண்டுகள் என்று கேட்கிறார். விதிகள் கூறுகின்றன: "{text}" எத்தனை ஆண்டுகள்?',
+            'value_lakhs': 'ஒரு வாடிக்கையாளர் கேட்கிறார், "எனக்கு எவ்வளவு பணம் கிடைக்கும்?" விதிகள் கூறுகின்றன: "{text}" வங்கி ஊழியர் என்ன சொல்ல வேண்டும்?',
+            'comprehension': 'விதிகளின் இந்த பகுதியைப் படிக்கவும்:\n{text}\n\nஎந்த வாக்கியம் சரியானது?',
+        },
+        'gujarati': {
+            'pct_rate': 'એક ગ્રાહક બેંકમાંથી લોન લેવા આવે છે. નિયમો કહે છે: "{text}" બેંક વ્યક્તિએ કેટલો દર આપવો જોઈએ?',
+            'rule_require': 'એક ગ્રાહક ફોર્મ ભરે છે. નિયમો કહે છે: "{text}" બેંક વ્યક્તિએ શું કરવું જોઈએ?',
+            'rule_restrict': 'એક ગ્રાહક કંઈક કરવા માંગે છે. પરંતુ નિયમો કહે છે: "{text}" બેંક વ્યક્તિએ શું કરવું જોઈએ?',
+            'value_days': 'એક ગ્રાહક પૂછે છે, "કેટલા દિવસ લાગશે?" નિયમો કહે છે: "{text}" બેંક વ્યક્તિએ શું કહેવું જોઈએ?',
+            'value_months': 'એક ગ્રાહક લોન ચૂકવવાનો સમય પસંદ કરવા માંગે છે. નિયમો કહે છે: "{text}" તે કેટલા મહિના પસંદ કરી શકે છે?',
+            'value_years': 'એક ગ્રાહક પૂછે છે કે યોજના કેટલા વર્ષની છે. નિયમો કહે છે: "{text}" કેટલા વર્ષ?',
+            'value_lakhs': 'એક ગ્રાહક પૂછે છે, "મને કેટલા પૈસા મળી શકે છે?" નિયમો કહે છે: "{text}" બેંક વ્યક્તિએ શું કહેવું જોઈએ?',
+            'comprehension': 'નિયમોનો આ ભાગ વાંચો:\n{text}\n\nકયું વાક્ય સાચું છે?',
+        },
+        'kannada': {
+            'pct_rate': 'ಒಬ್ಬ ಗ್ರಾಹಕ ಬ್ಯಾಂಕಿನಿಂದ ಸಾಲ ತೆಗೆದುಕೊಳ್ಳಲು ಬರುತ್ತಾನೆ. ನಿಯಮಗಳು ಹೇಳುತ್ತವೆ: "{text}" ಬ್ಯಾಂಕ್ ವ್ಯಕ್ತಿ ಎಷ್ಟು ದರ ನೀಡಬೇಕು?',
+            'rule_require': 'ಒಬ್ಬ ಗ್ರಾಹಕ ಫಾರ್ಮ್ ತುಂಬುತ್ತಾನೆ. ನಿಯಮಗಳು ಹೇಳುತ್ತವೆ: "{text}" ಬ್ಯಾಂಕ್ ವ್ಯಕ್ತಿ ಏನು ಮಾಡಬೇಕು?',
+            'rule_restrict': 'ಒಬ್ಬ ಗ್ರಾಹಕ ಏನನ್ನಾದರೂ ಮಾಡಲು ಬಯಸುತ್ತಾನೆ. ಆದರೆ ನಿಯಮಗಳು ಹೇಳುತ್ತವೆ: "{text}" ಬ್ಯಾಂಕ್ ವ್ಯಕ್ತಿ ಏನು ಮಾಡಬೇಕು?',
+            'value_days': 'ಒಬ್ಬ ಗ್ರಾಹಕ ಕೇಳುತ್ತಾನೆ, "ಎಷ್ಟು ದಿನಗಳು ಬೇಕಾಗುತ್ತವೆ?" ನಿಯಮಗಳು ಹೇಳುತ್ತವೆ: "{text}" ಬ್ಯಾಂಕ್ ವ್ಯಕ್ತಿ ಏನು ಹೇಳಬೇಕು?',
+            'value_months': 'ಒಬ್ಬ ಗ್ರಾಹಕ ಸಾಲವನ್ನು ತಿರುಗಿ ಪಾವತಿಸಲು ಸಮಯವನ್ನು ಆಯ್ಕೆ ಮಾಡಲು ಬಯಸುತ್ತಾನೆ. ನಿಯಮಗಳು ಹೇಳುತ್ತವೆ: "{text}" ಅವನು ಎಷ್ಟು ತಿಂಗಳುಗಳನ್ನು ಆಯ್ಕೆ ಮಾಡಬಹುದು?',
+            'value_years': 'ಒಬ್ಬ ಗ್ರಾಹಕ ಯೋಜನೆ ಎಷ್ಟು ವರ್ಷಗಳು ಎಂದು ಕೇಳುತ್ತಾನೆ. ನಿಯಮಗಳು ಹೇಳುತ್ತವೆ: "{text}" ಎಷ್ಟು ವರ್ಷಗಳು?',
+            'value_lakhs': 'ಒಬ್ಬ ಗ್ರಾಹಕ ಕೇಳುತ್ತಾನೆ, "ನನಗೆ ಎಷ್ಟು ಹಣ ಸಿಗಬಹುದು?" ನಿಯಮಗಳು ಹೇಳುತ್ತವೆ: "{text}" ಬ್ಯಾಂಕ್ ವ್ಯಕ್ತಿ ಏನು ಹೇಳಬೇಕು?',
+            'comprehension': 'ನಿಯಮಗಳ ಈ ಭಾಗವನ್ನು ಓದಿ:\n{text}\n\nಯಾವ ವಾಕ್ಯ ಸರಿಯಾಗಿದೆ?',
+        },
+    }
+
     translations = {}
-    
-    if type_flag == 'percentage':
-        translations = {
-            "hindi": {
-                "question": f"पॉलिसी डॉक्युमेंट के अनुसार: \"{masked_s_or_intro}\" यहाँ सही प्रतिशत क्या होना चाहिए?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "hinglish": {
-                "question": f"Policy guidelines ke according: \"{masked_s_or_intro}\" Correct percentage kya hona chahiye?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "punjabi": {
-                "question": f"ਪਾਲਿਸੀ ਦਸਤਾਵੇਜ਼ ਦੇ ਅਨੁਸਾਰ: \"{masked_s_or_intro}\" ਇੱਥੇ ਸਹੀ ਪ੍ਰਤੀਸ਼ਤ ਕੀ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "bengali": {
-                "question": f"পলিসি ডকুমেন্ট অনুযায়ী: \"{masked_s_or_intro}\" এখানে সঠিক শতাংশ কত হওয়া উচিত?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "marathi": {
-                "question": f"पॉलिसी दस्तऐवजानुसार: \"{masked_s_or_intro}\" येथे योग्य टक्केवारी काय असावी?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "telugu": {
-                "question": f"పాలసీ డాక్యుమెంట్ ప్రకారం: \"{masked_s_or_intro}\" ఇక్కడ సరైన శాతం ఎంత ఉండాలి?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "tamil": {
-                "question": f"கொள்கை ஆவணத்தின்படி: \"{masked_s_or_intro}\" இங்கே சரியான சதவீதம் என்னவாக இருக்க வேண்டும்?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "gujarati": {
-                "question": f"પોલિસી દસ્તાવેજ મુજબ: \"{masked_s_or_intro}\" અહીં સાચી ટકાવારી શું હોવી જોઈએ?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "kannada": {
-                "question": f"ಪಾಲಿಸಿ ದಾಖಲೆಯ ಪ್ರಕಾರ: \"{masked_s_or_intro}\" ಇಲ್ಲಿ ಸರಿಯಾದ ಶೇಕಡಾವಾರು ಎಷ್ಟು ಇರಬೇಕು?",
-                "options": choices,
-                "correctIndex": correct_index
-            }
-        }
-    elif type_flag == 'threshold':
-        translations = {
-            "hindi": {
-                "question": f"गाइडलाइंस के अनुसार: \"{masked_s_or_intro}\" यहाँ सही सीमा क्या होनी चाहिए?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "hinglish": {
-                "question": f"Policy guidelines ke according: \"{masked_s_or_intro}\" Correct threshold kya hona chahiye?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "punjabi": {
-                "question": f"ਦਿਸ਼ਾ-ਨਿਰਦੇਸ਼ਾਂ ਦੇ ਅਨੁਸਾਰ: \"{masked_s_or_intro}\" ਇੱਥੇ ਸਹੀ ਸੀਮਾ ਕੀ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "bengali": {
-                "question": f"নির্দেশিকা অনুযায়ী: \"{masked_s_or_intro}\" এখানে সঠিক সীমা কি হওয়া উচিত?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "marathi": {
-                "question": f"मार्गदर्शक तत्त्वांनुसार: \"{masked_s_or_intro}\" येथे योग्य मर्यादा काय असावी?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "telugu": {
-                "question": f"మార్గదర్శకాల ప్రకారం: \"{masked_s_or_intro}\" ఇక్కడ సరైన పరిమితి ఎంత ఉండాలి?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "tamil": {
-                "question": f"வழிகாட்டுதல்களின்படி: \"{masked_s_or_intro}\" இங்கே சரியான வரம்பு என்னவாக இருக்க வேண்டும்?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "gujarati": {
-                "question": f"માર્ગદર્શિકા મુજબ: \"{masked_s_or_intro}\" અહીં સાચી મર્યાદા શું હોવી જોઈએ?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "kannada": {
-                "question": f"ಮಾರ್ಗಸೂಚಿಗಳ ಪ್ರಕಾರ: \"{masked_s_or_intro}\" ಇಲ್ಲಿ ಸರಿಯಾದ ಮಿತಿ ಎಷ್ಟು ಇರಬೇಕು?",
-                "options": choices,
-                "correctIndex": correct_index
-            }
-        }
-    elif type_flag == 'comprehension':
-        translations = {
-            "hindi": {
-                "question": f"दिए गए पैराग्राफ: \"{masked_s_or_intro}\" के अनुसार कौन सा कथन सही है?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "hinglish": {
-                "question": f"Given paragraph: \"{masked_s_or_intro}\" ke according, correct statement select karein:",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "punjabi": {
-                "question": f"ਦਿੱਤੇ ਗਏ ਪੈਰੇ: \"{masked_s_or_intro}\" ਦੇ ਅਨੁਸਾਰ ਕਿਹੜਾ ਕਥਨ ਸਹੀ ਹੈ?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "bengali": {
-                "question": f"প্রদত্ত অনুচ্ছেদ: \"{masked_s_or_intro}\" অনুযায়ী কোন বিবৃতিটি সঠিক?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "marathi": {
-                "question": f"दिलेल्या परिच्छेदानुसार: \"{masked_s_or_intro}\" खालीलपैकी कोणते विधान योग्य आहे?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "telugu": {
-                "question": f"ఇచ్చిన పేరాగ్రాఫ్: \"{masked_s_or_intro}\" ప్రకారం క్రింది వాటిలో ఏది సరైనది?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "tamil": {
-                "question": f"கொடுக்கப்பட்ட பத்தி: \"{masked_s_or_intro}\" படி பின்வருவனவற்றில் எது சரியானது?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "gujarati": {
-                "question": f"આપેલ ફકરા મુજબ: \"{masked_s_or_intro}\" નીચેનામાંથી કયું વિધાન સાચું છે?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "kannada": {
-                "question": f"ನೀಡಿರುವ ಪ್ಯಾರಾಗ್ರಾಫ್: \"{masked_s_or_intro}\" ರ ಪ್ರಕಾರ ಈ ಕೆಳಗಿನವುಗಳಲ್ಲಿ ಯಾವುದು ಸರಿಯಾಗಿದೆ?",
-                "options": choices,
-                "correctIndex": correct_index
-            }
-        }
-    elif type_flag == 'keyword':
-        translations = {
-            "hindi": {
-                "question": f"रिक्त स्थान भरें! \"{masked_s_or_intro}\" यहाँ सही शब्द क्या होगा?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "hinglish": {
-                "question": f"Blank space fill karein! \"{masked_s_or_intro}\" What is the correct term?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "punjabi": {
-                "question": f"ਖਾਲੀ ਥਾਂ ਭਰੋ! \"{masked_s_or_intro}\" ਇੱਥੇ ਸਹੀ ਸ਼ਬਦ ਕੀ ਹੋਵੇਗਾ?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "bengali": {
-                "question": f"শূন্যস্থান পূরণ করুন! \"{masked_s_or_intro}\" এখানে সঠিক শব্দটি কি হবে?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "marathi": {
-                "question": f"रिकामी जागा भरा! \"{masked_s_or_intro}\" येथे योग्य शब्द कोणता असेल?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "telugu": {
-                "question": f"ఖాళీని పూరించండి! \"{masked_s_or_intro}\" ఇక్కడ సరైన పదం ఏమిటి?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "tamil": {
-                "question": f"கோடிட்ட இடத்தை நிரப்புக! \"{masked_s_or_intro}\" இங்கே crayfish சரியான சொல் எது?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "gujarati": {
-                "question": f"ખાલી જગ્યા પૂરો! \"{masked_s_or_intro}\" અહીં સાચો શબ્દ કયો હશે?",
-                "options": choices,
-                "correctIndex": correct_index
-            },
-            "kannada": {
-                "question": f"ಖಾಲಿ ಜಾಗವನ್ನು ತುಂಬಿ! \"{masked_s_or_intro}\" ಇಲ್ಲಿ ಸರಿಯಾದ ಪದ ಯಾವುದು?",
-                "options": choices,
-                "correctIndex": correct_index
-            }
-        }
-    elif type_flag == 'audit_fallback':
-        translations = {
-            "hindi": {
-                "question": f"{title} गाइडलाइंस के अनुसार ऑडिट की मुख्य प्रक्रिया क्या है?",
-                "options": [
-                    f"{title} मानकों के अनुसार दैनिक मिलान करें।",
-                    "केवल वित्तीय तिमाही के अंत में फाइलों की समीक्षा करें।",
-                    "पहले फाइलें स्वीकृत करें और सत्यापन बाद में करें।",
-                    "ऑडिट पूरी तरह से स्वैच्छिक है।"
-                ],
-                "correctIndex": correct_index
-            },
-            "hinglish": {
-                "question": f"{title} guidelines ke according audit ka main procedure kya hai?",
-                "options": [
-                    f"{title} standard ke according daily reconciliation karein.",
-                    "Sirf quarter end par files review karein.",
-                    "Pehle file disburse karein fir check karein.",
-                    "Audits purely voluntary base par hote hain."
-                ],
-                "correctIndex": correct_index
-            },
-            "punjabi": {
-                "question": f"{title} ਦਿਸ਼ਾ-ਨਿਰਦੇਸ਼ਾਂ ਦੇ ਅਨੁਸਾਰ ਆਡਿਟ ਦੀ ਮੁੱਖ ਪ੍ਰਕਿਰਿਆ ਕੀ ਹੈ?",
-                "options": [
-                    f"{title} ਮਿਆਰਾਂ ਅਨੁਸਾਰ ਰੋਜ਼ਾਨਾ ਮਿਲਾਣ ਕਰੋ।",
-                    "ਸਿਰਫ਼ ਵਿੱਤੀ ਤਿਮਾਹੀ ਦੇ ਅੰਤ ਵਿੱਚ ਫਾਈਲਾਂ ਦੀ ਸਮੀਖਿਆ ਕਰੋ।",
-                    "ਪਹਿਲਾਂ ਫਾਈਲਾਂ ਮਨਜ਼ੂਰ ਕਰੋ ਅਤੇ ਬਾਅਦ ਵਿੱਚ ਤਸਦੀਕ ਕਰੋ।",
-                    "ਆਡਿਟ ਪੂਰੀ ਤਰ੍ਹਾਂ ਸਵੈ-ਇੱਛਤ ਹੈ।"
-                ],
-                "correctIndex": correct_index
-            },
-            "bengali": {
-                "question": f"{title} নির্দেশিকা অনুসারে অডিট করার প্রধান পদ্ধতি কী?",
-                "options": [
-                    f"{title} মান অনুসারে দৈনিক সমন্বয় করুন।",
-                    "কেবলমাত্র প্রতিটি আর্থিক ত্রৈমাসিকের শেষে ফাইলগুলি পর্যালোচনা করুন।",
-                    "প্রথমে ফাইলগুলি বিতরণ করুন এবং পরে যাচাইকরণ করুন।",
-                    "অডিট সম্পূর্ণভাবে স্বেচ্ছামূলক ভিত্তিতে করা হয়।"
-                ],
-                "correctIndex": correct_index
-            },
-            "marathi": {
-                "question": f"{title} मार्गदर्शक तत्त्वांनुसार ऑडिटची मुख्य प्रक्रिया काय आहे?",
-                "options": [
-                    f"{title} मानकांनुसार दररोज ताळमेळ घाला।",
-                    "फक्त प्रत्येक आर्थिक तिमाहीच्या शेवटी फायलींचे पुनरावलोकन करा।",
-                    "आधी फायली वितरित करा आणि नंतर पडताळणी करा।",
-                    "ऑडिट पूर्णपणे ऐच्छिक तत्त्वावर केले जाते।"
-                ],
-                "correctIndex": correct_index
-            },
-            "telugu": {
-                "question": f"{title} మార్గదర్శకాల ప్రకారం ఆడిట్ యొక్క ప్రధాన విధానం ఏమిటి?",
-                "options": [
-                    f"{title} ప్రమాణాల ప్రకారం ప్రతిరోజూ సరిపోల్చండి.",
-                    "ప్రతి ఆర్థిక త్రైమాసికం చివరలో మాత్రమే ఫైళ్లను సమీక్షించండి.",
-                    "ముందుగా ఫైళ్లను పంపిణీ చేయండి మరియు తరువాత ధృవీకరించండి.",
-                    "ఆడిట్లు పూర్తిగా స్వచ్ఛంద ప్రాతిపదికన నిర్వహించబడతాయి।"
-                ],
-                "correctIndex": correct_index
-            },
-            "tamil": {
-                "question": f"{title} வழிகாட்டுதல்களின்படி தணிக்கையின் முதன்மை நடைமுறை என்ன?",
-                "options": [
-                    f"{title} தரநிலைகளின்படி தினசரி சமரசம் செய்யுங்கள்.",
-                    "ஒவ்வொரு நிதியாண்டின் காலாண்டு முடிவில் மட்டுமே கோப்புகளை மதிப்பாய்வு செய்யவும்.",
-                    "கோப்புகளை முதலில் வழங்கி பின்னர் சரிபார்ப்பை மேற்கொள்ளுங்கள்.",
-                    "தணிக்கைகள் முற்றிலும் தன்னிச்சையான அடிப்படையில் நடத்தப்படுகின்றன।"
-                ],
-                "correctIndex": correct_index
-            },
-            "gujarati": {
-                "question": f"{title} માર્ગદર્શિકા મુજબ ઓડિટની મુખ્ય પ્રક્રિયા શું છે?",
-                "options": [
-                    f"{title} ધોરણો અનુસાર દૈનિક સુમેળ સાધો.",
-                    "માત્ર દરેક નાણાકીય ત્રિમાસિક ગાળાના અંતે ફાઇલોની સમીક્ષા કરો.",
-                    "પહેલા ફાઇલોનું વિતરણ કરો અને પછી ચકાસણી કરો.",
-                    "ઓડિટ સંપૂર્ણપણે સ્વૈચ્છિક ધોરણે હાથ ધરવામાં આવે છે।"
-                ],
-                "correctIndex": correct_index
-            },
-            "kannada": {
-                "question": f"{title} ಮಾರ್ಗಸೂಚಿಗಳ ಪ್ರಕಾರ ಆಡಿಟ್‌ನ ಮುಖ್ಯ ಪ್ರಕ್ರಿಯೆ ಏನು?",
-                "options": [
-                    f"{title} ಮಾನದಂಡಗಳ ಪ್ರಕಾರ ಪ್ರತಿದಿನ ಹೊಂದಾಣಿಕೆ ಮಾಡಿ.",
-                    "ಪ್ರತಿ ಆರ್ಥಿಕ ತ್ರೈಮಾಸಿಕ ಕೊನೆಯಲ್ಲಿ ಮಾತ್ರ ಫೈಲ್‌ಗಳನ್ನು ಪರಿಶೀಲಿಸಿ.",
-                    "ಮೊದಲು ಫೈಲ್‌ಗಳನ್ನು ವಿತರಿಸಿ ಮತ್ತು ನಂತರ ಪರಿಶೀಲನೆ ನಡೆಸಿ.",
-                    "ಆಡಿಟ್‌ಗಳನ್ನು ಸಂಪೂರ್ಣವಾಗಿ ಸ್ವಯಂಪ್ರೇರಿತ ಆಧಾರದ ಮೇಲೆ ನಡೆಸಲಾಗುತ್ತದೆ।"
-                ],
-                "correctIndex": correct_index
-            }
-        }
-        
+    target_langs = ['hindi', 'hinglish', 'punjabi', 'bengali', 'marathi', 'telugu', 'tamil', 'gujarati', 'kannada']
+
     if language != 'all' and language != 'en':
-        if language in translations:
-            translations = {language: translations[language]}
+        if language in target_langs:
+            target_langs = [language]
         else:
-            translations = {}
+            return {}
     elif language == 'en':
-        translations = {}
-        
+        return {}
+
+    for lang in target_langs:
+        if type_flag in t.get(lang, {}):
+            translations[lang] = {
+                'question': t[lang][type_flag].format(text=masked_s_or_intro),
+                'options': choices,
+                'correctIndex': correct_index
+            }
+
     return translations
 
 def generate_heuristic_questions(text_content, count, title="Module", language='en'):
@@ -2679,7 +2494,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             "options": choices_list,
             "correctIndex": choices_list.index(correct_opt),
             "approved": 0,
-            "translations": {}
+            "translations": get_offline_translations('pct_rate', context, choices_list, choices_list.index(correct_opt), title, language)
         })
 
     # ----------------------------------------------------------------
@@ -2719,12 +2534,13 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             wrong_opts.append("Ask the manager what to do.")
         choices_list = [correct_opt] + wrong_opts[:3]
         random.shuffle(choices_list)
+        h2_flag = 'rule_restrict' if rule_word in ('cannot', 'must not', 'shall not', 'not allowed', 'prohibited') else 'rule_require'
         questions.append({
             "question": scenario,
             "options": choices_list,
             "correctIndex": choices_list.index(correct_opt),
             "approved": 0,
-            "translations": {}
+            "translations": get_offline_translations(h2_flag, context, choices_list, choices_list.index(correct_opt), title, language)
         })
 
     # ----------------------------------------------------------------
@@ -2781,12 +2597,14 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             choices_list.append("Ask the manager to decide.")
         choices_list = choices_list[:4]
         random.shuffle(choices_list)
+        h3_map = {'days': 'value_days', 'months': 'value_months', 'years': 'value_years'}
+        h3_flag = h3_map.get(unit, 'value_lakhs')
         questions.append({
             "question": scenario,
             "options": choices_list,
             "correctIndex": choices_list.index(correct_opt),
             "approved": 0,
-            "translations": {}
+            "translations": get_offline_translations(h3_flag, context, choices_list, choices_list.index(correct_opt), title, language)
         })
 
     # ----------------------------------------------------------------
@@ -2829,7 +2647,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             "options": choices_list,
             "correctIndex": choices_list.index(target_sentence),
             "approved": 0,
-            "translations": {}
+            "translations": get_offline_translations('comprehension', intro_p, choices_list, choices_list.index(target_sentence), title, language)
         })
 
     # ----------------------------------------------------------------
