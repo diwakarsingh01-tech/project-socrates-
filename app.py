@@ -4447,10 +4447,13 @@ def checkin_visit():
         
     data = request.json or {}
     visit_id = data.get('visit_id')
-    lat = data.get('latitude')
-    lon = data.get('longitude')
+    try:
+        lat = float(data.get('latitude', 0))
+        lon = float(data.get('longitude', 0))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Invalid latitude/longitude coordinates."}), 400
     
-    if not visit_id or lat is None or lon is None:
+    if not visit_id:
         return jsonify({"status": "error", "message": "Missing check-in location parameters."}), 400
         
     conn = get_db_connection()
