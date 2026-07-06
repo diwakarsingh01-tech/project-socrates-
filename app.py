@@ -2545,7 +2545,6 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
     import random
     import json
     
-    # Clean text content
     paragraphs = [p.strip() for p in text_content.split('\n') if len(p.strip()) > 30]
     sentences = []
     for p in paragraphs:
@@ -2553,167 +2552,320 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
             s_clean = s.strip()
             if len(s_clean) > 20 and len(s_clean) < 220:
                 sentences.append(s_clean)
-                
+
     questions = []
-    
-    # Pre-compiled list of all unique reasonably long words in the document for distractor word generation
-    all_doc_words = []
-    for s in sentences:
-        all_doc_words.extend(re.findall(r'\b[a-zA-Z]{6,12}\b', s))
-    all_doc_words = list(set([w.capitalize() for w in all_doc_words]))
-    
-    # Heuristic 1: Extract sentences with percentages (e.g. 85%, 90%)
-    for s in sentences:
-        if len(questions) >= count:
-            break
-        pct_match = re.search(r'(\d+)\s*%', s)
-        if pct_match:
-            correct_val = pct_match.group(0)
-            val_num = int(pct_match.group(1))
-            masked_s = s.replace(correct_val, "_____")
-            
-            choices = [correct_val]
-            choices.append(f"{max(0, val_num - 10)}%")
-            choices.append(f"{val_num + 10}%")
-            choices.append(f"{val_num + 5}%" if val_num < 95 else f"{val_num - 5}%")
-            
-            choices = list(set(choices))
-            while len(choices) < 4:
-                choices.append(f"{random.randint(5, 9) * 10}%")
-            choices = list(set(choices))[:4]
-            random.shuffle(choices)
-            
-            translations = get_offline_translations('percentage', masked_s, choices, choices.index(correct_val), title, language)
-            
-            questions.append({
-                "question": f"Choose the correct percentage to complete the statement:\n\"{masked_s}\"",
-                "options": choices,
-                "correctIndex": choices.index(correct_val),
-                "approved": 0,
-                "translations": translations
-            })
-            
-    # Heuristic 2: Extract sentences with numbers/amounts (e.g. 3 Days, 60 Months, ₹2 Lakhs)
-    for s in sentences:
-        if len(questions) >= count:
-            break
-        num_match = re.search(r'(\d+)\s*(Months|Days|Years|Lakhs|Rs|₹)', s, re.IGNORECASE)
+    used_facts = set()
+
+    def make_sentence_fragment(s, max_words=12):
+        words = s.split()
+        if len(words) <= max_words:
+            return s
+        return ' '.join(words[:max_words]) + '...'
+
+    def perturb_sentence(s):
+        import re
+        num_match = re.search(r'(\d+)', s)
         if num_match:
-            correct_val = num_match.group(0)
-            val_num = int(num_match.group(1))
-            unit = num_match.group(2)
-            masked_s = re.sub(re.escape(correct_val), "_____", s, flags=re.IGNORECASE)
-            
-            choices = [correct_val]
-            choices.append(f"{max(0, val_num - 2)} {unit}")
-            choices.append(f"{val_num + 2} {unit}")
-            choices.append(f"{val_num * 2} {unit}")
-            
-            choices = list(set(choices))
-            while len(choices) < 4:
-                choices.append(f"{random.randint(1, 100)} {unit}")
-            choices = list(set(choices))[:4]
-            random.shuffle(choices)
-            
-            translations = get_offline_translations('threshold', masked_s, choices, choices.index(correct_val), title, language)
-            
-            questions.append({
-                "question": f"Choose the correct threshold/value to complete the statement:\n\"{masked_s}\"",
-                "options": choices,
-                "correctIndex": choices.index(correct_val),
-                "approved": 0,
-                "translations": translations
-            })
-            
-    # Heuristic 3: Reading comprehension split with dynamic sentence-based distractors from other parts of the document
+            val = int(num_match.group(1))
+            offset = random.choice([-1, 1, -2, 2, -5, 5, -10, 10])
+            new_val = max(1, val + offset)
+            if new_val == val:
+                new_val = val + 1
+            perturbed = s[:num_match.start(1)] + str(new_val) + s[num_match.end(1):]
+            if perturbed != s:
+                return perturbed
+        words = s.split()
+        if len(words) < 4:
+            return None
+        idx = random.randint(0, len(words) - 1)
+        swapped = words.copy()
+        swapped[idx] = random.choice(['revised', 'updated', 'modified', 'alternate', 'supplementary'])
+        if ' '.join(swapped) != s:
+            return ' '.join(swapped)
+        return None
+
+    # Heuristic 1: Scenario from percentage/ratio facts
+    pct_sentences = []
+    for s in sentences:
+        if re.search(r'(\d+)\s*%', s):
+            pct_sentences.append(s)
+    for s in pct_sentences:
+        if len(questions) >= count:
+            break
+        fact_key = s[:40]
+        if fact_key in used_facts:
+            continue
+        used_facts.add(fact_key)
+        pct_match = re.search(r'(\d+)\s*%', s)
+        if not pct_match:
+            continue
+        correct_val = pct_match.group(0)
+        context_before = s[:pct_match.start()].strip()
+        context_after = s[pct_match.end():].strip()
+        fragment = make_sentence_fragment(s)
+        scenario = (
+            f"A customer application is being processed where {fragment}. "
+            f"As per the policy, what should the executive determine?"
+        )
+        correct_opt = (
+            f"The executive should confirm that the applicable threshold is {correct_val} "
+            f"as specified in the policy guidelines."
+        ) if len(context_after) < 15 else (
+            f"The correct determination is {correct_val}, which means {context_after}"
+        )
+        wrong_opts = []
+        alt_vals = []
+        for delta in [-10, 10, -5, 5, -15, 15, -20, 20]:
+            av = max(1, int(pct_match.group(1)) + delta)
+            if av != int(pct_match.group(1)):
+                alt_vals.append(av)
+            if len(alt_vals) >= 3:
+                break
+        for i, av in enumerate(alt_vals):
+            prefix = random.choice([
+                "The correct threshold is",
+                "The policy requires",
+                "The executive should apply",
+                "The standard rate is"
+            ])
+            wrong_opts.append(
+                f"{prefix} {av}% based on the standard processing criteria."
+            )
+        choices_list = [correct_opt] + wrong_opts[:4]
+        while len(choices_list) < 4:
+            choices_list.append(
+                f"The policy does not specify a fixed percentage; it depends on the customer's profile."
+            )
+        choices_list = choices_list[:4]
+        random.shuffle(choices_list)
+        questions.append({
+            "question": scenario,
+            "options": choices_list,
+            "correctIndex": choices_list.index(correct_opt),
+            "approved": 0,
+            "translations": {}
+        })
+
+    # Heuristic 2: Scenario from threshold/value facts (Days/Months/Years/Lakhs/Rs)
+    num_sentences = []
+    for s in sentences:
+        if re.search(r'(\d+)\s*(Months|Days|Years|Lakhs|Rs|₹)', s, re.IGNORECASE):
+            num_sentences.append(s)
+    for s in num_sentences:
+        if len(questions) >= count:
+            break
+        fact_key = s[:40]
+        if fact_key in used_facts:
+            continue
+        used_facts.add(fact_key)
+        num_match = re.search(r'(\d+)\s*(Months|Days|Years|Lakhs|Rs|₹)', s, re.IGNORECASE)
+        if not num_match:
+            continue
+        correct_val = num_match.group(0)
+        val_num = int(num_match.group(1))
+        unit = num_match.group(2).lower()
+        fragment = make_sentence_fragment(s)
+
+        if unit in ('months', 'days', 'years'):
+            scenario = (
+                f"An application has been received where {fragment}. "
+                f"What timeline should the executive communicate to the customer?"
+            )
+            correct_opt = (
+                f"The policy mandates a period of {correct_val} for this scenario. "
+                f"The executive must ensure compliance with this timeline."
+            )
+            wrong_opts = []
+            for delta in [-2, 2, -3, 3, -1, 1, -5, 5]:
+                nv = max(1, val_num + delta)
+                if nv != val_num:
+                    wrong_opts.append(
+                        f"The applicable timeline is {nv} {unit} as per the standard processing guidelines."
+                    )
+                if len(wrong_opts) >= 3:
+                    break
+        else:
+            scenario = (
+                f"A financial transaction is being processed where {fragment}. "
+                f"What is the correct value the executive should reference?"
+            )
+            correct_opt = (
+                f"The correct amount is {correct_val} as specified in the policy document."
+            )
+            wrong_opts = []
+            for delta in [-50000, 50000, -100000, 100000, -200000, 200000, -25000, 25000]:
+                nv = max(1, val_num + delta)
+                if nv != val_num:
+                    wrong_opts.append(
+                        f"The applicable amount is ₹{nv:,} based on standard policy rates."
+                    )
+                if len(wrong_opts) >= 3:
+                    break
+        choices_list = [correct_opt] + wrong_opts[:4]
+        while len(choices_list) < 4:
+            choices_list.append(
+                f"The value varies based on individual customer assessment and risk profiling."
+            )
+        choices_list = choices_list[:4]
+        random.shuffle(choices_list)
+        questions.append({
+            "question": scenario,
+            "options": choices_list,
+            "correctIndex": choices_list.index(correct_opt),
+            "approved": 0,
+            "translations": {}
+        })
+
+    # Heuristic 3: Reading comprehension with full-sentence distractors
     for p in paragraphs:
         if len(questions) >= count:
             break
         p_sentences = [s.strip() for s in re.split(r'\. |\n', p) if len(s.strip()) > 20]
-        if len(p_sentences) >= 2:
-            target_sentence = p_sentences[-1]
-            intro_p = " ".join(p_sentences[:-1])
-            if len(intro_p) > 60 and len(intro_p) < 250:
-                # Compile dynamic distractors from other document sentences to preserve subject alignment
-                doc_distractors = [s for s in sentences if s != target_sentence and len(s) > 40 and target_sentence not in s]
-                if len(doc_distractors) < 3:
-                    doc_distractors = [
-                        f"Observe standard operational protocols defined in the {title} guidelines.",
-                        f"Review the secondary sections of the official {title} reference manual.",
-                        f"Verify compliance exceptions directly with the supervisors under {title}."
-                    ]
-                else:
-                    doc_distractors = random.sample(doc_distractors, 3)
-                    
-                choices = [target_sentence, doc_distractors[0], doc_distractors[1], doc_distractors[2]]
-                random.shuffle(choices)
-                
-                translations = get_offline_translations('comprehension', intro_p, choices, choices.index(target_sentence), title, language)
-                
-                questions.append({
-                    "question": f"Which statement is most accurate regarding this policy section?\n\"{intro_p}\"",
-                    "options": choices,
-                    "correctIndex": choices.index(target_sentence),
-                    "approved": 0,
-                    "translations": translations
-                })
-
-    # Heuristic 4: Fill-in-the-blank keyword-masking using actual document terms to ensure 100% subject-matching
-    while len(questions) < count:
-        if len(sentences) > len(questions):
-            candidate_sentence = sentences[len(questions) % len(sentences)]
-            # Find candidate words to mask
-            words = [w for w in re.findall(r'\b[a-zA-Z]{6,12}\b', candidate_sentence)]
-            if words:
-                target_word = random.choice(words)
-                masked_s = candidate_sentence.replace(target_word, "_____")
-                
-                # Dynamic distractors from other unique words in the document
-                other_words = [w for w in all_doc_words if w.lower() != target_word.lower()]
-                if len(other_words) < 3:
-                    distractor_words = ["Standard", "Procedure", "Compliance", "Operation"]
-                else:
-                    distractor_words = random.sample(other_words, 3)
-                    
-                choices = [target_word, distractor_words[0], distractor_words[1], distractor_words[2]]
-                choices = list(set(choices))
-                while len(choices) < 4:
-                    choices.append(f"Option-{len(choices)}")
-                choices = list(set(choices))[:4]
-                random.shuffle(choices)
-                
-                translations = get_offline_translations('keyword', masked_s, choices, choices.index(target_word), title, language)
-                
-                questions.append({
-                    "question": f"Choose the correct term to complete the statement:\n\"{masked_s}\"",
-                    "options": choices,
-                    "correctIndex": choices.index(target_word),
-                    "approved": 0,
-                    "translations": translations
-                })
-                continue
-                
-        # Pure safety fallback if the document is extremely short (less than 1 sentence)
-        q_idx = len(questions)
-        
-        choices = [
-            f"Perform comprehensive daily reconciliations according to {title} standard guidelines.",
-            f"Review operational files only at the end of each fiscal quarter.",
-            f"Disburse files first and perform manual verification post-facto.",
-            "Audits are conducted purely on a voluntary basis."
-        ]
-        random.shuffle(choices)
-        
-        translations = get_offline_translations('audit_fallback', '', choices, 0, title, language)
-        
+        if len(p_sentences) < 2:
+            continue
+        target_sentence = p_sentences[-1]
+        intro_p = " ".join(p_sentences[:-1])
+        if len(intro_p) < 60 or len(intro_p) > 300:
+            continue
+        fact_key = target_sentence[:40]
+        if fact_key in used_facts:
+            continue
+        used_facts.add(fact_key)
+        doc_distractors = []
+        for ds in sentences:
+            if ds != target_sentence and len(ds) > 40:
+                perturbed = perturb_sentence(ds)
+                if perturbed and len(perturbed) > 30:
+                    doc_distractors.append(perturbed)
+                if len(doc_distractors) >= 3:
+                    break
+        while len(doc_distractors) < 3:
+            doc_distractors.append(
+                f"The {title} guidelines recommend reviewing all documents before proceeding with the application."
+            )
+            if len(doc_distractors) < 3:
+                doc_distractors.append(
+                    f"Executives must verify customer identity using the approved KYC methods under {title}."
+                )
+            if len(doc_distractors) < 3:
+                doc_distractors.append(
+                    f"All exceptions must be escalated to the supervisor for manual approval as per {title}."
+                )
+        choices_list = [target_sentence] + doc_distractors[:3]
+        random.shuffle(choices_list)
         questions.append({
-            "question": f"Under the reference guidelines, what is the primary procedure for compliance audits?",
-            "options": choices,
-            "correctIndex": choices.index(f"Perform comprehensive daily reconciliations according to {title} standard guidelines."),
+            "question": f"Based on the policy context provided, which statement is most accurate?\n\"{intro_p}\"",
+            "options": choices_list,
+            "correctIndex": choices_list.index(target_sentence),
             "approved": 0,
-            "translations": translations
+            "translations": {}
         })
-            
+
+    # Heuristic 4: Policy rule scenario derived from document statements
+    remaining = count - len(questions)
+    if remaining > 0:
+        candidate_sentences = [s for s in sentences if s[:40] not in used_facts]
+        random.shuffle(candidate_sentences)
+        for s in candidate_sentences:
+            if len(questions) >= count:
+                break
+            fragment = make_sentence_fragment(s)
+            is_rule = re.search(r'\b(must|shall|should|required|mandatory|cannot|not allowed|prohibited|only|maximum|minimum|eligible|not eligible)\b', s, re.IGNORECASE)
+            if is_rule:
+                scenario = (
+                    f"An executive is handling a case where {fragment}. "
+                    f"Based on the policy rules, what is the correct course of action?"
+                )
+                correct_opt = (
+                    f"The executive must follow the policy requirement: {s}"
+                )
+                wrong_opts = []
+                perturbed = perturb_sentence(s)
+                if perturbed:
+                    wrong_opts.append(
+                        f"The executive should apply the alternate rule: {perturbed}"
+                    )
+                other_rules = [x for x in candidate_sentences if x[:40] not in used_facts and x != s]
+                random.shuffle(other_rules)
+                for rs in other_rules[:3]:
+                    wrong_opts.append(
+                        f"The policy indicates that {make_sentence_fragment(rs, 8)} should be the guiding principle."
+                    )
+                while len(wrong_opts) < 3:
+                    wrong_opts.append(
+                        f"The executive should consult the supervisor for case-by-case discretion on this matter."
+                    )
+                choices_list = [correct_opt] + wrong_opts[:3]
+                random.shuffle(choices_list)
+                questions.append({
+                    "question": scenario,
+                    "options": choices_list,
+                    "correctIndex": choices_list.index(correct_opt),
+                    "approved": 0,
+                    "translations": {}
+                })
+                used_facts.add(s[:40])
+
+    # Heuristic 5 (safety fallback): Generic policy scenario if document is too short
+    fallback_bank = [
+        {
+            "question": f"Under the {title} guidelines, what is the primary procedure for compliance audits?",
+            "correct": f"Perform comprehensive daily reconciliations according to {title} standard guidelines.",
+            "wrong": [
+                "Review operational files only at the end of each fiscal quarter.",
+                "Disburse files first and perform manual verification post-facto.",
+                "Audits are conducted purely on a voluntary basis."
+            ]
+        },
+        {
+            "question": f"An executive is handling a new customer application under {title}. What is the first step in processing?",
+            "correct": f"Verify customer identity and collect all required documents as per {title} guidelines.",
+            "wrong": [
+                "Disburse the loan amount immediately to improve customer satisfaction.",
+                "Skip documentation for existing customers to speed up processing.",
+                "Forward the application to legal for preliminary review."
+            ]
+        },
+        {
+            "question": f"A customer disputes a decision made under {title}. How should the executive proceed?",
+            "correct": f"Follow the grievance redressal mechanism outlined in the {title} policy document.",
+            "wrong": [
+                "Ask the customer to submit a fresh application from the beginning.",
+                "Ignore the dispute and proceed with the original decision.",
+                "Transfer the case to a different branch without documentation."
+            ]
+        },
+        {
+            "question": f"During an audit under {title}, what is the executive's responsibility regarding documentation?",
+            "correct": f"Maintain complete and accurate records of all customer interactions and approvals.",
+            "wrong": [
+                "Destroy outdated files to free up storage space.",
+                "Submit only digitally signed documents and discard physical copies.",
+                "Audits are handled entirely by the compliance team; executives have no role."
+            ]
+        },
+        {
+            "question": f"An application does not meet the standard criteria under {title}. What action should the executive take?",
+            "correct": f"Escalate the case to the authorized supervisor for manual review and exception handling.",
+            "wrong": [
+                "Reject the application without any further review or documentation.",
+                "Modify the customer's documents to meet the eligibility criteria.",
+                "Process the application anyway and note it as a special case."
+            ]
+        }
+    ]
+    while len(questions) < count:
+        fb = random.choice(fallback_bank)
+        choices = [fb["correct"]] + fb["wrong"]
+        random.shuffle(choices)
+        questions.append({
+            "question": fb["question"],
+            "options": choices,
+            "correctIndex": choices.index(fb["correct"]),
+            "approved": 0,
+            "translations": {}
+        })
+
     return questions[:count]
 
 def clean_ai_question_text(text, title=None, filename=None):
