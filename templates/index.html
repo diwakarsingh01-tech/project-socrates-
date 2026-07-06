@@ -179,7 +179,12 @@
                 const saved = localStorage.getItem('socrates_empDetails');
                 return saved ? JSON.parse(saved) : null;
             });
-            const [pin, setPin] = useState(() => new URLSearchParams(window.location.search).get('pin') || localStorage.getItem('socrates_pin') || '');
+            const [pin, setPin] = useState(() => localStorage.getItem('socrates_pin') || '');
+
+            useEffect(() => {
+                const urlPin = new URLSearchParams(window.location.search).get('pin');
+                if (urlPin) setPin(urlPin);
+            }, []);
             const [activeQuestion, setActiveQuestion] = useState(() => localStorage.getItem('socrates_activeQuestion') || '');
             const [activeQIdx, setActiveQIdx] = useState(() => parseInt(localStorage.getItem('socrates_activeQIdx') || '-1'));
             const [activeOptions, setActiveOptions] = useState([]);
@@ -341,8 +346,14 @@
             );
         };
 
+        // Moved outside App to avoid TDZ and prevent React remount on every render
         const Login = ({onLogin}) => {
-            const [pin, setPin] = useState(() => new URLSearchParams(window.location.search).get('pin') || '');
+            const [pin, setPin] = useState('');
+
+            useEffect(() => {
+                const urlPin = new URLSearchParams(window.location.search).get('pin');
+                if (urlPin) setPin(urlPin);
+            }, []);
             const [searchQuery, setSearchQuery] = useState('');
             const [searchResults, setSearchResults] = useState([]);
             const [selectedEmp, setSelectedEmp] = useState(null);
