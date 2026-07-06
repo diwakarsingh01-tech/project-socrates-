@@ -2644,7 +2644,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         return result
 
     # ----------------------------------------------------------------
-    # Heuristic 1: Percentage/rate application scenario
+    # Heuristic 1: Simple percentage question
     # ----------------------------------------------------------------
     pct_sentences = []
     for s in sentences:
@@ -2663,23 +2663,15 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         val_num = int(float(pct_match.group(1)))
         correct_pct = f"{val_num}%"
         context = extract_value_context(s, correct_pct)
-        scenario = (
-            f"An executive is processing a loan application and needs to verify the applicable rate. "
-            f"The policy document states that {context}. "
-            f"What rate should the executive apply according to policy?"
-        )
-        correct_opt = f"The executive must apply {correct_pct} as per the policy guidelines."
+        scenario = f"A customer comes to the bank for a loan. The rules say {context}. How much rate should the bank person give?"
+        correct_opt = f"Give {correct_pct}. That is what the rules say."
         wrong_opts = []
         alt_vals = get_distractor_deltas(val_num, [-15, 15, -10, 10, -5, 5, -20, 20, -25, 25, -30, 30])
         for av in alt_vals[:3]:
-            wrong_opts.append(
-                f"The executive should apply {av}% based on standard industry practice."
-            )
+            wrong_opts.append(f"Give {av}%.")
         choices_list = [correct_opt] + wrong_opts
         while len(choices_list) < 4:
-            choices_list.append(
-                "The rate depends on individual customer risk profiling and credit assessment."
-            )
+            choices_list.append("Ask the manager what rate to give.")
         choices_list = choices_list[:4]
         random.shuffle(choices_list)
         questions.append({
@@ -2691,7 +2683,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         })
 
     # ----------------------------------------------------------------
-    # Heuristic 2: Policy rule application scenario
+    # Heuristic 2: Simple policy rule question
     # ----------------------------------------------------------------
     rule_keywords = r'\b(must|shall|should|required|mandatory|cannot|not allowed|prohibited|only|maximum|minimum|eligible|not eligible|is mandatory|is required|must not|shall not)\b'
     candidate_rules = [s for s in sentences if re.search(rule_keywords, s, re.IGNORECASE) and s[:40] not in used_facts]
@@ -2709,38 +2701,22 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         context = extract_value_context(s, rule_word)
 
         if rule_word in ('cannot', 'must not', 'shall not', 'not allowed', 'prohibited'):
-            scenario = (
-                f"A customer requests an exception during application review. "
-                f"The policy includes a restriction that {context}. "
-                f"What action should the executive take?"
-            )
-            correct_opt = (
-                f"The executive must comply with the restriction: {s}"
-            )
+            scenario = f"A customer wants to do something. But the rules say {context}. What should the bank person do?"
+            correct_opt = f"Say no. The rules say: {s}"
         else:
-            scenario = (
-                f"While verifying a customer application, the executive checks the policy guidelines. "
-                f"The policy requires that {context}. "
-                f"How should the executive proceed?"
-            )
-            correct_opt = (
-                f"The executive must follow the policy requirement: {s}"
-            )
+            scenario = f"A customer fills a form. The rules say {context}. What should the bank person do?"
+            correct_opt = f"Follow the rule: {s}"
         doc_facts = [x for x in sentences if x[:40] not in used_facts and x != s]
         random.shuffle(doc_facts)
         wrong_opts = []
         for ds in doc_facts:
             p = perturb_number(ds) or perturb_word_swap(ds)
             if p and p != ds and len(p) > 30:
-                wrong_opts.append(
-                    f"The executive should follow the alternate guideline: {p[:120]}"
-                )
+                wrong_opts.append(f"Instead do this: {p[:120]}")
             if len(wrong_opts) >= 3:
                 break
         while len(wrong_opts) < 3:
-            wrong_opts.append(
-                "The executive should consult the supervisor for case-by-case discretion on this matter."
-            )
+            wrong_opts.append("Ask the manager what to do.")
         choices_list = [correct_opt] + wrong_opts[:3]
         random.shuffle(choices_list)
         questions.append({
@@ -2752,7 +2728,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         })
 
     # ----------------------------------------------------------------
-    # Heuristic 3: Threshold/value application scenario
+    # Heuristic 3: Simple value question (days/months/lakhs/rs)
     # ----------------------------------------------------------------
     for s in sentences:
         if len(questions) >= count:
@@ -2773,44 +2749,20 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         context = extract_value_context(s, correct_val)
 
         if unit == 'days':
-            scenario = (
-                f"A customer asks how long the processing will take after submitting documents. "
-                f"The policy states that {context}. "
-                f"What timeline should the executive communicate?"
-            )
-            correct_opt = (
-                f"The executive must inform the customer that processing requires {correct_val}."
-            )
-            deltas = [-1, 1, -2, 2, -3, 3, -5, 5]
+            scenario = f"A customer asks, 'How many days will it take?' The rules say {context}. What should the bank person say?"
+            correct_opt = f"Say {correct_val}."
+            deltas = [-1, 1, -2, 2, -3, 3]
         elif unit == 'months':
-            scenario = (
-                f"A customer is selecting a repayment period for the loan. "
-                f"The policy specifies that {context}. "
-                f"What tenure option should the executive offer?"
-            )
-            correct_opt = (
-                f"The executive should offer a tenure of {correct_val}."
-            )
-            deltas = [-3, 3, -6, 6, -12, 12, -2, 2]
+            scenario = f"A customer wants to pick how long to pay back the loan. The rules say {context}. How many months can they pick?"
+            correct_opt = f"Pick {correct_val}."
+            deltas = [-3, 3, -6, 6, -12, 12]
         elif unit == 'years':
-            scenario = (
-                f"An executive is determining a policy period for a customer's case. "
-                f"The policy references {context}. "
-                f"What timeline applies?"
-            )
-            correct_opt = (
-                f"The correct policy period is {correct_val}."
-            )
-            deltas = [-1, 1, -2, 2, -3, 3, -5, 5]
+            scenario = f"A customer asks how long the plan is for. The rules say {context}. How many years?"
+            correct_opt = f"The plan is for {correct_val}."
+            deltas = [-1, 1, -2, 2, -3, 3]
         elif unit in ('lakhs', 'rs', '₹'):
-            scenario = (
-                f"A customer inquires about the eligible loan amount. "
-                f"The policy mentions {context}. "
-                f"What amount should the executive communicate?"
-            )
-            correct_opt = (
-                f"The executive should inform the customer of {correct_val} as per policy."
-            )
+            scenario = f"A customer asks, 'How much money can I get?' The rules say {context}. What should the bank person say?"
+            correct_opt = f"Say {correct_val}."
             if val_num < 1000:
                 deltas = [-100, 100, -200, 200, -500, 500]
             elif val_num < 10000:
@@ -2823,14 +2775,10 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         alt_vals = get_distractor_deltas(val_num, deltas)
         wrong_opts = []
         for av in alt_vals[:3]:
-            wrong_opts.append(
-                f"The correct value in this situation is {av} {unit}."
-            )
+            wrong_opts.append(f"Say {av} {unit}.")
         choices_list = [correct_opt] + wrong_opts
         while len(choices_list) < 4:
-            choices_list.append(
-                "The value depends on individual assessment of the specific case."
-            )
+            choices_list.append("Ask the manager to decide.")
         choices_list = choices_list[:4]
         random.shuffle(choices_list)
         questions.append({
@@ -2842,7 +2790,7 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
         })
 
     # ----------------------------------------------------------------
-    # Heuristic 4: Reading comprehension with scenario
+    # Heuristic 4: Simple reading comprehension
     # ----------------------------------------------------------------
     for p in paragraphs:
         if len(questions) >= count:
@@ -2869,21 +2817,15 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
                 if len(doc_distractors) >= 3:
                     break
         while len(doc_distractors) < 3:
-            doc_distractors.append(
-                "All policy guidelines require proper documentation verification before processing."
-            )
+            doc_distractors.append("Check all papers before giving the loan.")
             if len(doc_distractors) < 2:
-                doc_distractors.append(
-                    "All exceptions must be escalated to the supervisor for manual approval."
-                )
+                doc_distractors.append("If something is wrong, tell the manager.")
             if len(doc_distractors) < 3:
-                doc_distractors.append(
-                    "Executives must verify customer identity using approved KYC methods."
-                )
+                doc_distractors.append("Check the customer's ID and address proof.")
         choices_list = [target_sentence] + doc_distractors[:3]
         random.shuffle(choices_list)
         questions.append({
-            "question": f"An executive is reviewing the following policy context:\n{intro_p}\n\nBased on this context, which statement is accurate?",
+            "question": f"Read this part of the rules:\n{intro_p}\n\nWhich sentence is correct?",
             "options": choices_list,
             "correctIndex": choices_list.index(target_sentence),
             "approved": 0,
@@ -2896,144 +2838,144 @@ def generate_heuristic_questions(text_content, count, title="Module", language='
     # ----------------------------------------------------------------
     fallback_bank = [
         {
-            "q": "What is the first step when processing a new customer application?",
-            "c": "Verify customer identity and collect all required documents.",
-            "w": ["Disburse the loan amount immediately to improve satisfaction.",
-                  "Skip documentation for existing customers to speed up processing.",
-                  "Forward the application to legal department for preliminary review."]
+            "q": "A new customer comes to the bank. What is the first thing to do?",
+            "c": "Check who the customer is and take all the papers they give.",
+            "w": ["Give the money right away to make the customer happy.",
+                  "Skip the papers for old customers to finish faster.",
+                  "Send the papers to the legal team first."]
         },
         {
-            "q": "A customer disputes a policy decision. How should the executive proceed?",
-            "c": "Follow the grievance redressal mechanism outlined in the policy.",
-            "w": ["Ask the customer to submit a completely fresh application.",
-                  "Ignore the dispute and proceed with the original decision.",
-                  "Transfer the case to a different branch without documentation."]
+            "q": "A customer is not happy with the bank's decision. What should the bank person do?",
+            "c": "Help the customer with their problem as per the rules.",
+            "w": ["Ask the customer to come again with new papers.",
+                  "Ignore the problem and keep the old decision.",
+                  "Send the customer to another branch."]
         },
         {
-            "q": "What is the executive's documentation responsibility when processing applications?",
-            "c": "Maintain complete records of all customer interactions and approvals.",
-            "w": ["Destroy outdated files to free up storage space periodically.",
-                  "Submit only digitally signed documents and discard physical copies.",
-                  "Audits are handled entirely by the compliance team alone."]
+            "q": "What papers should the bank person keep after helping a customer?",
+            "c": "Keep all papers and notes about the customer.",
+            "w": ["Throw away old papers to make space.",
+                  "Keep only online papers and throw away paper copies.",
+                  "Just let the audit team handle it."]
         },
         {
-            "q": "An application does not meet the standard criteria. What should the executive do?",
-            "c": "Escalate the case for manual review and exception handling by the supervisor.",
-            "w": ["Reject the application without any further review or documentation.",
-                  "Modify the customer's documents to meet the eligibility criteria.",
-                  "Process the application anyway and mark it as a special case."]
+            "q": "A customer does not meet the rules. What should the bank person do?",
+            "c": "Tell the manager and let them decide.",
+            "w": ["Say no right away without checking anything.",
+                  "Change the customer's papers to make them fit the rules.",
+                  "Give the loan anyway and mark it as special."]
         },
         {
-            "q": "What is the correct compliance audit procedure?",
-            "c": "Perform comprehensive daily reconciliations according to guidelines.",
-            "w": ["Review operational files only at the end of each fiscal quarter.",
-                  "Disburse files first and perform manual verification after processing.",
-                  "Audits are conducted purely on a voluntary basis when time permits."]
+            "q": "How often should the bank person check the money records?",
+            "c": "Check the records every day.",
+            "w": ["Check only at the end of every 3 months.",
+                  "Give the money first and check later.",
+                  "Only check when there is free time."]
         },
         {
-            "q": "A customer's KYC documents are incomplete. What should the executive do?",
-            "c": "Inform the customer about the missing documents and request resubmission.",
-            "w": ["Process the application anyway with a supervisor waiver note.",
-                  "Reject the application immediately without notifying the customer.",
-                  "Ask the customer to visit a different branch for this request."]
+            "q": "The customer did not give all the KYC papers. What should the bank person do?",
+            "c": "Tell the customer what papers are missing and ask them to bring it.",
+            "w": ["Give the loan anyway if the manager says yes.",
+                  "Say no right away without telling the customer why.",
+                  "Ask the customer to go to a different branch."]
         },
         {
-            "q": "An executive discovers a discrepancy in an application. What is the correct action?",
-            "c": "Flag the discrepancy, document it, and escalate to the supervisor.",
-            "w": ["Ignore the discrepancy and process the application as submitted.",
-                  "Silently correct the discrepancy in the system and proceed.",
-                  "Reject the application outright without any explanation."]
+            "q": "The bank person sees a mistake in the customer's papers. What should they do?",
+            "c": "Tell the manager about the mistake.",
+            "w": ["Ignore the mistake and give the loan.",
+                  "Fix the mistake in the computer and keep going.",
+                  "Say no to the customer without any reason."]
         },
         {
-            "q": "A customer asks about disbursement timeline. What should the executive say?",
-            "c": "Provide the standard processing timeline as specified in policy.",
-            "w": ["Promise disbursement within 24 hours to ensure customer satisfaction.",
-                  "Tell the customer it depends entirely on the manager's discretion.",
-                  "Refuse to share any timeline information with the customer."]
+            "q": "A customer asks, 'When will I get the money?' What should the bank person say?",
+            "c": "Tell the customer how many days it will take as per the rules.",
+            "w": ["Say 'You will get it in 1 day' to make them happy.",
+                  "Say 'It depends on the manager.'",
+                  "Say 'I cannot tell you.'"]
         },
         {
-            "q": "What documentation is essential before disbursement?",
-            "c": "KYC verification, income proof, and loan approval confirmation.",
-            "w": ["Only the customer's Aadhaar card number is sufficient for verification.",
-                  "A verbal confirmation from the customer is enough to proceed.",
-                  "No documentation is needed for existing repeat customers."]
+            "q": "What papers does the bank need before giving the money?",
+            "c": "KYC check, salary proof, and loan approval papers.",
+            "w": ["Just the customer's Aadhaar number is enough.",
+                  "Just a phone call from the customer is enough.",
+                  "No papers needed for old customers."]
         },
         {
-            "q": "A customer wants early loan closure. What should the executive check?",
-            "c": "Review the foreclosure policy including minimum tenure and applicable charges.",
-            "w": ["Immediately process the closure with no charges applied whatsoever.",
-                  "Refuse early closure under any circumstances without exception.",
-                  "Tell the customer to come back only after the full tenure ends."]
+            "q": "A customer wants to close the loan early. What should the bank person check?",
+            "c": "Check the rules about early closure and how much fee to take.",
+            "w": ["Close the loan right away with no fee.",
+                  "Say no to early closure for any reason.",
+                  "Ask the customer to come back after the full time is over."]
         },
         {
-            "q": "How should an executive handle a low credit score applicant?",
-            "c": "Check if the score meets the minimum threshold and advise accordingly.",
-            "w": ["Automatically reject the application without any further review.",
-                  "Process the application at a higher rate without disclosing the reason.",
-                  "Ask the customer to apply using a different co-applicant name."]
+            "q": "A customer has a low credit score. What should the bank person do?",
+            "c": "Check if the score is high enough and tell the customer the next steps.",
+            "w": ["Say no to the customer without checking anything.",
+                  "Give the loan at a higher rate and do not tell the customer why.",
+                  "Ask the customer to come with a different name."]
         },
         {
-            "q": "An executive notices a colleague bypassing verification steps. What should they do?",
-            "c": "Report the concern to the supervisor to ensure policy compliance.",
-            "w": ["Ignore it since it is not their responsibility to report others.",
-                  "Copy the colleague's approach to save time on their own processing.",
-                  "Confront the colleague aggressively in front of customers."]
+            "q": "The bank person sees a coworker not checking papers properly. What should they do?",
+            "c": "Tell the manager about it.",
+            "w": ["Ignore it because it is not their job.",
+                  "Do the same thing to save time.",
+                  "Shout at the coworker in front of customers."]
         },
         {
-            "q": "A customer provides insufficient income proof. What is the correct approach?",
-            "c": "Evaluate against minimum income criteria and inform the customer if it falls short.",
-            "w": ["Accept it without verification to maintain good customer relations.",
-                  "Increase the loan amount to compensate for the low reported income.",
-                  "Reject the application without explaining the reason to the customer."]
+            "q": "The customer's salary proof is not enough. What should the bank person do?",
+            "c": "Check if the salary is high enough as per rules and tell the customer.",
+            "w": ["Accept it anyway to keep the customer happy.",
+                  "Give more loan money to make up for low salary.",
+                  "Say no without telling the customer why."]
         },
         {
-            "q": "A customer requests a policy exception. What should the executive do?",
-            "c": "Explain that exceptions require supervisor approval and properly document the request.",
-            "w": ["Grant the exception immediately to satisfy the customer on the spot.",
-                  "Deny the request outright without providing any explanation.",
-                  "Pretend the policy does not apply to this particular case."]
+            "q": "A customer wants something that is not in the rules. What should the bank person do?",
+            "c": "Say that special requests need the manager's OK, and write it down.",
+            "w": ["Say yes right away to make the customer happy.",
+                  "Say no without any reason.",
+                  "Pretend the rules do not apply here."]
         },
         {
-            "q": "What is the executive's data privacy responsibility?",
-            "c": "Keep all customer data confidential and share only on a need-to-know basis.",
-            "w": ["Share customer data freely with anyone within the organization.",
-                  "Post customer success stories on social media as testimonials.",
-                  "Leave customer files open on the desk for anyone to see."]
+            "q": "What should the bank person do with the customer's personal information?",
+            "c": "Keep it secret and only share it with people who need to know.",
+            "w": ["Share it with anyone in the office.",
+                  "Post customer stories on social media.",
+                  "Leave customer files open on the desk for all to see."]
         },
         {
-            "q": "A complete application is received. What is the next step in processing?",
-            "c": "Proceed with verification of details followed by the standard approval workflow.",
-            "w": ["Disburse the amount immediately without any further verification steps.",
-                  "Put the file aside and process it whenever there is free time available.",
-                  "Send the customer to a different branch to apply all over again."]
+            "q": "The customer's papers are all ready. What should the bank person do next?",
+            "c": "Check everything again and then start the approval process.",
+            "w": ["Give the money right away without checking anything.",
+                  "Put the papers aside and do it when there is free time.",
+                  "Send the customer to another branch to apply again."]
         },
         {
-            "q": "A customer calls to check application status. What should the executive share?",
-            "c": "Provide the current status accurately along with expected next steps and timeline.",
-            "w": ["Share other customers' application statuses as comparison for reference.",
-                  "Promise faster approval in exchange for a positive customer review.",
-                  "Say the application was lost and ask them to submit a fresh one."]
+            "q": "A customer calls to ask, 'What is happening with my application?' What should the bank person say?",
+            "c": "Tell the customer what is happening and what will happen next.",
+            "w": ["Tell the customer what is happening with other customers.",
+                  "Promise faster approval if the customer gives a good review.",
+                  "Say the papers were lost and ask them to apply again."]
         },
         {
-            "q": "An executive suspects fraudulent documents. What should they do?",
-            "c": "Flag the application immediately and escalate to the fraud investigation team.",
-            "w": ["Process the application but make a personal note about the suspicion.",
-                  "Confront the customer directly and accuse them of submitting fraud.",
-                  "Ignore it since document verification is not their responsibility."]
+            "q": "The bank person thinks the customer's papers might be fake. What should they do?",
+            "c": "Stop right away and tell the fraud team.",
+            "w": ["Give the loan anyway but make a note about it.",
+                  "Shout at the customer and say they are lying.",
+                  "Ignore it because checking papers is not their job."]
         },
         {
-            "q": "A returning customer with good history applies. How should this be handled?",
-            "c": "Process following standard policy while noting the positive repayment history.",
-            "w": ["Waive all documentation requirements for returning customers completely.",
-                  "Automatically reject returning customers to encourage new customer acquisition.",
-                  "Process the loan at double the standard interest rate for safety."]
+            "q": "An old customer with good history comes back for a loan. What should the bank person do?",
+            "c": "Follow the same rules but note that the customer pays on time.",
+            "w": ["Skip all papers for returning customers.",
+                  "Say no to returning customers to get new ones instead.",
+                  "Give double the interest rate just to be safe."]
         },
         {
-            "q": "What is the correct procedure for customer data updates?",
-            "c": "Verify the new details with supporting documents and update in the system.",
-            "w": ["Accept the change over the phone without any supporting verification.",
-                  "Ask the customer to visit a different branch for this simple request.",
-                  "Do not update the information until the next loan application."]
+            "q": "The customer wants to change their address in the system. What should the bank person do?",
+            "c": "Check the new address with a paper proof and update in the system.",
+            "w": ["Change it over the phone without any proof.",
+                  "Ask the customer to go to another branch for this.",
+                  "Do not update it until the next loan application."]
         }
     ]
     random.shuffle(fallback_bank)
