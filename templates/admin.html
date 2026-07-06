@@ -2609,6 +2609,7 @@
                             difficulty: parsed.difficulty || 'Medium',
                             trainer_id: user?.id || 'ADMIN',
                             audited_by: parsed.audited_by || 'Super Admin',
+                            source_text: parsed.source_text || '',
                             questions: (parsed.questions || []).map(q => ({
                                 question_text: q.question_text || q.question,
                                 options: [q.option_a, q.option_b, q.option_c, q.option_d] || q.options,
@@ -2705,6 +2706,7 @@
                 setReviewModuleId(mod.id);
                 setReviewTitle(mod.title);
                 setReviewDifficulty(mod.difficulty || 'Medium');
+                if (mod.source_text) setPastedText(mod.source_text);
                 // Map from database questions structure back to auditor draft
                 const mappedQs = mod.questions.map(q => ({
                     id: q.id,
@@ -2747,6 +2749,7 @@
                     audited_by: assignedAuditor || 'Awaiting Audit',
                     module_id: reviewModuleId,
                     difficulty: reviewDifficulty,
+                    source_text: pastedText,
                     questions: reviewQuestions.map(q => ({
                         question: q.question_text,
                         options: [q.option_a, q.option_b, q.option_c, q.option_d],
@@ -2764,8 +2767,13 @@
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        alert(data.message);
-                        setStatus('idle');
+                        setReviewModuleId(data.module_id);
+                        if (isFinalize) {
+                            alert('✅ Module "' + reviewTitle + '" saved as Ready!');
+                            setStatus('idle');
+                        } else {
+                            alert('📝 Draft saved. Module ID: ' + data.module_id);
+                        }
                         loadModules();
                     } else {
                         alert("Error saving: " + data.message);

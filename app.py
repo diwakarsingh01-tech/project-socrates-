@@ -287,6 +287,8 @@ def init_db():
         cursor.execute("ALTER TABLE modules ADD COLUMN audited_by TEXT DEFAULT 'Awaiting Audit'")
     if 'difficulty' not in mod_cols:
         cursor.execute("ALTER TABLE modules ADD COLUMN difficulty TEXT DEFAULT 'Medium'")
+    if 'source_text' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN source_text TEXT DEFAULT ''")
         
     # Questions (Maker-Checker details)
     cursor.execute('''
@@ -2168,6 +2170,13 @@ def handle_modules():
             LEFT JOIN trainers t ON m.created_by = t.trainer_id
             ORDER BY m.id DESC
         """).fetchall()
+        
+        # Migrate: add source_text if column is missing in older DBs (safe to run every time)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("ALTER TABLE modules ADD COLUMN source_text TEXT DEFAULT ''")
+        except Exception:
+            pass
             
         res_list = []
         for m in modules:
@@ -3103,6 +3112,7 @@ def save_module():
     difficulty = data.get('difficulty', 'Medium').strip()
     questions = data.get('questions', [])
     module_id = data.get('module_id') # If editing an existing draft
+    source_text = data.get('source_text', '')
     
     if not questions:
         return jsonify({"status": "error", "message": "No questions provided to save."}), 400
@@ -3155,16 +3165,16 @@ def save_module():
             
             # Update existing module
             cursor.execute(
-                "UPDATE modules SET title=?, questions_count=?, status=?, audited_by=?, difficulty=? WHERE id=?",
-                (title, len(questions), status, audited_by, difficulty, module_id)
+                "UPDATE modules SET title=?, questions_count=?, status=?, audited_by=?, difficulty=?, source_text=? WHERE id=?",
+                (title, len(questions), status, audited_by, difficulty, source_text, module_id)
             )
             # Delete old questions to replace them with the newly audited ones
             cursor.execute("DELETE FROM questions WHERE module_id=?", (module_id,))
         else:
             # Create new module
             cursor.execute(
-                "INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (title, len(questions), now, status, trainer_id, audited_by, difficulty)
+                "INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty, source_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, len(questions), now, status, trainer_id, audited_by, difficulty, source_text)
             )
             module_id = cursor.lastrowid
             
@@ -3203,7 +3213,7 @@ def save_module():
             
         threading.Thread(
             target=sync_module_to_gdrive,
-            args=(title, difficulty, status, trainer_id, audited_by, gdrive_questions),
+            args=(title, difficulty, status, trainer_id, audited_by, gdrive_questions, source_text),
             daemon=True
         ).start()
     except Exception as e:

@@ -339,7 +339,7 @@ def get_gdrive_service():
         print(f"[GDRIVE-SYNC] Error initializing Google Drive service: {str(e)}")
         return None
 
-def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions):
+def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions, source_text=""):
     """
     Saves a module's full JSON representation to Google Drive.
     If the file [title].json already exists in the designated folder, it is updated.
@@ -360,6 +360,7 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
         "status": status,
         "created_by": created_by,
         "audited_by": audited_by,
+        "source_text": source_text,
         "questions": questions
     }
 
@@ -505,18 +506,20 @@ def sync_modules_from_gdrive(conn=None):
                     module_id = existing_module[0]
                     print(f"[GDRIVE-SYNC] Restoring existing module '{title}' (ID: {module_id}) from Google Drive...")
                     # Update module metadata
+                    source_text = module_data.get('source_text', '')
                     cursor.execute(
-                        "UPDATE modules SET questions_count = ?, status = ?, audited_by = ?, difficulty = ? WHERE id = ?",
-                        (len(questions), status, audited_by, difficulty, module_id)
+                        "UPDATE modules SET questions_count = ?, status = ?, audited_by = ?, difficulty = ?, source_text = ? WHERE id = ?",
+                        (len(questions), status, audited_by, difficulty, source_text, module_id)
                     )
                     # Prune old questions to prevent duplicates/conflicts
                     cursor.execute("DELETE FROM questions WHERE module_id = ?", (module_id,))
                 else:
                     print(f"[GDRIVE-SYNC] Restoring new module '{title}' from Google Drive...")
                     # Insert new module
+                    source_text = module_data.get('source_text', '')
                     cursor.execute(
-                        "INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (title, len(questions), now, status, created_by, audited_by, difficulty)
+                        "INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty, source_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (title, len(questions), now, status, created_by, audited_by, difficulty, source_text)
                     )
                     module_id = cursor.lastrowid
 
