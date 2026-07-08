@@ -479,7 +479,8 @@ def enforce_authentication():
             '/api/admin/login',
             '/api/roster/search',
             '/api/assessments/submit',
-            '/api/feedback/submit'
+            '/api/feedback/submit',
+            '/api/persistence-status'
         ]
         if request.path in public_endpoints:
             return
