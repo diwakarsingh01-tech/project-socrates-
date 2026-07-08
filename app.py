@@ -185,7 +185,8 @@ def get_db_connection():
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
-                timeout=10
+                timeout=10,
+                server_hostname=hostname
             )
             return PostgresConnectionWrapper(pg_conn)
         except Exception as e:
@@ -1074,7 +1075,8 @@ def get_db_diagnostics():
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
-                timeout=5  # Short timeout to avoid hanging the Gunicorn worker thread
+                timeout=5,
+                server_hostname=hostname
             )
             pg_conn.close()
         except Exception as e:
