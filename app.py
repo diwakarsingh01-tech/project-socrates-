@@ -4849,6 +4849,28 @@ def upload_visits():
             return jsonify({"status": "error", "message": f"Failed to parse CSV: {str(e)}"}), 400
 
 
+@app.route('/api/persistence-status', methods=['GET'])
+def persistence_status():
+    db_url = os.environ.get('DATABASE_URL')
+    gd_folder = os.environ.get('GD_FOLDER_ID')
+    gd_sa = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    gd_libs = False
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+        gd_libs = True
+    except ImportError:
+        pass
+    return jsonify({
+        "has_db_url": bool(db_url),
+        "has_gd_folder": bool(gd_folder),
+        "has_gd_sa": bool(gd_sa),
+        "has_gd_libs": gd_libs,
+        "drive_configured": bool(gd_folder and gd_sa and gd_libs),
+        "db_type": "postgresql" if db_url else "sqlite",
+        "ephemeral_warning": not bool(db_url) and not (gd_folder and gd_sa and gd_libs)
+    })
+
 if __name__ == '__main__':
     socketio.run(app, debug=True, port=5050, host='0.0.0.0', allow_unsafe_werkzeug=True)
 
