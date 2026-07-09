@@ -187,7 +187,7 @@
             }, []);
             const [activeQuestion, setActiveQuestion] = useState(() => localStorage.getItem('socrates_activeQuestion') || '');
             const [activeQIdx, setActiveQIdx] = useState(() => parseInt(localStorage.getItem('socrates_activeQIdx') || '-1'));
-            const [activeOptions, setActiveOptions] = useState([]);
+            const [activeOptions, setActiveOptions] = useState(() => {
                 const saved = localStorage.getItem('socrates_activeOptions');
                 return saved ? JSON.parse(saved) : [];
             });
