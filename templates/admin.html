@@ -5890,6 +5890,7 @@
 
             useEffect(() => {
                 const stored = localStorage.getItem('socrates_active_module');
+                const isFreshStart = !!stored;
                 if (stored) {
                     try { setActiveModule(JSON.parse(stored)); } catch(e) {}
                     localStorage.removeItem('socrates_active_module');
@@ -5904,6 +5905,7 @@
                 setSessionId(pin);
                 
                 socket.on('session_state_response', (data) => {
+                    if (isFreshStart) return;
                     if (data.active_module) setActiveModule(data.active_module);
                     if (data.current_view) setStage(data.current_view);
                     if (data.current_question_idx !== undefined) setActiveQIdx(data.current_question_idx);
