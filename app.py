@@ -665,9 +665,23 @@ def seed_demo_data():
     for tid,name,zone,role in [("TRAINER1","Rajesh Khanna","NORTH ZONE","Trainer"),("TRAINER2","Sunita Sharma","WEST ZONE","Trainer"),("LEADER1","Amitabh Joshi","All","Leader")]:
         pwh = generate_password_hash("password123")
         c.execute("INSERT OR REPLACE INTO trainers (trainer_id,name,zone,password,status,role,plain_password,zones,divisions,branches,business_units) VALUES (?,?,?,?,'Active',?,?,'ALL','ALL','ALL','ALL')", (tid,name,zone,pwh,role,"password123"))
+    now = __import__('datetime').datetime.now().strftime("%Y-%m-%d")
+    import random
+    for mid, title, difficulty in [(1, "Product Knowledge - Two Wheeler Loans", "Medium"), (2, "Gold Loan Policy Refresher", "Hard")]:
+        c.execute("INSERT OR IGNORE INTO modules (id, title, questions_count, created_at, status, created_by, difficulty) VALUES (?,?,15,?,'Ready','ADMIN',?)", (mid, title, now, difficulty))
+    demo_qs = [
+        (1,1,"What is the minimum down payment for a two-wheeler loan?","10%","15%","20%","25%",0,1),
+        (2,1,"What is the maximum tenure for a two-wheeler loan?","3 years","5 years","7 years","10 years",1,1),
+        (3,1,"Which document is NOT required for a two-wheeler loan?","Aadhaar Card","PAN Card","Passport","Voter ID",2,1),
+        (4,2,"What is the current gold loan interest rate?","7.5%","8.5%","9.5%","10.5%",1,1),
+        (5,2,"Maximum LTV ratio for gold loan?","60%","70%","75%","80%",2,1),
+        (6,2,"What is the minimum gold purity accepted?","18 carat","20 carat","22 carat","24 carat",2,1),
+    ]
+    for q in demo_qs:
+        c.execute("INSERT OR IGNORE INTO questions (id,module_id,question_text,option_a,option_b,option_c,option_d,correct_index,approved) VALUES (?,?,?,?,?,?,?,?,?)", q)
     conn.commit()
     conn.close()
-    print(f"[SEED] Inserted {len(demo_emps)} employees and 3 trainers")
+    print(f"[SEED] Inserted {len(demo_emps)} employees, 3 trainers, 2 modules, {len(demo_qs)} questions")
 
 seed_demo_data()
 
