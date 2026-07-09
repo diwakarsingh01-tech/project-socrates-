@@ -360,16 +360,21 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
             files = results.get('files', [])
 
             json_bytes = json.dumps(payload, indent=2).encode('utf-8')
-            media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=True)
+            media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=False)
 
-            if files:
-                file_id = files[0]['id']
-                print(f"[GDRIVE-SYNC] Updating existing file '{filename}'")
-                service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
-            else:
-                file_metadata = {'name': filename, 'parents': [folder_id]}
-                print(f"[GDRIVE-SYNC] Creating new file '{filename}'")
-                service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
+            try:
+                if files:
+                    file_id = files[0]['id']
+                    print(f"[GDRIVE-SYNC] Updating existing file '{filename}'")
+                    resp = service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True, fields='id').execute()
+                else:
+                    file_metadata = {'name': filename, 'parents': [folder_id]}
+                    print(f"[GDRIVE-SYNC] Creating new file '{filename}'")
+                    resp = service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True, fields='id').execute()
+                print(f"[GDRIVE-SYNC] API response: id={resp.get('id','?')}")
+            except Exception as api_e:
+                print(f"[GDRIVE-SYNC] API call failed: {api_e}")
+                raise
 
         print(f"[GDRIVE-SYNC] Synced '{title}' to Drive")
         return True

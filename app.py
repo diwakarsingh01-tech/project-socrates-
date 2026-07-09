@@ -1187,6 +1187,58 @@ def get_gdrive_status():
         "files": module_files
     })
 
+@app.route('/api/gdrive/debug-sync', methods=['GET'])
+def gdrive_debug_sync():
+    """Debug endpoint to test GDrive module sync and capture exact errors."""
+    from gdrive_sync import sync_module_to_gdrive, _build_drive_service, _original_socket_for_google
+    import traceback, json
+    result = {"steps": []}
+
+    # Step 1: build service
+    try:
+        with _original_socket_for_google():
+            svc = _build_drive_service()
+        result["steps"].append({"step": "build_service", "ok": svc is not None})
+    except Exception as e:
+        result["steps"].append({"step": "build_service", "ok": False, "error": str(e), "tb": traceback.format_exc()})
+        return jsonify(result)
+
+    # Step 2: list files
+    folder_id = os.environ.get('GD_FOLDER_ID')
+    try:
+        with _original_socket_for_google():
+            q = f"'{folder_id}' in parents and trashed = false"
+            r = svc.files().list(q=q, spaces='drive', fields='files(id, name)', pageSize=10, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+        result["steps"].append({"step": "list_files", "ok": True, "count": len(r.get('files',[]))})
+    except Exception as e:
+        result["steps"].append({"step": "list_files", "ok": False, "error": str(e), "tb": traceback.format_exc()})
+        return jsonify(result)
+
+    # Step 3: create a test file
+    try:
+        from googleapiclient.http import MediaIoBaseUpload
+        import io
+        test_title = "SyncDebug_test"
+        payload = {"title": test_title, "test": True}
+        json_bytes = json.dumps(payload).encode('utf-8')
+        media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=True)
+        with _original_socket_for_google():
+            c = svc.files().create(body={'name': f'{test_title}.json', 'parents': [folder_id]}, media_body=media, supportsAllDrives=True).execute()
+        result["steps"].append({"step": "create_file", "ok": True, "file_id": c.get('id')})
+    except Exception as e:
+        result["steps"].append({"step": "create_file", "ok": False, "error": str(e), "tb": traceback.format_exc()})
+        return jsonify(result)
+
+    # Step 4: try full sync_module_to_gdrive
+    try:
+        import time
+        ok = sync_module_to_gdrive("SyncDebug_" + str(int(time.time())), "Easy", "Ready", "ADMIN", "ADMIN", [], "")
+        result["steps"].append({"step": "sync_module_to_gdrive", "ok": ok})
+    except Exception as e:
+        result["steps"].append({"step": "sync_module_to_gdrive", "ok": False, "error": str(e), "tb": traceback.format_exc()})
+
+    return jsonify(result)
+
 @app.route('/api/admin/diagnostics', methods=['GET'])
 def get_db_diagnostics():
     db_url = os.environ.get('DATABASE_URL')
