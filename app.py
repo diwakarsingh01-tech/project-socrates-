@@ -2368,14 +2368,13 @@ def handle_modules():
         conn.execute("INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty) VALUES (?, ?, ?, ?, ?, ?, ?)",
                      (data['title'], 15, now, 'Ready', trainer_id, audited_by, data.get('difficulty', 'Medium')))
         conn.commit()
-        module_id = conn.lastrowid
         conn.close()
         try:
             from gdrive_sync import sync_module_to_gdrive
             threading.Thread(target=sync_module_to_gdrive, args=(data['title'], data.get('difficulty', 'Medium'), 'Ready', trainer_id, audited_by, [], ""), daemon=True).start()
         except Exception:
             pass
-        return jsonify({"status": "success", "module_id": module_id})
+        return jsonify({"status": "success"})
 
 @app.route('/api/modules/<int:module_id>', methods=['DELETE'])
 def delete_module(module_id):
