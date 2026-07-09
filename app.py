@@ -163,15 +163,8 @@ def get_db_connection():
                 print("[POSTGRES] Automatically rewriting Supabase pooler port from 5432 to 6543 for Render compatibility.")
                 port = 6543
             
-            # Manual DNS Resolution: Bypasses buggy eventlet green DNS resolution in Gunicorn
+            # Use hostname directly (DNS resolution to IP breaks TLS SNI)
             connection_host = hostname
-            try:
-                import socket
-                resolved_ip = socket.gethostbyname(hostname)
-                print(f"[POSTGRES] Resolved {hostname} to IP: {resolved_ip}")
-                connection_host = resolved_ip
-            except Exception as dns_err:
-                print(f"[POSTGRES] DNS resolution failed (will try hostname directly): {str(dns_err)}")
                 
             import ssl
             ssl_context = ssl.create_default_context()
@@ -185,8 +178,7 @@ def get_db_connection():
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
-                timeout=10,
-                server_hostname=hostname
+                timeout=10
             )
             return PostgresConnectionWrapper(pg_conn)
         except Exception as e:
@@ -1044,25 +1036,9 @@ def get_db_diagnostics():
             username = unquote(url.username) if url.username else None
             password = unquote(url.password) if url.password else None
             database = url.path[1:]
-            # Manual DNS Resolution: Bypasses buggy eventlet green DNS resolution in Gunicorn
+            # Use hostname directly (DNS resolution to IP breaks TLS SNI)
             connection_host = hostname
-            try:
-                # First try using eventlet's unmonkeypatched original socket if eventlet is active
-                try:
-                    from eventlet.patcher import original
-                    orig_socket = original('socket')
-                    resolved_ip = orig_socket.gethostbyname(hostname)
-                    print(f"[POSTGRES] Eventlet original socket resolved {hostname} to IP: {resolved_ip}")
-                    connection_host = resolved_ip
-                except Exception:
-                    # Fallback to standard socket
-                    import socket
-                    resolved_ip = socket.gethostbyname(hostname)
-                    print(f"[POSTGRES] Standard socket resolved {hostname} to IP: {resolved_ip}")
-                    connection_host = resolved_ip
-            except Exception as dns_err:
-                print(f"[POSTGRES] DNS manual resolution failed: {str(dns_err)}")
-                
+            
             # Attempt a quick direct connection to verify if it works
             import ssl
             ssl_context = ssl.create_default_context()
@@ -1076,8 +1052,7 @@ def get_db_diagnostics():
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
-                timeout=5,
-                server_hostname=hostname
+                timeout=5
             )
             pg_conn.close()
         except Exception as e:
