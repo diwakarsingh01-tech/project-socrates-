@@ -138,14 +138,16 @@ class PostgresConnectionWrapper:
     def close(self):
         self.pg_conn.close()
 
+_pg_in_use = None
+
 def get_db_connection():
+    global _pg_in_use
     db_url = os.environ.get('DATABASE_URL')
-    if db_url:
+    if db_url and _pg_in_use is not False:
         try:
             from urllib.parse import urlparse, unquote
             import pg8000.dbapi
             
-            # Handle standard "postgres://" to "postgresql://" url schemes
             if db_url.startswith("postgres://"):
                 db_url = db_url.replace("postgres://", "postgresql://", 1)
                 
@@ -156,14 +158,10 @@ def get_db_connection():
             hostname = url.hostname
             port = url.port or 5432
             
-            # Defensive Rewrite: Supabase poolers on port 5432 often time out in hosted environments
-            # like Render due to outbound firewall restrictions on direct PostgreSQL ports.
-            # We automatically switch to the Transaction Pooler port 6543 which is open.
             if hostname and ".pooler.supabase.com" in hostname.lower() and port == 5432:
                 print("[POSTGRES] Automatically rewriting Supabase pooler port from 5432 to 6543 for Render compatibility.")
                 port = 6543
             
-            # Use hostname directly (DNS resolution to IP breaks TLS SNI)
             connection_host = hostname
                 
             import ssl
@@ -178,10 +176,12 @@ def get_db_connection():
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
-                timeout=10
+                timeout=20
             )
+            _pg_in_use = True
             return PostgresConnectionWrapper(pg_conn)
         except Exception as e:
+            _pg_in_use = False
             print(f"[POSTGRES] Connection failed, falling back to SQLite: {str(e)}")
             
     conn = sqlite3.connect(DB_FILE)
@@ -1052,7 +1052,7 @@ def get_db_diagnostics():
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
-                timeout=5
+                timeout=15
             )
             pg_conn.close()
         except Exception as e:
