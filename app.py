@@ -1133,13 +1133,16 @@ def get_metadata():
 
 @app.route('/api/gdrive/status', methods=['GET'])
 def get_gdrive_status():
-    from gdrive_sync import get_gdrive_service, LAST_BACKUP_TIME, load_sa_json
+    from gdrive_sync import get_gdrive_service, LAST_BACKUP_TIME, load_sa_json, _original_socket_for_google
     
     folder_id = os.environ.get('GD_FOLDER_ID')
     sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
     
     configured = bool(folder_id and sa_json)
     connected = False
+    write_test = "not_tested"
+    file_count = 0
+    module_files = []
     service_account_email = "Not Configured"
     masked_folder_id = "Not Configured"
     
@@ -1158,13 +1161,12 @@ def get_gdrive_status():
         try:
             service = get_gdrive_service()
             if service:
-                from gdrive_sync import _original_socket_for_google
                 with _original_socket_for_google():
-                    service.files().get(
-                        fileId=folder_id,
-                        fields='id, name',
-                        supportsAllDrives=True
-                    ).execute()
+                    service.files().get(fileId=folder_id, fields='id, name', supportsAllDrives=True).execute()
+                    results = service.files().list(q=f"'{folder_id}' in parents and trashed = false", spaces='drive', fields='files(id, name)', pageSize=50, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+                    files = results.get('files', [])
+                    file_count = len(files)
+                    module_files = [f['name'] for f in files if f.get('name')]
                 connected = True
         except Exception as e:
             print(f"[GDRIVE-STATUS] Integration connection check failed: {str(e)}")
@@ -1180,7 +1182,9 @@ def get_gdrive_status():
         "connected": connected,
         "folder_id": masked_folder_id,
         "service_account_email": service_account_email,
-        "last_sync": last_sync_str
+        "last_sync": last_sync_str,
+        "file_count": file_count,
+        "files": module_files
     })
 
 @app.route('/api/admin/diagnostics', methods=['GET'])
