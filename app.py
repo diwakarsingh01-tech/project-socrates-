@@ -639,6 +639,38 @@ try:
 except Exception as e:
     print(f"[GDRIVE] Database restoration skipped: {str(e)}")
 
+def seed_demo_data():
+    """Seed demo employees if the database is empty."""
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    count = c.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
+    if count > 0:
+        print(f"[SEED] Employees table has {count} rows, skipping seed")
+        conn.close()
+        return
+    print("[SEED] Employees table empty, seeding demo data...")
+    demo_emps = [
+        ("SF-1001","RAHUL SINGH","DELHI RF","NORTH ZONE","DELHI DIVISION","TWO-WHEELER","PL EXE","SPLENDOR V2"),
+        ("SF-1002","NEHA SHARMA","AHMEDABAD RF","WEST ZONE","GUJARAT DIVISION","TWO-WHEELER","PL EXE","ACTIVA 6G"),
+        ("SF-1003","AMIT PATEL","CHANDIGARH RF","NORTH ZONE","PUNJAB DIVISION","TWO-WHEELER","PL EXE","ACTIVA 6G"),
+        ("SF-1004","PRIYA DAS","KOLKATA RF","EAST ZONE","BENGAL DIVISION","RETAIL","CSE","N/A"),
+        ("SF-1005","VIKRAM VERMA","MUMBAI RF","WEST ZONE","MUMBAI DIVISION","GOLD LOAN","BH / BPH","N/A"),
+        ("SF-1006","ANJALI GUPTA","DELHI RF","NORTH ZONE","DELHI DIVISION","PERSONAL LOAN","SPH / SBH","N/A"),
+        ("SF-1007","ROHIT KUMAR","AHMEDABAD RF","WEST ZONE","GUJARAT DIVISION","COMMERCIAL VEHICLE","DTL","N/A"),
+        ("SF-1008","SONIA JAIN","KOLKATA RF","EAST ZONE","BENGAL DIVISION","TWO-WHEELER","PL EXE","ACCESS 125"),
+    ]
+    for e in demo_emps:
+        c.execute("INSERT OR REPLACE INTO employees VALUES (?,?,?,?,?,?,?,?,'ACTIVE','SEED DATA')", e)
+    from werkzeug.security import generate_password_hash
+    for tid,name,zone,role in [("TRAINER1","Rajesh Khanna","NORTH ZONE","Trainer"),("TRAINER2","Sunita Sharma","WEST ZONE","Trainer"),("LEADER1","Amitabh Joshi","All","Leader")]:
+        pwh = generate_password_hash("password123")
+        c.execute("INSERT OR REPLACE INTO trainers (trainer_id,name,zone,password,status,role,plain_password,zones,divisions,branches,business_units) VALUES (?,?,?,?,'Active',?,?,'ALL','ALL','ALL','ALL')", (tid,name,zone,pwh,role,"password123"))
+    conn.commit()
+    conn.close()
+    print(f"[SEED] Inserted {len(demo_emps)} employees and 3 trainers")
+
+seed_demo_data()
+
 try:
     from gdrive_sync import start_db_backup_daemon
     start_db_backup_daemon()
