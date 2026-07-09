@@ -138,12 +138,9 @@ class PostgresConnectionWrapper:
     def close(self):
         self.pg_conn.close()
 
-_pg_in_use = None
-
 def get_db_connection():
-    global _pg_in_use
     db_url = os.environ.get('DATABASE_URL')
-    if db_url and _pg_in_use is not False:
+    if db_url:
         try:
             from urllib.parse import urlparse, unquote
             import pg8000.dbapi
@@ -176,12 +173,10 @@ def get_db_connection():
                 database=database,
                 port=port,
                 ssl_context=ssl_context,
-                timeout=20
+                timeout=30
             )
-            _pg_in_use = True
             return PostgresConnectionWrapper(pg_conn)
         except Exception as e:
-            _pg_in_use = False
             print(f"[POSTGRES] Connection failed, falling back to SQLite: {str(e)}")
             
     conn = sqlite3.connect(DB_FILE)
@@ -189,8 +184,202 @@ def get_db_connection():
     return conn
 
 # --- DATABASE SETUP ---
+PG_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS employees (
+    emp_code TEXT PRIMARY KEY,
+    emp_name TEXT,
+    branch_name TEXT,
+    zone TEXT,
+    division TEXT,
+    business_unit TEXT,
+    role TEXT,
+    product_name TEXT,
+    status TEXT DEFAULT 'ACTIVE',
+    change_detail TEXT DEFAULT 'ADDED MANUALLY'
+);
+CREATE TABLE IF NOT EXISTS trainers (
+    trainer_id TEXT PRIMARY KEY,
+    name TEXT,
+    zone TEXT,
+    password TEXT,
+    status TEXT DEFAULT 'Active',
+    role TEXT DEFAULT 'Trainer',
+    last_login TEXT,
+    zones TEXT DEFAULT 'ALL',
+    divisions TEXT DEFAULT 'ALL',
+    branches TEXT DEFAULT 'ALL',
+    business_units TEXT DEFAULT 'ALL',
+    plain_password TEXT
+);
+CREATE TABLE IF NOT EXISTS modules (
+    id SERIAL PRIMARY KEY,
+    title TEXT,
+    questions_count INTEGER,
+    created_at TEXT,
+    status TEXT DEFAULT 'Pending Audit',
+    created_by TEXT DEFAULT 'ADMIN',
+    difficulty TEXT DEFAULT 'Medium'
+);
+CREATE TABLE IF NOT EXISTS questions (
+    id SERIAL PRIMARY KEY,
+    module_id INTEGER REFERENCES modules(id) ON DELETE CASCADE,
+    question_text TEXT,
+    option_a TEXT,
+    option_b TEXT,
+    option_c TEXT,
+    option_d TEXT,
+    correct_index INTEGER,
+    approved INTEGER DEFAULT 0,
+    translations TEXT
+);
+CREATE TABLE IF NOT EXISTS training_sessions (
+    session_id TEXT PRIMARY KEY,
+    date TEXT,
+    trainer_id TEXT REFERENCES trainers(trainer_id),
+    module_id INTEGER,
+    branch_name TEXT
+);
+CREATE TABLE IF NOT EXISTS assessment_results (
+    emp_code TEXT,
+    module_id INTEGER,
+    assignment_day TEXT,
+    pre_test_score REAL,
+    post_test_score REAL,
+    correct_count INTEGER DEFAULT 0,
+    wrong_count INTEGER DEFAULT 0,
+    unattempted_count INTEGER DEFAULT 0,
+    total_questions INTEGER DEFAULT 0,
+    completed_at TEXT,
+    session_id TEXT,
+    PRIMARY KEY (emp_code, module_id, assignment_day),
+    FOREIGN KEY(emp_code) REFERENCES employees(emp_code),
+    FOREIGN KEY(module_id) REFERENCES modules(id)
+);
+CREATE TABLE IF NOT EXISTS trainee_feedback (
+    id SERIAL PRIMARY KEY,
+    emp_code TEXT REFERENCES employees(emp_code),
+    session_id TEXT REFERENCES training_sessions(session_id),
+    module_id INTEGER REFERENCES modules(id),
+    rating INTEGER,
+    understanding TEXT,
+    manpower_saved TEXT,
+    comments TEXT,
+    submitted_at TEXT
+);
+CREATE TABLE IF NOT EXISTS branch_coordinates (
+    branch_name TEXT PRIMARY KEY,
+    zone TEXT NOT NULL,
+    division TEXT NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    manager_pin TEXT NOT NULL DEFAULT '1234'
+);
+CREATE TABLE IF NOT EXISTS field_visits (
+    id SERIAL PRIMARY KEY,
+    trainer_id TEXT NOT NULL REFERENCES trainers(trainer_id),
+    branch_name TEXT NOT NULL REFERENCES branch_coordinates(branch_name),
+    planned_date TEXT NOT NULL,
+    end_date TEXT,
+    purpose TEXT NOT NULL,
+    key_contacts TEXT,
+    status TEXT DEFAULT 'PLANNED',
+    checkin_time TEXT,
+    checkin_latitude REAL,
+    checkin_longitude REAL,
+    co_presence_count INTEGER DEFAULT 0,
+    verification_time TEXT
+);
+"""
+PG_MIGRATIONS = {
+    'field_visits': {
+        'end_date': 'TEXT',
+        'month': 'TEXT', 'branch_code': 'TEXT', 'business_unit': 'TEXT',
+        'zone': 'TEXT', 'division': 'TEXT', 'meeting_agenda': 'TEXT',
+        'meeting_with': 'TEXT', 'overnight_stay': 'TEXT',
+        'travel_from': 'TEXT', 'travel_to': 'TEXT', 'travel_mode': 'TEXT',
+        'mom_notes': 'TEXT', 'details': 'TEXT'
+    },
+    'assessment_results': {
+        'session_id': 'TEXT', 'correct_count': 'INTEGER DEFAULT 0',
+        'wrong_count': 'INTEGER DEFAULT 0', 'unattempted_count': 'INTEGER DEFAULT 0',
+        'total_questions': 'INTEGER DEFAULT 0'
+    },
+    'modules': {
+        'source_text': 'TEXT DEFAULT \'\''
+    },
+    'questions': {
+        'translations': 'TEXT'
+    }
+}
+
+def _setup_pg():
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        return
+    try:
+        from urllib.parse import urlparse, unquote
+        import pg8000.dbapi
+
+        if db_url.startswith("postgres://"):
+            db_url = db_url.replace("postgres://", "postgresql://", 1)
+        url = urlparse(db_url)
+        username = unquote(url.username) if url.username else None
+        password = unquote(url.password) if url.password else None
+        database = url.path[1:]
+        hostname = url.hostname
+        port = url.port or 5432
+        if hostname and ".pooler.supabase.com" in hostname.lower() and port == 5432:
+            port = 6543
+        connection_host = hostname
+        import ssl
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        conn = pg8000.dbapi.connect(user=username, password=password, host=connection_host,
+                                     database=database, port=port, ssl_context=ctx, timeout=30)
+        cursor = conn.cursor()
+        for stmt in PG_SCHEMA_SQL.split(';'):
+            s = stmt.strip()
+            if s:
+                try:
+                    cursor.execute(s)
+                except Exception:
+                    pass
+        for table, columns in PG_MIGRATIONS.items():
+            for col, dtype in columns.items():
+                try:
+                    cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {dtype}")
+                except Exception:
+                    pass
+        # Seed ADMIN
+        cursor.execute("SELECT 1 FROM trainers WHERE trainer_id='ADMIN'")
+        if not cursor.fetchone():
+            hashed = generate_password_hash('admin123')
+            cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, zones, divisions, branches, business_units, plain_password) VALUES ('ADMIN', 'Super Admin', 'All', %s, 'SuperAdmin', 'ALL', 'ALL', 'ALL', 'ALL', 'admin123')", (hashed,))
+        # Seed branches
+        defaults = [
+            ("DELHI RF", "NORTH ZONE", "DELHI DIVISION", 28.6139, 77.209, "1234"),
+            ("AHMEDABAD RF", "WEST ZONE", "GUJARAT DIVISION", 23.0225, 72.5714, "1234"),
+            ("CHANDIGARH RF", "NORTH ZONE", "PUNJAB DIVISION", 30.7333, 76.7794, "1234"),
+            ("KOLKATA RF", "EAST ZONE", "BENGAL DIVISION", 22.5726, 88.3639, "1234"),
+            ("MUMBAI RF", "WEST ZONE", "MUMBAI DIVISION", 19.076, 72.8777, "1234")
+        ]
+        cursor.execute("SELECT COUNT(*) FROM branch_coordinates WHERE branch_name=%s", ("DELHI RF",))
+        if cursor.fetchone()[0] == 0:
+            for b_name, z, d, lat, lon, pin in defaults:
+                cursor.execute("INSERT INTO branch_coordinates (branch_name, zone, division, latitude, longitude, manager_pin) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING", (b_name, z, d, lat, lon, pin))
+        conn.commit()
+        conn.close()
+        print("[POSTGRES] Schema setup complete on PostgreSQL")
+    except Exception as e:
+        print(f"[POSTGRES] Schema setup skipped: {str(e)}")
+
 def init_db():
-    conn = get_db_connection()
+    _setup_pg()
+
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     
     # Employees (Roster)
