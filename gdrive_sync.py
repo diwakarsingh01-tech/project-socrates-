@@ -362,29 +362,30 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
     }
 
     try:
-        # 1. Search for existing file with the exact name in the folder
-        escaped_title = title.replace("'", "\\'")
-        query = f"name = '{escaped_title}.json' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-        files = results.get('files', [])
+        with _original_socket_for_google():
+            # 1. Search for existing file with the exact name in the folder
+            escaped_title = title.replace("'", "\\'")
+            query = f"name = '{escaped_title}.json' and '{folder_id}' in parents and trashed = false"
+            results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+            files = results.get('files', [])
 
-        # 2. Encode payload as binary bytes
-        json_bytes = json.dumps(payload, indent=2, ensure_ascii=False).encode('utf-8')
-        media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=True)
+            # 2. Encode payload as binary bytes
+            json_bytes = json.dumps(payload, indent=2, ensure_ascii=False).encode('utf-8')
+            media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=True)
 
-        if files:
-            # Update existing file
-            file_id = files[0]['id']
-            print(f"[GDRIVE-SYNC] Updating existing module file '{filename}' (ID: {file_id}) in Google Drive.")
-            service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
-        else:
-            # Create new file
-            file_metadata = {
-                'name': filename,
-                'parents': [folder_id]
-            }
-            print(f"[GDRIVE-SYNC] Creating new module file '{filename}' in Google Drive.")
-            service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
+            if files:
+                # Update existing file
+                file_id = files[0]['id']
+                print(f"[GDRIVE-SYNC] Updating existing module file '{filename}' (ID: {file_id}) in Google Drive.")
+                service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
+            else:
+                # Create new file
+                file_metadata = {
+                    'name': filename,
+                    'parents': [folder_id]
+                }
+                print(f"[GDRIVE-SYNC] Creating new module file '{filename}' in Google Drive.")
+                service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
 
         print(f"[GDRIVE-SYNC] Successfully synchronized '{title}' to Google Drive.")
         return True
@@ -404,21 +405,20 @@ def delete_module_from_gdrive(title):
     folder_id = os.environ.get('GD_FOLDER_ID')
 
     try:
-        # Search for the file in the designated folder
-        escaped_title = title.replace("'", "\\'")
-        query = f"name = '{escaped_title}.json' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-        files = results.get('files', [])
+        with _original_socket_for_google():
+            escaped_title = title.replace("'", "\\'")
+            query = f"name = '{escaped_title}.json' and '{folder_id}' in parents and trashed = false"
+            results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+            files = results.get('files', [])
 
-        if not files:
-            print(f"[GDRIVE-SYNC] Module file '{title}.json' not found in Google Drive folder. Nothing to delete.")
-            return True
+            if not files:
+                print(f"[GDRIVE-SYNC] Module file '{title}.json' not found in Google Drive folder. Nothing to delete.")
+                return True
 
-        # Delete the file
-        for f in files:
-            file_id = f['id']
-            print(f"[GDRIVE-SYNC] Deleting file '{f['name']}' (ID: {file_id}) from Google Drive.")
-            service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+            for f in files:
+                file_id = f['id']
+                print(f"[GDRIVE-SYNC] Deleting file '{f['name']}' (ID: {file_id}) from Google Drive.")
+                service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
 
         print(f"[GDRIVE-SYNC] Successfully deleted '{title}' from Google Drive.")
         return True
@@ -441,7 +441,8 @@ def sync_modules_from_gdrive(conn=None):
     try:
         # 1. Fetch list of files from Google Drive folder (filtering locally to avoid unsupported Google API operators)
         query = f"'{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=100, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+        with _original_socket_for_google():
+            results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=100, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         if not files:
@@ -474,12 +475,13 @@ def sync_modules_from_gdrive(conn=None):
             
             try:
                 # 2. Download file content
-                request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
+                with _original_socket_for_google():
+                    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+                    fh = io.BytesIO()
+                    downloader = MediaIoBaseDownload(fh, request)
+                    done = False
+                    while not done:
+                        status, done = downloader.next_chunk()
                 
                 content = fh.getvalue().decode('utf-8')
                 module_data = json.loads(content)
@@ -905,28 +907,28 @@ def backup_db_to_gdrive():
             if not os.path.exists(DB_FILE):
                 return False
 
-            # Search for existing file in the folder
-            query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            files = results.get('files', [])
+            with _original_socket_for_google():
+                query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+                results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+                files = results.get('files', [])
 
-            # Read local database bytes safely
             with open(DB_FILE, 'rb') as f:
                 db_bytes = f.read()
 
             media = MediaIoBaseUpload(io.BytesIO(db_bytes), mimetype='application/x-sqlite3', resumable=True)
 
-            if files:
-                file_id = files[0]['id']
-                print(f"[GDRIVE-SYNC] Backing up socrates.db to Google Drive (updating existing file ID: {file_id})...")
-                service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
-            else:
-                file_metadata = {
-                    'name': filename,
-                    'parents': [folder_id]
-                }
-                print("[GDRIVE-SYNC] Backing up socrates.db to Google Drive (creating new backup)...")
-                service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
+            with _original_socket_for_google():
+                if files:
+                    file_id = files[0]['id']
+                    print(f"[GDRIVE-SYNC] Backing up socrates.db to Google Drive (updating existing file ID: {file_id})...")
+                    service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
+                else:
+                    file_metadata = {
+                        'name': filename,
+                        'parents': [folder_id]
+                    }
+                    print("[GDRIVE-SYNC] Backing up socrates.db to Google Drive (creating new backup)...")
+                    service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
 
             LAST_BACKUP_TIME = time.time()
             print("[GDRIVE-SYNC] Database backup to Google Drive completed successfully.")
@@ -950,9 +952,10 @@ def start_db_backup_daemon():
         if not folder_id:
             return None
         try:
-            query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, spaces='drive', fields='files(id, modifiedTime)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            files = results.get('files', [])
+            with _original_socket_for_google():
+                query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+                results = service.files().list(q=query, spaces='drive', fields='files(id, modifiedTime)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+                files = results.get('files', [])
             if files:
                 return files[0]['modifiedTime']
         except Exception as e:
