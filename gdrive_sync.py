@@ -320,59 +320,57 @@ def get_gdrive_service():
         return None
 
     try:
-        info = load_sa_json(sa_json)
-        credentials = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-
-        with _original_socket_for_google():
-            try:
-                import httplib2
-                http = credentials.authorize(httplib2.Http(timeout=15))
-                service = build('drive', 'v3', http=http, cache_discovery=False)
-            except Exception:
-                service = build('drive', 'v3', credentials=credentials, cache_discovery=False)
-
+        service = _build_drive_service()
         return service
     except Exception as e:
         print(f"[GDRIVE-SYNC] Error initializing Google Drive service: {str(e)}")
         return None
 
+def _build_drive_service():
+    sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    if not sa_json:
+        return None
+    info = load_sa_json(sa_json)
+    creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    import httplib2
+    with _original_socket_for_google():
+        try:
+            http = creds.authorize(httplib2.Http(timeout=30))
+            return build('drive', 'v3', http=http, cache_discovery=False)
+        except Exception:
+            return build('drive', 'v3', credentials=creds, cache_discovery=False)
+
 def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions, source_text=""):
     """Saves a module to Google Drive using the Drive API."""
     folder_id = os.environ.get('GD_FOLDER_ID')
-    sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
-    if not folder_id or not sa_json:
+    if not folder_id:
         return False
     try:
-        info = load_sa_json(sa_json)
-        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-        import httplib2
         with _original_socket_for_google():
-            try:
-                http = creds.authorize(httplib2.Http(timeout=30))
-                service = build('drive', 'v3', http=http, cache_discovery=False)
-            except Exception:
-                service = build('drive', 'v3', credentials=creds, cache_discovery=False)
+            service = _build_drive_service()
+            if not service:
+                return False
 
-        filename = f"{title}.json"
-        payload = {"title": title, "difficulty": difficulty, "status": status,
-                   "created_by": created_by, "audited_by": audited_by,
-                   "source_text": source_text, "questions": questions}
+            filename = f"{title}.json"
+            payload = {"title": title, "difficulty": difficulty, "status": status,
+                       "created_by": created_by, "audited_by": audited_by,
+                       "source_text": source_text, "questions": questions}
 
-        query = f"name = '{title}.json' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=10, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-        files = results.get('files', [])
+            query = f"name = '{title}.json' and '{folder_id}' in parents and trashed = false"
+            results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=10, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+            files = results.get('files', [])
 
-        json_bytes = json.dumps(payload, indent=2).encode('utf-8')
-        media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=True)
+            json_bytes = json.dumps(payload, indent=2).encode('utf-8')
+            media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=True)
 
-        if files:
-            file_id = files[0]['id']
-            print(f"[GDRIVE-SYNC] Updating existing file '{filename}'")
-            service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
-        else:
-            file_metadata = {'name': filename, 'parents': [folder_id]}
-            print(f"[GDRIVE-SYNC] Creating new file '{filename}'")
-            service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
+            if files:
+                file_id = files[0]['id']
+                print(f"[GDRIVE-SYNC] Updating existing file '{filename}'")
+                service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
+            else:
+                file_metadata = {'name': filename, 'parents': [folder_id]}
+                print(f"[GDRIVE-SYNC] Creating new file '{filename}'")
+                service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
 
         print(f"[GDRIVE-SYNC] Synced '{title}' to Drive")
         return True
@@ -384,15 +382,16 @@ def delete_module_from_gdrive(title):
     """
     Locates and deletes the file [title].json from the Google Drive folder.
     """
-    service = get_gdrive_service()
-    if not service:
-        print(f"[GDRIVE-SYNC] Skipping Google Drive delete for '{title}' (service not initialized).")
-        return False
-
     folder_id = os.environ.get('GD_FOLDER_ID')
+    if not folder_id:
+        return False
 
     try:
         with _original_socket_for_google():
+            service = _build_drive_service()
+            if not service:
+                return False
+
             escaped_title = title.replace("'", "\\'")
             query = f"name = '{escaped_title}.json' and '{folder_id}' in parents and trashed = false"
             results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
@@ -418,7 +417,7 @@ def sync_modules_from_gdrive(conn=None):
     Queries the Google Drive folder for all .json files, parses them,
     and inserts or updates them in the active SQLite database.
     """
-    service = get_gdrive_service()
+    service = _build_drive_service()
     if not service:
         print("[GDRIVE-SYNC] Skipping database import from Google Drive (service not initialized).")
         return False
@@ -426,17 +425,16 @@ def sync_modules_from_gdrive(conn=None):
     folder_id = os.environ.get('GD_FOLDER_ID')
 
     try:
-        # 1. Fetch list of files from Google Drive folder (filtering locally to avoid unsupported Google API operators)
-        query = f"'{folder_id}' in parents and trashed = false"
         with _original_socket_for_google():
+            query = f"'{folder_id}' in parents and trashed = false"
             results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=100, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-        files = results.get('files', [])
+            files = results.get('files', [])
 
-        if not files:
-            print("[GDRIVE-SYNC] No custom Socratic modules found in Google Drive folder.")
-            return True
+            if not files:
+                print("[GDRIVE-SYNC] No custom Socratic modules found in Google Drive folder.")
+                return True
 
-        print(f"[GDRIVE-SYNC] Found {len(files)} total files in Google Drive folder. Starting database restoration...")
+            print(f"[GDRIVE-SYNC] Found {len(files)} total files in Google Drive folder. Starting database restoration...")
 
         # If a connection wasn't passed, manage our own connection
         local_conn = False
@@ -462,13 +460,12 @@ def sync_modules_from_gdrive(conn=None):
             
             try:
                 # 2. Download file content
-                with _original_socket_for_google():
-                    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
-                    fh = io.BytesIO()
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    while not done:
-                        status, done = downloader.next_chunk()
+                request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
                 
                 content = fh.getvalue().decode('utf-8')
                 module_data = json.loads(content)
