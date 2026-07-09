@@ -667,21 +667,53 @@ def seed_demo_data():
         c.execute("INSERT OR REPLACE INTO trainers (trainer_id,name,zone,password,status,role,plain_password,zones,divisions,branches,business_units) VALUES (?,?,?,?,'Active',?,?,'ALL','ALL','ALL','ALL')", (tid,name,zone,pwh,role,"password123"))
     now = __import__('datetime').datetime.now().strftime("%Y-%m-%d")
     import random
-    for mid, title, difficulty in [(1, "Product Knowledge - Two Wheeler Loans", "Medium"), (2, "Gold Loan Policy Refresher", "Hard")]:
-        c.execute("INSERT OR IGNORE INTO modules (id, title, questions_count, created_at, status, created_by, difficulty) VALUES (?,?,15,?,'Ready','ADMIN',?)", (mid, title, now, difficulty))
-    demo_qs = [
-        (1,1,"What is the minimum down payment for a two-wheeler loan?","10%","15%","20%","25%",0,1),
-        (2,1,"What is the maximum tenure for a two-wheeler loan?","3 years","5 years","7 years","10 years",1,1),
-        (3,1,"Which document is NOT required for a two-wheeler loan?","Aadhaar Card","PAN Card","Passport","Voter ID",2,1),
-        (4,2,"What is the current gold loan interest rate?","7.5%","8.5%","9.5%","10.5%",1,1),
-        (5,2,"Maximum LTV ratio for gold loan?","60%","70%","75%","80%",2,1),
-        (6,2,"What is the minimum gold purity accepted?","18 carat","20 carat","22 carat","24 carat",2,1),
+    two_wheeler_qs = [
+        ("What is the minimum down payment for a two-wheeler loan?", ["10%", "15%", "20%", "25%"], 0),
+        ("What is the maximum tenure for a two-wheeler loan?", ["3 years", "5 years", "7 years", "10 years"], 1),
+        ("Which document is NOT required for a two-wheeler loan?", ["Aadhaar Card", "PAN Card", "Passport", "Voter ID"], 2),
+        ("What is the minimum CIBIL score for a two-wheeler loan?", ["600", "650", "700", "750"], 2),
+        ("What is the maximum LTV for electric two-wheelers?", ["75%", "80%", "85%", "90%"], 3),
+        ("What is the typical processing fee?", ["0.5%", "1%", "1.5%", "2%"], 1),
+        ("Which is a valid ID proof?", ["Aadhaar", "Library Card", "College ID", "Club Card"], 0),
+        ("Minimum age for a two-wheeler loan?", ["18", "21", "24", "27"], 1),
+        ("Most common EMI tenure?", ["12 months", "24 months", "36 months", "48 months"], 2),
+        ("Income proof for self-employed?", ["ITR", "Salary Slip", "Bank Statement", "Form 16"], 0),
+        ("Maximum loan amount for standard two-wheeler?", ["50K", "1L", "1.5L", "2L"], 2),
+        ("Which is NOT a repayment method?", ["Cash", "ECS", "Cheque", "NEFT"], 0),
+        ("How is EMI calculated?", ["Simple Interest", "Reducing Balance", "Flat Rate", "Compound"], 1),
+        ("Default on 2 EMIs leads to?", ["Notice", "Foreclosure", "Penalty", "Write-off"], 2),
+        ("Prepayment usually attracts:", ["No Charge", "2% Fee", "5% Fee", "GST Only"], 0),
     ]
-    for q in demo_qs:
-        c.execute("INSERT OR IGNORE INTO questions (id,module_id,question_text,option_a,option_b,option_c,option_d,correct_index,approved) VALUES (?,?,?,?,?,?,?,?,?)", q)
+    gold_loan_qs = [
+        ("What is the current gold loan interest rate?", ["7.5%", "8.5%", "9.5%", "10.5%"], 1),
+        ("Maximum LTV ratio for gold loan?", ["60%", "70%", "75%", "80%"], 2),
+        ("Minimum gold purity accepted?", ["18 carat", "20 carat", "22 carat", "24 carat"], 2),
+        ("Maximum tenure for a gold loan?", ["6 months", "12 months", "18 months", "24 months"], 1),
+        ("Mandatory document for gold loan?", ["Aadhaar", "PAN", "Both", "Passport"], 2),
+        ("How is loan amount calculated?", ["Weight x Rate", "Market Value", "LTV Ratio", "All of above"], 3),
+        ("What if EMI not paid for 6 months?", ["Notice", "Auction", "Penalty", "Restructure"], 1),
+        ("Can customer take top-up loan?", ["Yes", "No", "After 6 months", "Only once"], 0),
+        ("Interest calculation method?", ["Flat", "Reducing Balance", "Simple", "Compound"], 1),
+        ("Permitted use of gold loan funds?", ["Business", "Personal", "Any purpose", "Education"], 2),
+        ("Minimum gold loan amount?", ["5,000", "10,000", "15,000", "20,000"], 1),
+        ("How often to re-value gold?", ["Monthly", "Quarterly", "Half-yearly", "Yearly"], 2),
+        ("Which gold is NOT accepted?", ["22K", "24K", "18K", "Ornaments only"], 0),
+        ("Late payment penalty?", ["1%", "2%", "5%", "No penalty"], 1),
+        ("What is required to release gold?", ["ID Proof", "Full Payment", "Both", "Settlement Letter"], 2),
+    ]
+    for mid, title, difficulty, qs in [
+        (1, "Product Knowledge - Two Wheeler Loans", "Medium", two_wheeler_qs),
+        (2, "Gold Loan Policy Refresher", "Hard", gold_loan_qs),
+    ]:
+        c.execute("INSERT OR IGNORE INTO modules (id, title, questions_count, created_at, status, created_by, difficulty) VALUES (?,?,?,?,'Ready','ADMIN',?)", (mid, title, len(qs), now, difficulty))
+        for i, (q_text, opts, correct_idx) in enumerate(qs):
+            qid = mid * 100 + i + 1
+            c.execute("INSERT OR IGNORE INTO questions (id,module_id,question_text,option_a,option_b,option_c,option_d,correct_index,approved) VALUES (?,?,?,?,?,?,?,?,?)",
+                      (qid, mid, q_text, opts[0], opts[1], opts[2], opts[3], correct_idx, 1))
     conn.commit()
     conn.close()
-    print(f"[SEED] Inserted {len(demo_emps)} employees, 3 trainers, 2 modules, {len(demo_qs)} questions")
+    total_qs = len(two_wheeler_qs) + len(gold_loan_qs)
+    print(f"[SEED] Inserted {len(demo_emps)} employees, 3 trainers, 2 modules, {total_qs} questions")
 
 seed_demo_data()
 
