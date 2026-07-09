@@ -888,9 +888,6 @@ def backup_db_to_gdrive():
     """
     global LAST_BACKUP_TIME
     import time
-    if os.environ.get('DATABASE_URL'):
-        return True
-
     service = get_gdrive_service()
     if not service:
         return False
@@ -964,11 +961,6 @@ def start_db_backup_daemon():
 
     def monitor_db():
         print("[GDRIVE-SYNC] Bidirectional database sync daemon started.")
-        if os.environ.get('DATABASE_URL'):
-            print("[GDRIVE-SYNC] PostgreSQL mode is active. Bidirectional SQLite file sync daemon will remain idle.")
-            while True:
-                time.sleep(3600)
-
         service = get_gdrive_service()
         
         last_local_mtime = 0
