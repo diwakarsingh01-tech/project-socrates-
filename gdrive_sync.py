@@ -332,13 +332,12 @@ def _build_drive_service():
         return None
     info = load_sa_json(sa_json)
     creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-    import httplib2
     with _original_socket_for_google():
         try:
-            http = creds.authorize(httplib2.Http(timeout=30))
-            return build('drive', 'v3', http=http, cache_discovery=False)
-        except Exception:
             return build('drive', 'v3', credentials=creds, cache_discovery=False)
+        except Exception as e2:
+            print(f"[GDRIVE-SYNC] build failed: {e2}")
+            return None
 
 def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions, source_text=""):
     """Saves a module to Google Drive using the Drive API."""
