@@ -337,7 +337,7 @@ def get_gdrive_service():
         return None
 
 def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions, source_text=""):
-    """Saves a module to Google Drive using the Drive API with a fresh httplib2 client."""
+    """Saves a module to Google Drive using the Drive API."""
     folder_id = os.environ.get('GD_FOLDER_ID')
     sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
     if not folder_id or not sa_json:
@@ -346,8 +346,12 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
         info = load_sa_json(sa_json)
         creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
         import httplib2
-        http = creds.authorize(httplib2.Http(timeout=30))
-        service = build('drive', 'v3', http=http, cache_discovery=False)
+        with _original_socket_for_google():
+            try:
+                http = creds.authorize(httplib2.Http(timeout=30))
+                service = build('drive', 'v3', http=http, cache_discovery=False)
+            except Exception:
+                service = build('drive', 'v3', credentials=creds, cache_discovery=False)
 
         filename = f"{title}.json"
         payload = {"title": title, "difficulty": difficulty, "status": status,
@@ -355,7 +359,7 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
                    "source_text": source_text, "questions": questions}
 
         query = f"name = '{title}.json' and '{folder_id}' in parents and trashed = false"
-        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=10).execute()
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=10, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
         files = results.get('files', [])
 
         json_bytes = json.dumps(payload, indent=2).encode('utf-8')
@@ -364,11 +368,11 @@ def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, que
         if files:
             file_id = files[0]['id']
             print(f"[GDRIVE-SYNC] Updating existing file '{filename}'")
-            service.files().update(fileId=file_id, media_body=media).execute()
+            service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
         else:
             file_metadata = {'name': filename, 'parents': [folder_id]}
             print(f"[GDRIVE-SYNC] Creating new file '{filename}'")
-            service.files().create(body=file_metadata, media_body=media).execute()
+            service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
 
         print(f"[GDRIVE-SYNC] Synced '{title}' to Drive")
         return True
