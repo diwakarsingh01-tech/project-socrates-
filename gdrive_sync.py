@@ -337,60 +337,43 @@ def get_gdrive_service():
         return None
 
 def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions, source_text=""):
-    """
-    Saves a module's full JSON representation to Google Drive.
-    If the file [title].json already exists in the designated folder, it is updated.
-    Otherwise, a new file is created.
-    """
-    service = get_gdrive_service()
-    if not service:
-        print(f"[GDRIVE-SYNC] Skipping Google Drive sync for '{title}' (service not initialized).")
-        return False
-
+    """Saves a module to Google Drive using the Drive API with a fresh httplib2 client."""
     folder_id = os.environ.get('GD_FOLDER_ID')
-    filename = f"{title}.json"
-
-    # Construct clean payload representing the full module state
-    payload = {
-        "title": title,
-        "difficulty": difficulty,
-        "status": status,
-        "created_by": created_by,
-        "audited_by": audited_by,
-        "source_text": source_text,
-        "questions": questions
-    }
-
+    sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    if not folder_id or not sa_json:
+        return False
     try:
-        with _original_socket_for_google():
-            # 1. Search for existing file with the exact name in the folder
-            escaped_title = title.replace("'", "\\'")
-            query = f"name = '{escaped_title}.json' and '{folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            files = results.get('files', [])
+        info = load_sa_json(sa_json)
+        creds = service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+        import httplib2
+        http = creds.authorize(httplib2.Http(timeout=30))
+        service = build('drive', 'v3', http=http, cache_discovery=False)
 
-            # 2. Encode payload as binary bytes
-            json_bytes = json.dumps(payload, indent=2, ensure_ascii=False).encode('utf-8')
-            media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=True)
+        filename = f"{title}.json"
+        payload = {"title": title, "difficulty": difficulty, "status": status,
+                   "created_by": created_by, "audited_by": audited_by,
+                   "source_text": source_text, "questions": questions}
 
-            if files:
-                # Update existing file
-                file_id = files[0]['id']
-                print(f"[GDRIVE-SYNC] Updating existing module file '{filename}' (ID: {file_id}) in Google Drive.")
-                service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
-            else:
-                # Create new file
-                file_metadata = {
-                    'name': filename,
-                    'parents': [folder_id]
-                }
-                print(f"[GDRIVE-SYNC] Creating new module file '{filename}' in Google Drive.")
-                service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
+        query = f"name = '{title}.json' and '{folder_id}' in parents and trashed = false"
+        results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=10).execute()
+        files = results.get('files', [])
 
-        print(f"[GDRIVE-SYNC] Successfully synchronized '{title}' to Google Drive.")
+        json_bytes = json.dumps(payload, indent=2).encode('utf-8')
+        media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=True)
+
+        if files:
+            file_id = files[0]['id']
+            print(f"[GDRIVE-SYNC] Updating existing file '{filename}'")
+            service.files().update(fileId=file_id, media_body=media).execute()
+        else:
+            file_metadata = {'name': filename, 'parents': [folder_id]}
+            print(f"[GDRIVE-SYNC] Creating new file '{filename}'")
+            service.files().create(body=file_metadata, media_body=media).execute()
+
+        print(f"[GDRIVE-SYNC] Synced '{title}' to Drive")
         return True
     except Exception as e:
-        print(f"[GDRIVE-SYNC] Error synchronizing '{title}' to Google Drive: {str(e)}")
+        print(f"[GDRIVE-SYNC] Error syncing '{title}': {str(e)}")
         return False
 
 def delete_module_from_gdrive(title):

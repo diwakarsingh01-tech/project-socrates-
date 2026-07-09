@@ -2375,9 +2375,10 @@ def handle_modules():
         conn.close()
         try:
             from gdrive_sync import sync_module_to_gdrive
-            sync_module_to_gdrive(data['title'], data.get('difficulty', 'Medium'), 'Ready', trainer_id, audited_by, [], "")
+            ok = sync_module_to_gdrive(data['title'], data.get('difficulty', 'Medium'), 'Ready', trainer_id, audited_by, [], "")
+            print(f"[GDRIVE-SYNC] Module sync {'succeeded' if ok else 'FAILED'}")
         except Exception as e:
-            print(f"[GDRIVE-SYNC] Module sync failed: {str(e)}")
+            print(f"[GDRIVE-SYNC] Module sync exception: {str(e)}")
         return jsonify({"status": "success"})
 
 @app.route('/api/modules/<int:module_id>', methods=['DELETE'])
