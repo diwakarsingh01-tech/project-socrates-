@@ -16,6 +16,7 @@ except ImportError:
 
 SCOPES = ['https://www.googleapis.com/auth/drive']
 DB_FILE = "socrates.db"
+GCS_BUCKET = os.environ.get('GCS_BACKUP_BUCKET', '')
 
 # --- POSTGRESQL WRAPPER FOR SQLITE COMPATIBILITY ---
 class PostgresRow:
@@ -339,48 +340,138 @@ def _build_drive_service():
             print(f"[GDRIVE-SYNC] build failed: {e2}")
             return None
 
-def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions, source_text=""):
-    """Saves a module to Google Drive using the Drive API."""
-    folder_id = os.environ.get('GD_FOLDER_ID')
-    if not folder_id:
+def _get_gcs_bucket():
+    """Get or create a GCS bucket for persistence."""
+    if not GCS_LIBS_AVAILABLE:
+        print("[GCS] google-cloud-storage not available")
+        return None
+    sa_json = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
+    if not sa_json:
+        print("[GCS] No service account JSON")
+        return None
+    info = load_sa_json(sa_json)
+    try:
+        creds = service_account.Credentials.from_service_account_info(info)
+        client = gcs_storage.Client(credentials=creds, project=info.get('project_id'))
+        bucket_name = GCS_BUCKET or f"socrates-backup-{info.get('project_id', 'default')}"
+        try:
+            bucket = client.get_bucket(bucket_name)
+            print(f"[GCS] Using existing bucket: {bucket_name}")
+        except Exception:
+            print(f"[GCS] Creating bucket: {bucket_name}")
+            bucket = client.create_bucket(bucket_name, location='US')
+        return bucket
+    except Exception as e:
+        print(f"[GCS] Error initializing bucket: {e}")
+        return None
+
+def backup_db_to_gcs():
+    """Upload socrates.db to GCS."""
+    bucket = _get_gcs_bucket()
+    if not bucket:
         return False
     try:
-        with _original_socket_for_google():
-            service = _build_drive_service()
-            if not service:
-                return False
-
-            filename = f"{title}.json"
-            payload = {"title": title, "difficulty": difficulty, "status": status,
-                       "created_by": created_by, "audited_by": audited_by,
-                       "source_text": source_text, "questions": questions}
-
-            query = f"name = '{title}.json' and '{folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=10, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-            files = results.get('files', [])
-
-            json_bytes = json.dumps(payload, indent=2).encode('utf-8')
-            media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=False)
-
-            try:
-                if files:
-                    file_id = files[0]['id']
-                    print(f"[GDRIVE-SYNC] Updating existing file '{filename}'")
-                    resp = service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True, fields='id').execute()
-                else:
-                    file_metadata = {'name': filename, 'parents': [folder_id]}
-                    print(f"[GDRIVE-SYNC] Creating new file '{filename}'")
-                    resp = service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True, fields='id').execute()
-                print(f"[GDRIVE-SYNC] API response: id={resp.get('id','?')}")
-            except Exception as api_e:
-                print(f"[GDRIVE-SYNC] API call failed: {api_e}")
-                raise
-
-        print(f"[GDRIVE-SYNC] Synced '{title}' to Drive")
+        blob = bucket.blob('socrates.db')
+        blob.upload_from_filename(DB_FILE)
+        print(f"[GCS] Database backed up ({os.path.getsize(DB_FILE)} bytes)")
         return True
     except Exception as e:
-        print(f"[GDRIVE-SYNC] Error syncing '{title}': {str(e)}")
+        print(f"[GCS] Backup failed: {e}")
         return False
+
+def restore_db_from_gcs():
+    """Download socrates.db from GCS if available."""
+    bucket = _get_gcs_bucket()
+    if not bucket:
+        return False
+    try:
+        blob = bucket.blob('socrates.db')
+        if not blob.exists():
+            print("[GCS] No backup found in bucket")
+            return False
+        blob.download_to_filename(DB_FILE)
+        print(f"[GCS] Database restored ({os.path.getsize(DB_FILE)} bytes)")
+        return True
+    except Exception as e:
+        print(f"[GCS] Restore failed: {e}")
+        return False
+
+def backup_module_to_gcs(title, payload):
+    """Upload a module JSON to GCS."""
+    bucket = _get_gcs_bucket()
+    if not bucket:
+        return False
+    try:
+        blob = bucket.blob(f"modules/{title}.json")
+        blob.upload_from_string(json.dumps(payload, indent=2), content_type='application/json')
+        print(f"[GCS] Module '{title}' backed up")
+        return True
+    except Exception as e:
+        print(f"[GCS] Module backup failed: {e}")
+        return False
+
+def fetch_modules_from_gcs():
+    """List all module files from GCS."""
+    bucket = _get_gcs_bucket()
+    if not bucket:
+        return {}
+    try:
+        blobs = bucket.list_blobs(prefix='modules/')
+        result = {}
+        for blob in blobs:
+            title = blob.name.replace('modules/', '').replace('.json', '')
+            data = json.loads(blob.download_as_string())
+            result[title] = data
+        return result
+    except Exception as e:
+        print(f"[GCS] Fetch modules failed: {e}")
+        return {}
+
+def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions, source_text=""):
+    """Saves a module to Google Drive AND GCS for persistence."""
+    folder_id = os.environ.get('GD_FOLDER_ID')
+    ok = False
+    if folder_id:
+        try:
+            with _original_socket_for_google():
+                service = _build_drive_service()
+                if service:
+                    filename = f"{title}.json"
+                    payload = {"title": title, "difficulty": difficulty, "status": status,
+                               "created_by": created_by, "audited_by": audited_by,
+                               "source_text": source_text, "questions": questions}
+
+                    query = f"name = '{title}.json' and '{folder_id}' in parents and trashed = false"
+                    results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=10, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+                    files = results.get('files', [])
+
+                    json_bytes = json.dumps(payload, indent=2).encode('utf-8')
+                    media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=False)
+
+                    try:
+                        if files:
+                            file_id = files[0]['id']
+                            print(f"[GDRIVE-SYNC] Updating existing file '{filename}'")
+                            resp = service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True, fields='id').execute()
+                        else:
+                            file_metadata = {'name': filename, 'parents': [folder_id]}
+                            print(f"[GDRIVE-SYNC] Creating new file '{filename}'")
+                            resp = service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True, fields='id').execute()
+                        print(f"[GDRIVE-SYNC] API response: id={resp.get('id','?')}")
+                        ok = True
+                    except Exception as api_e:
+                        print(f"[GDRIVE-SYNC] API call failed (non-fatal): {api_e}")
+        except Exception as e:
+            print(f"[GDRIVE-SYNC] Error syncing '{title}' to Drive: {str(e)}")
+
+    # Always also backup to GCS as primary persistence
+    payload = {"title": title, "difficulty": difficulty, "status": status,
+               "created_by": created_by, "audited_by": audited_by,
+               "source_text": source_text, "questions": questions}
+    gcs_ok = backup_module_to_gcs(title, payload)
+
+    print(f"[GDRIVE-SYNC] Synced '{title}' — Drive:{ok} GCS:{gcs_ok}")
+    return ok or gcs_ok
 
 def delete_module_from_gdrive(title):
     """
@@ -816,10 +907,62 @@ def sync_trainers_from_gdrive(conn=None):
         print(f"[GDRIVE-SYNC] Error restoring trainers from Google Drive: {str(e)}")
         return False
 
+def _restore_from_drive(conn):
+    """Restore trainers, roster, modules from Drive JSON files."""
+    try:
+        sync_trainers_from_gdrive(conn)
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Trainers restore from Drive skipped: {str(e)}")
+    try:
+        sync_roster_from_gdrive(conn)
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Roster restore from Drive skipped: {str(e)}")
+    try:
+        sync_modules_from_gdrive(conn)
+    except Exception as e:
+        print(f"[GDRIVE-SYNC] Modules restore from Drive skipped: {str(e)}")
+
+def _restore_from_gcs(conn):
+    """Restore modules from GCS JSON files (trainers/roster use the full DB backup)."""
+    if restore_db_from_gcs():
+        # Full DB was restored from GCS, so modules/trainers/roster are already in it
+        return True
+    # Fallback: try individual module files from GCS
+    modules = fetch_modules_from_gcs()
+    if modules:
+        cursor = conn.cursor()
+        for title, payload in modules.items():
+            try:
+                cursor.execute("SELECT id FROM modules WHERE title=?", (title,))
+                existing = cursor.fetchone()
+                payload.setdefault('source_text', '')
+                if existing:
+                    cursor.execute("UPDATE modules SET difficulty=?, status=?, audited_by=?, source_text=? WHERE id=?",
+                                   (payload.get('difficulty', 'Medium'), payload.get('status', 'Ready'),
+                                    payload.get('audited_by', 'Awaiting Audit'), payload.get('source_text', ''), existing['id']))
+                else:
+                    now = datetime.datetime.now().strftime("%Y-%m-%d")
+                    cursor.execute("INSERT INTO modules (title, questions_count, created_at, status, created_by, audited_by, difficulty, source_text) VALUES (?,?,?,?,?,?,?,?)",
+                                   (title, len(payload.get('questions', [])), now, payload.get('status', 'Ready'),
+                                    payload.get('created_by', 'ADMIN'), payload.get('audited_by', 'Awaiting Audit'),
+                                    payload.get('difficulty', 'Medium'), payload.get('source_text', '')))
+                    mid = cursor.lastrowid
+                if payload.get('questions'):
+                    q_mid = existing['id'] if existing else cursor.lastrowid
+                    cursor.execute("DELETE FROM questions WHERE module_id=?", (q_mid,))
+                    for qi, q in enumerate(payload['questions']):
+                        cursor.execute("INSERT INTO questions (module_id, question_text, option_a, option_b, option_c, option_d, correct_index, approved) VALUES (?,?,?,?,?,?,?,?)",
+                                       (q_mid, q.get('question_text', ''), q.get('option_a', ''), q.get('option_b', ''),
+                                        q.get('option_c', ''), q.get('option_d', ''), q.get('correct_index', 0), 1))
+                conn.commit()
+            except Exception as e:
+                print(f"[GCS] Error restoring module '{title}': {e}")
+        return True
+    return False
+
 def restore_db_from_gdrive():
     """
-    Restores the complete database structured contents from Google Drive JSON backup files.
-    Ensures that Rosters, Trainers, and Modules are rebuilt perfectly.
+    Restores the complete database from GCS first (primary), then Drive (secondary).
     """
     if os.environ.get('DATABASE_URL'):
         try:
@@ -832,40 +975,27 @@ def restore_db_from_gdrive():
             cursor.execute("SELECT COUNT(*) FROM modules")
             m_count = cursor.fetchone()[0]
             conn.close()
-            # If we have custom trainers (more than the default ADMIN), or any employees, or any custom modules,
-            # we consider the database populated. Otherwise, it is brand-new and should be seeded.
             if t_count > 1 or e_count > 0 or m_count > 0:
-                print("[GDRIVE-SYNC] PostgreSQL database is already populated. Skipping initial restore from Google Drive.")
+                print("[GDRIVE-SYNC] Database is already populated. Skipping initial restore.")
                 return True
         except Exception as e:
-            print(f"[GDRIVE-SYNC] Error checking PostgreSQL populate state: {str(e)}")
+            print(f"[GDRIVE-SYNC] Error checking populate state: {str(e)}")
 
-    print("[GDRIVE-SYNC] Rebuilding database tables from Google Drive structured backups...")
-    
+    print("[GDRIVE-SYNC] Trying GCS restore first...")
     conn = get_db_connection()
     try:
         conn.row_factory = sqlite3.Row
     except Exception:
         pass
-    
-    # 1. Pull trainers from Drive
-    try:
-        sync_trainers_from_gdrive(conn)
-    except Exception as e:
-        print(f"[GDRIVE-SYNC] Trainers restore skipped: {str(e)}")
-        
-    # 2. Pull employees roster from Drive
-    try:
-        sync_roster_from_gdrive(conn)
-    except Exception as e:
-        print(f"[GDRIVE-SYNC] Roster restore skipped: {str(e)}")
-        
-    # 3. Pull custom Socratic modules from Drive
-    try:
-        from gdrive_sync import sync_modules_from_gdrive
-        sync_modules_from_gdrive(conn)
-    except Exception as e:
-        print(f"[GDRIVE-SYNC] Modules restore skipped: {str(e)}")
+
+    if _restore_from_gcs(conn):
+        conn.close()
+        print("[GDRIVE-SYNC] Restored from GCS successfully.")
+        return True
+
+    print("[GDRIVE-SYNC] GCS empty, trying Drive restore...")
+    _restore_from_drive(conn)
+    conn.close()
         
     conn.close()
     print("[GDRIVE-SYNC] Database tables successfully restored and rebuilt from Google Drive.")
@@ -873,57 +1003,61 @@ def restore_db_from_gdrive():
 
 def backup_db_to_gdrive():
     """
-    Safely reads socrates.db and uploads/updates it on Google Drive.
+    Safely reads socrates.db and uploads/updates it on Google Drive AND GCS.
     Uses a Lock and cooldown to prevent overlapping or excessive operations.
     """
     global LAST_BACKUP_TIME
     import time
-    service = get_gdrive_service()
-    if not service:
-        return False
-
-    folder_id = os.environ.get('GD_FOLDER_ID')
-    filename = "socrates_backup.db"
 
     # Avoid backing up too frequently
     current_time = time.time()
     if current_time - LAST_BACKUP_TIME < BACKUP_COOLDOWN:
         return False
 
-    with DB_BACKUP_LOCK:
-        try:
-            if not os.path.exists(DB_FILE):
-                return False
+    if not os.path.exists(DB_FILE):
+        return False
 
-            with _original_socket_for_google():
-                query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
-                results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-                files = results.get('files', [])
+    # Always backup to GCS (primary persistence)
+    gcs_ok = backup_db_to_gcs()
+    drive_ok = False
 
-            with open(DB_FILE, 'rb') as f:
-                db_bytes = f.read()
+    # Also try Drive (secondary, might fail if no quota)
+    service = get_gdrive_service()
+    if service:
+        folder_id = os.environ.get('GD_FOLDER_ID')
+        filename = "socrates_backup.db"
+        with DB_BACKUP_LOCK:
+            try:
+                with _original_socket_for_google():
+                    query = f"name = '{filename}' and '{folder_id}' in parents and trashed = false"
+                    results = service.files().list(q=query, spaces='drive', fields='files(id, name)', supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+                    files = results.get('files', [])
 
-            media = MediaIoBaseUpload(io.BytesIO(db_bytes), mimetype='application/x-sqlite3', resumable=True)
+                with open(DB_FILE, 'rb') as f:
+                    db_bytes = f.read()
 
-            with _original_socket_for_google():
-                if files:
-                    file_id = files[0]['id']
-                    print(f"[GDRIVE-SYNC] Backing up socrates.db to Google Drive (updating existing file ID: {file_id})...")
-                    service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
-                else:
-                    file_metadata = {
-                        'name': filename,
-                        'parents': [folder_id]
-                    }
-                    print("[GDRIVE-SYNC] Backing up socrates.db to Google Drive (creating new backup)...")
-                    service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
+                media = MediaIoBaseUpload(io.BytesIO(db_bytes), mimetype='application/x-sqlite3', resumable=True)
 
-            LAST_BACKUP_TIME = time.time()
-            print("[GDRIVE-SYNC] Database backup to Google Drive completed successfully.")
-            return True
-        except Exception as e:
-            print(f"[GDRIVE-SYNC] Error backing up database to Google Drive: {str(e)}")
-            return False
+                with _original_socket_for_google():
+                    if files:
+                        file_id = files[0]['id']
+                        print(f"[GDRIVE-SYNC] Backing up socrates.db to Google Drive (updating existing file ID: {file_id})...")
+                        service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True).execute()
+                    else:
+                        file_metadata = {
+                            'name': filename,
+                            'parents': [folder_id]
+                        }
+                        print("[GDRIVE-SYNC] Backing up socrates.db to Google Drive (creating new backup)...")
+                        service.files().create(body=file_metadata, media_body=media, supportsAllDrives=True).execute()
+
+                drive_ok = True
+                print("[GDRIVE-SYNC] Database backup to Google Drive completed successfully.")
+            except Exception as e:
+                print(f"[GDRIVE-SYNC] Drive backup failed (non-fatal): {e}")
+
+    LAST_BACKUP_TIME = time.time()
+    return gcs_ok or drive_ok
 
 def start_db_backup_daemon():
     """
