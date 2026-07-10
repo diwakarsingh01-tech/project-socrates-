@@ -359,12 +359,17 @@ def _get_gcs_bucket():
         creds = service_account.Credentials.from_service_account_info(info)
         client = gcs_storage.Client(credentials=creds, project=info.get('project_id'))
         bucket_name = GCS_BUCKET or f"socrates-backup-{info.get('project_id', 'default')}"
-        try:
-            bucket = client.get_bucket(bucket_name)
-            print(f"[GCS] Using existing bucket: {bucket_name}")
-        except Exception:
-            print(f"[GCS] Creating bucket: {bucket_name}")
-            bucket = client.create_bucket(bucket_name, location='US')
+        with _original_socket_for_google():
+            try:
+                bucket = client.get_bucket(bucket_name)
+                print(f"[GCS] Using existing bucket: {bucket_name}")
+            except Exception:
+                print(f"[GCS] Attempting to create bucket: {bucket_name}")
+                try:
+                    bucket = client.create_bucket(bucket_name, location='US')
+                except Exception as create_e:
+                    print(f"[GCS] Create bucket failed: {create_e}")
+                    return None
         return bucket
     except Exception as e:
         print(f"[GCS] Error initializing bucket: {e}")
@@ -377,7 +382,8 @@ def backup_db_to_gcs():
         return False
     try:
         blob = bucket.blob('socrates.db')
-        blob.upload_from_filename(DB_FILE)
+        with _original_socket_for_google():
+            blob.upload_from_filename(DB_FILE, timeout=20)
         print(f"[GCS] Database backed up ({os.path.getsize(DB_FILE)} bytes)")
         return True
     except Exception as e:
@@ -391,10 +397,11 @@ def restore_db_from_gcs():
         return False
     try:
         blob = bucket.blob('socrates.db')
-        if not blob.exists():
-            print("[GCS] No backup found in bucket")
-            return False
-        blob.download_to_filename(DB_FILE)
+        with _original_socket_for_google():
+            if not blob.exists(timeout=10):
+                print("[GCS] No backup found in bucket")
+                return False
+            blob.download_to_filename(DB_FILE, timeout=20)
         print(f"[GCS] Database restored ({os.path.getsize(DB_FILE)} bytes)")
         return True
     except Exception as e:
@@ -408,7 +415,8 @@ def backup_module_to_gcs(title, payload):
         return False
     try:
         blob = bucket.blob(f"modules/{title}.json")
-        blob.upload_from_string(json.dumps(payload, indent=2), content_type='application/json')
+        with _original_socket_for_google():
+            blob.upload_from_string(json.dumps(payload, indent=2), content_type='application/json', timeout=20)
         print(f"[GCS] Module '{title}' backed up")
         return True
     except Exception as e:
@@ -421,12 +429,13 @@ def fetch_modules_from_gcs():
     if not bucket:
         return {}
     try:
-        blobs = bucket.list_blobs(prefix='modules/')
+        with _original_socket_for_google():
+            blobs = list(bucket.list_blobs(prefix='modules/'))
         result = {}
         for blob in blobs:
-            title = blob.name.replace('modules/', '').replace('.json', '')
-            data = json.loads(blob.download_as_string())
-            result[title] = data
+            with _original_socket_for_google():
+                data = blob.download_as_string(timeout=20)
+            result[blob.name.replace('modules/', '').replace('.json', '')] = json.loads(data)
         return result
     except Exception as e:
         print(f"[GCS] Fetch modules failed: {e}")
