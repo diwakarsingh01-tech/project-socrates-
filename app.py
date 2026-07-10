@@ -5151,7 +5151,6 @@ def persistence_status():
     db_url = os.environ.get('DATABASE_URL')
     gd_folder = os.environ.get('GD_FOLDER_ID')
     gd_sa = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON')
-    gcs_bucket = os.environ.get('GCS_BACKUP_BUCKET', '')
     gd_libs = False
     gcs_libs = False
     try:
@@ -5160,23 +5159,14 @@ def persistence_status():
         gd_libs = True
     except ImportError:
         pass
-    try:
-        from google.cloud import storage
-        gcs_libs = True
-    except ImportError:
-        pass
-    has_gcs = bool(gcs_bucket or (gd_sa and gcs_libs))
     return jsonify({
         "has_db_url": bool(db_url),
         "has_gd_folder": bool(gd_folder),
         "has_gd_sa": bool(gd_sa),
         "has_gd_libs": gd_libs,
-        "has_gcs_libs": gcs_libs,
-        "has_gcs_bucket": bool(gcs_bucket),
         "drive_configured": bool(gd_folder and gd_sa and gd_libs),
-        "gcs_available": has_gcs,
         "db_type": "postgresql" if db_url else "sqlite",
-        "ephemeral_warning": not bool(db_url) and not (gd_folder and gd_sa and gd_libs) and not has_gcs
+        "ephemeral_warning": not bool(db_url) and not (gd_folder and gd_sa and gd_libs)
     })
 
 if __name__ == '__main__':
