@@ -17,6 +17,11 @@ except ImportError:
 SCOPES = ['https://www.googleapis.com/auth/drive']
 DB_FILE = "socrates.db"
 GCS_BUCKET = os.environ.get('GCS_BACKUP_BUCKET', '')
+try:
+    from google.cloud import storage as gcs_storage
+    GCS_LIBS_AVAILABLE = True
+except ImportError:
+    GCS_LIBS_AVAILABLE = False
 
 # --- POSTGRESQL WRAPPER FOR SQLITE COMPATIBILITY ---
 class PostgresRow:
