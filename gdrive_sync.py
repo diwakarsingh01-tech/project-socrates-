@@ -440,38 +440,41 @@ def fetch_modules_from_appdata():
     return result
 
 def sync_module_to_gdrive(title, difficulty, status, created_by, audited_by, questions, source_text=""):
-    """Saves a module to Drive appdata folder (primary) + visible Drive folder (if writable)."""
+    """Saves a module to Drive for persistence. Runs Drive calls in background thread."""
     payload = {"title": title, "difficulty": difficulty, "status": status,
                "created_by": created_by, "audited_by": audited_by,
                "source_text": source_text, "questions": questions}
 
-    # Primary: appdata folder (always works)
-    appdata_ok = backup_module_to_appdata(title, payload)
-
-    # Secondary: visible Drive folder (may fail if no storage quota)
-    drive_ok = False
-    folder_id = os.environ.get('GD_FOLDER_ID')
-    if folder_id:
+    def _do_sync():
+        # Try appdata folder first
+        try:
+            backup_module_to_appdata(title, payload)
+        except Exception:
+            pass
+        # Try visible Drive folder
+        folder_id = os.environ.get('GD_FOLDER_ID')
+        if not folder_id:
+            return
         try:
             with _original_socket_for_google():
                 service = _build_drive_service()
-                if service:
-                    filename = f"{title}.json"
-                    query = f"name = '{title}.json' and '{folder_id}' in parents and trashed = false"
-                    results = service.files().list(q=query, spaces='drive', fields='files(id, name)', pageSize=10, supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
-                    files = results.get('files', [])
-                    json_bytes = json.dumps(payload, indent=2).encode('utf-8')
-                    media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=False)
-                    if files:
-                        service.files().update(fileId=files[0]['id'], media_body=media, supportsAllDrives=True, fields='id').execute()
-                    else:
-                        service.files().create(body={'name': filename, 'parents': [folder_id]}, media_body=media, supportsAllDrives=True, fields='id').execute()
-                    drive_ok = True
+                if not service:
+                    return
+                q = f"name = '{title}.json' and '{folder_id}' in parents and trashed = false"
+                files = service.files().list(q=q, spaces='drive', fields='files(id, name)', pageSize=10, supportsAllDrives=True, includeItemsFromAllDrives=True).execute().get('files', [])
+                json_bytes = json.dumps(payload, indent=2).encode('utf-8')
+                media = MediaIoBaseUpload(io.BytesIO(json_bytes), mimetype='application/json', resumable=False)
+                if files:
+                    service.files().update(fileId=files[0]['id'], media_body=media, supportsAllDrives=True, fields='id').execute()
+                else:
+                    service.files().create(body={'name': f'{title}.json', 'parents': [folder_id]}, media_body=media, supportsAllDrives=True, fields='id').execute()
         except Exception as e:
-            print(f"[GDRIVE-SYNC] Drive folder sync failed (non-fatal): {e}")
+            print(f"[GDRIVE-SYNC] Drive sync failed (background): {e}")
 
-    print(f"[GDRIVE-SYNC] Synced '{title}' — appdata:{appdata_ok} drive:{drive_ok}")
-    return appdata_ok or drive_ok
+    import threading
+    t = threading.Thread(target=_do_sync, daemon=True)
+    t.start()
+    return True
 
 def delete_module_from_gdrive(title):
     """
