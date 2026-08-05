@@ -468,6 +468,23 @@ background: rgba(217,119,6,0.1);
                                         </select>
                                     </div>
                                 )}
+
+                                {/* Compact DB Persistence Indicator Pill */}
+                                <div 
+                                    className={`hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black border transition-all shadow-sm ${
+                                        dbDiag?.connection_error || dbDiag?.is_ephemeral 
+                                            ? 'bg-rose-50 border-rose-200 text-rose-700' 
+                                            : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                                    }`}
+                                    title={dbDiag?.connection_error ? `DB Error: ${dbDiag.connection_error}` : "Local Storage Active (socrates.db)"}
+                                >
+                                    <span className="relative flex h-2 w-2">
+                                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${dbDiag?.connection_error || dbDiag?.is_ephemeral ? 'bg-rose-400' : 'bg-emerald-400'}`}></span>
+                                        <span className={`relative inline-flex rounded-full h-2 w-2 ${dbDiag?.connection_error || dbDiag?.is_ephemeral ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
+                                    </span>
+                                    <i className="fas fa-database text-[10px]"></i>
+                                    <span>{dbDiag?.connection_error ? 'DB ERR' : 'socrates.db'}</span>
+                                </div>
                             </div>
                             <div className="flex items-center gap-2 md:gap-4 shrink-0">
                                 {view === 'roster' && (
@@ -667,174 +684,6 @@ modules_count: 0,
 
             return (
                 <div>
-                    {/* Google Drive Synchronization Health and Retention Banner */}
-                    <div className="mb-8 animate-fade-in">
-                        {dbDiag?.database_type === 'Checking...' || dbDiag?.connection_status === 'Checking...' ? (
-                            <div className="card p-5 bg-slate-50/50 border border-slate-200/50 relative overflow-hidden shadow-sm rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-pulse">
-                                <div className="flex items-start gap-4 min-w-0 w-full">
-                                    <div className="w-10 h-10 rounded-xl bg-slate-200/60 flex items-center justify-center shrink-0">
-                                        <i className="fas fa-spinner fa-spin text-slate-400"></i>
-                                    </div>
-                                    <div className="min-w-0 flex-1 py-1">
-                                        <div className="h-4 bg-slate-200/60 rounded w-1/4 mb-2"></div>
-                                        <div className="h-3 bg-slate-200/60 rounded w-2/3"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : dbDiag?.database_type === 'PostgreSQL' ? (
-                            dbDiag.connection_status === 'Connected' ? (
-
-<div className="card p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border-l-4 border-l-emerald-500 relative overflow-hidden group shadow-sm rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in">
-                                    <div className="flex items-start gap-4 min-w-0">
-                                        <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg border border-emerald-100 shadow-sm shrink-0"><i className="fas fa-database"></i></div>
-                                        <div className="min-w-0">
-                                            <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-0.5 flex items-center gap-2">
-                                                <span className="relative flex h-2 w-2 shrink-0">
-                                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                                </span>
-                                                Cloud Database Persistence Active (Supabase)
-                                            </h3>
-                                            <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-4xl">
-                                                Socrates is fully connected to your secure, persistent online database. All uploaded rosters, trainer profiles, custom Socratic modules, and trainee analytics are permanently retained across all server recycles and daily resets.
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="shrink-0 flex items-center gap-2 bg-emerald-50/50 border border-emerald-200/30 px-3 py-1.5 rounded-xl text-[11px] text-emerald-700 font-bold shadow-sm">
-                                        <i className="fas fa-check-circle"></i>
-                                        <span>Cloud Secure Connection Active</span>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="card p-6 bg-gradient-to-r from-red-500/10 to-pink-500/5 border-l-4 border-l-red-500 relative overflow-hidden group shadow-sm rounded-2xl animate-fade-in">
-                                    <div className="absolute right-4 top-4 w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-xl shadow-sm border border-red-100/50"><i className="fas fa-exclamation-triangle"></i></div>
-                                    <h3 className="font-bold text-slate-800 text-sm md:text-base tracking-tight mb-1 flex items-center gap-2">
-                                        <span className="relative flex h-2.5 w-2.5 shrink-0">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                                        </span>
-                                        Cloud Database Connection Failed!
-                                    </h3>
-                                    <p className="text-xs text-slate-500 font-medium max-w-3xl leading-relaxed">
-                                        Socrates is configured to use a cloud database, but a connection could not be established. Falling back to temporary local storage.
-                                        {dbDiag?.connection_error && (
-                                            <span className="block mt-2 font-mono bg-red-100 text-red-800 p-2 rounded text-[11px] select-all max-w-full overflow-x-auto">
-                                                Connection Error: {dbDiag.connection_error}
-                                            </span>
-                                        )}
-                                    </p>
-                                </div>
-                            )
-                        ) : (dbDiag?.database_type === 'SQLite' && !dbDiag?.is_ephemeral) ? (
-
-<div className="card p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border-l-4 border-l-emerald-500 relative overflow-hidden group shadow-sm rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in">
-                                <div className="flex items-start gap-4 min-w-0">
-                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg border border-emerald-100 shadow-sm shrink-0"><i className="fas fa-database"></i></div>
-                                    <div className="min-w-0">
-                                        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-0.5 flex items-center gap-2">
-                                            <span className="relative flex h-2 w-2 shrink-0">
-                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                            </span>
-                                            Local Persistent Storage Active (socrates.db)
-                                        </h3>
-                                        <p className="text-xs text-slate-500 font-medium leading-relaxed max-w-4xl">
-                                            Socrates is running in local development mode on your machine. All uploaded rosters, trainer profiles, Socratic modules, and trainee analytics are permanently saved to your local database file and will never be lost on restart.
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="shrink-0 flex items-center gap-2 bg-emerald-50/50 border border-emerald-200/30 px-3 py-1.5 rounded-xl text-[11px] text-emerald-700 font-bold shadow-sm">
-                                    <i className="fas fa-check-circle"></i>
-                                    <span>Local Safe Persistence Active</span>
-                                </div>
-                            </div>
-                        ) : (!syncStatus.configured && !hideSyncWarnings) ? (
-                            <div className="card p-6 bg-gradient-to-r from-amber-500/10 to-orange-500/5 border-l-4 border-l-amber-500 relative overflow-hidden group shadow-sm rounded-2xl">
-                                <button 
-                                    onClick={() => { localStorage.setItem('socrates_hide_sync_warnings', 'true'); setHideSyncWarnings(true); }} 
-                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/30 w-6 h-6 rounded-full flex items-center justify-center transition-colors z-20"
-                                    title="Dismiss Warning"
-                                >
-                                    <i className="fas fa-times text-[10px]"></i>
-                                </button>
-                                <div className="absolute right-4 top-4 w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-xl shadow-sm border border-amber-100/50"><i className="fas fa-exclamation-triangle"></i></div>
-                                <h3 className="font-bold text-slate-800 text-sm md:text-base tracking-tight mb-1 flex items-center gap-2">
-                                    <span className="relative flex h-2.5 w-2.5 shrink-0">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
-                                    </span>
-                                    Roster & Module Retention Inactive (Local Database Only)
-                                </h3>
-                                <p className="text-xs text-slate-500 font-medium max-w-3xl leading-relaxed">
-
-Socrates is running on temporary cloud container storage. Since the Google Drive Folder integration is not configured, all uploaded rosters, custom trainer profiles, and Socratic modules will be **lost forever** upon the next daily server restart.
-                                </p>
-                                <div className="mt-4 flex flex-col lg:flex-row gap-3 items-start lg:items-center bg-white/70 backdrop-blur-sm border border-amber-200/40 rounded-xl p-3.5 text-xs text-slate-600 font-semibold shadow-inner">
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <i className="fas fa-cog text-amber-600 text-sm shrink-0"></i>
-                                        <span>To enable sync: add <code className="bg-amber-100 px-1.5 py-0.5 rounded text-amber-800 font-mono font-bold">GD_FOLDER_ID</code> to environment variables and share folder with:</span>
-                                    </div>
-                                    <code className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-socrates-primary font-mono text-[11px] select-all truncate max-w-full lg:max-w-none">
-                                        socrates-sync@skillful-octane-494413-a5.iam.gserviceaccount.com
-                                    </code>
-                                </div>
-                            </div>
-                        ) : (!syncStatus.connected && !hideSyncWarnings) ? (
-                            <div className="card p-6 bg-gradient-to-r from-red-500/10 to-pink-500/5 border-l-4 border-l-red-500 relative overflow-hidden group shadow-sm rounded-2xl">
-                                <button 
-                                    onClick={() => { localStorage.setItem('socrates_hide_sync_warnings', 'true'); setHideSyncWarnings(true); }} 
-                                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200/30 w-6 h-6 rounded-full flex items-center justify-center transition-colors z-20"
-                                    title="Dismiss Warning"
-                                >
-                                    <i className="fas fa-times text-[10px]"></i>
-                                </button>
-                                <div className="absolute right-4 top-4 w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center text-xl shadow-sm border border-red-100/50"><i className="fas fa-exclamation-circle"></i></div>
-                                <h3 className="font-bold text-slate-800 text-sm md:text-base tracking-tight mb-1 flex items-center gap-2">
-                                    <span className="relative flex h-2.5 w-2.5 shrink-0">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                                    </span>
-                                    Google Drive Configured but Unreachable!
-                                </h3>
-                                <p className="text-xs text-slate-500 font-medium max-w-3xl leading-relaxed">
-                                    A folder ID is set (<span className="font-mono bg-red-100 text-red-800 px-1 rounded font-bold">{syncStatus.folder_id}</span>), but the service account does not have access or the folder does not exist.
-                                </p>
-                                <div className="mt-4 flex flex-col lg:flex-row gap-3 items-start lg:items-center bg-white/70 backdrop-blur-sm border border-red-200/40 rounded-xl p-3.5 text-xs text-slate-600 font-semibold shadow-inner">
-                                    <div className="flex items-center gap-2 shrink-0">
-                                        <i className="fas fa-share-alt text-red-600 text-sm shrink-0"></i>
-                                        <span>CRITICAL STEP: Go to Google Drive, right-click your folder, click **Share**, and grant **Editor** access to:</span>
-                                    </div>
-                                    <code className="bg-slate-100 border border-slate-200 px-2 py-0.5 rounded text-socrates-primary font-mono text-[11px] select-all truncate max-w-full lg:max-w-none">
-
-{syncStatus.service_account_email}
-                                    </code>
-                                </div>
-                            </div>
-                        ) : (syncStatus.configured && syncStatus.connected) ? (
-                            <div className="card p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/5 border-l-4 border-l-emerald-500 relative overflow-hidden group shadow-sm rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                                <div className="flex items-start gap-4 min-w-0">
-                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-lg border border-emerald-100 shadow-sm shrink-0"><i className="fas fa-cloud-check"></i></div>
-                                    <div className="min-w-0">
-                                        <h3 className="font-bold text-slate-800 text-sm tracking-tight mb-0.5 flex items-center gap-2">
-                                            <span className="relative flex h-2 w-2 shrink-0">
-                                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                                            </span>
-                                            Google Drive Sync Active & Integrated
-                                        </h3>
-                                        <p className="text-[11px] text-slate-500 font-medium truncate">
-                                            Roster, trainers, and Socratic modules are backed up in real time to folder: <span className="font-mono font-bold text-emerald-700 bg-emerald-50/50 border border-emerald-200/50 px-1.5 py-0.5 rounded">{syncStatus.folder_id}</span>
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2.5 text-[11px] bg-white border border-slate-200/80 rounded-xl px-3 py-1.5 shadow-sm text-slate-500 font-bold shrink-0 self-end md:self-auto">
-                                    <i className="fas fa-history text-slate-400"></i>
-                                    <span>Last Sync: <span className="text-slate-800">{syncStatus.last_sync}</span></span>
-                                </div>
-                            </div>
-                        ) : null}
-                    </div>
-
                     <div className={`grid grid-cols-1 sm:grid-cols-2 ${(isSuperAdmin || isLeader) ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-6 mb-8 animate-fade-in`}>
                         {/* Session Stats */}
                         <div className="card p-6 border-l-4 border-l-amber-500 bg-white relative overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group">
