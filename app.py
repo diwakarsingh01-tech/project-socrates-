@@ -373,16 +373,25 @@ def bulk_upload_trainers():
 @app.route('/api/admin/reset-database', methods=['POST'])
 def reset_database():
     data = request.json or {}
+    mode = data.get('mode', 'full')
     conn = get_db_connection()
     try:
-        conn.execute("DELETE FROM employees")
-        conn.execute("DELETE FROM assessment_results")
-        conn.execute("DELETE FROM modules")
-        conn.execute("DELETE FROM questions")
-        conn.execute("DELETE FROM trainers WHERE UPPER(trainer_id) != 'ADMIN'")
+        if mode == 'demo_only':
+            conn.execute("DELETE FROM employees WHERE emp_code LIKE 'SF-100%' OR emp_code LIKE 'SF-99%' OR emp_code LIKE 'UNL-%' OR emp_code LIKE 'DIV-%'")
+            conn.execute("DELETE FROM trainers WHERE (trainer_id LIKE 'TR-100%' OR trainer_id LIKE 'TR-99%') AND UPPER(trainer_id) != 'ADMIN'")
+            conn.execute("DELETE FROM assessment_results WHERE emp_code LIKE 'SF-100%' OR emp_code LIKE 'SF-99%'")
+            msg = "Demo sample records cleared successfully!"
+        else:
+            conn.execute("DELETE FROM employees")
+            conn.execute("DELETE FROM assessment_results")
+            conn.execute("DELETE FROM modules")
+            conn.execute("DELETE FROM questions")
+            conn.execute("DELETE FROM trainers WHERE UPPER(trainer_id) != 'ADMIN'")
+            msg = "System database reset completed successfully to pristine clean slate!"
+            
         conn.commit()
         conn.close()
-        return jsonify({"status": "success", "message": "Database reset completed successfully."})
+        return jsonify({"status": "success", "message": msg})
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": f"Reset failed: {str(e)}"}), 500
