@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session, Response
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import sqlite3
 import os
@@ -59,10 +59,13 @@ def init_db():
         last_login TEXT
     )''')
     
-    # Add a default Super Admin if none exists
-    cursor.execute("SELECT * FROM trainers WHERE trainer_id='ADMIN'")
-    if not cursor.fetchone():
-        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin')")
+    # Add/Ensure default Super Admin account is present and active
+    cursor.execute("SELECT * FROM trainers WHERE UPPER(trainer_id)='ADMIN'")
+    admin_user = cursor.fetchone()
+    if not admin_user:
+        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin', 'Active')")
+    else:
+        cursor.execute("UPDATE trainers SET password='admin123', status='Active', role='SuperAdmin' WHERE UPPER(trainer_id)='ADMIN'")
     
     # Modules
     cursor.execute('''
@@ -144,23 +147,76 @@ def admin():
 
 # --- API ROUTES ---
 
-# 1. AUTHENTICATION
+# 1. AUTHENTICATION & DIAGNOSTICS
+@app.route('/api/admin/me', methods=['GET'])
+def admin_me():
+    if 'user' in session:
+        return jsonify({
+            "status": "success",
+            "user": session['user']
+        })
+    return jsonify({"status": "error", "message": "No active session"}), 401
+
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
-    data = request.json
-    trainer_id = data.get('trainer_id')
-    password = data.get('password')
+    data = request.json or {}
+    raw_id = str(data.get('trainer_id', '')).strip()
+    password = str(data.get('password', '')).strip()
     
+    if not raw_id or not password:
+        return jsonify({"status": "error", "message": "Please enter both Trainer ID and Password."}), 400
+        
     conn = get_db_connection()
-    user = conn.execute("SELECT * FROM trainers WHERE trainer_id=? AND password=?", (trainer_id, password)).fetchone()
+    user = conn.execute(
+        "SELECT * FROM trainers WHERE (UPPER(trainer_id)=UPPER(?) OR UPPER(name)=UPPER(?)) AND password=?",
+        (raw_id, raw_id, password)
+    ).fetchone()
+    
     if user:
+        if user['status'] and str(user['status']).lower() == 'inactive':
+            conn.close()
+            return jsonify({"status": "error", "message": "Account is inactive. Access revoked by Super Admin."}), 403
+            
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        conn.execute("UPDATE trainers SET last_login=? WHERE trainer_id=?", (now, trainer_id))
+        conn.execute("UPDATE trainers SET last_login=? WHERE trainer_id=?", (now, user['trainer_id']))
         conn.commit()
+        
+        user_data = {
+            "trainer_id": user['trainer_id'],
+            "name": user['name'],
+            "role": user['role']
+        }
+        session['user'] = user_data
         conn.close()
-        return jsonify({"status": "success", "role": user['role'], "name": user['name']})
+        
+        return jsonify({
+            "status": "success",
+            "role": user['role'],
+            "name": user['name'],
+            "user": {
+                "trainer_id": user['trainer_id'],
+                "name": user['name'],
+                "role": user['role']
+            }
+        })
+        
     conn.close()
     return jsonify({"status": "error", "message": "Invalid Credentials or Access Revoked"}), 401
+
+@app.route('/api/admin/logout', methods=['POST'])
+def admin_logout():
+    session.pop('user', None)
+    return jsonify({"status": "success", "message": "Logged out successfully"})
+
+@app.route('/api/admin/diagnostics', methods=['GET'])
+def admin_diagnostics():
+    return jsonify({
+        "status": "success",
+        "database_type": "SQLite3 (Embedded)",
+        "connection_status": "Connected",
+        "database_url": DB_FILE,
+        "connection_error": None
+    })
 
 # 2. TRAINER MANAGEMENT (Super Admin Only)
 @app.route('/api/trainers', methods=['GET', 'POST'])
