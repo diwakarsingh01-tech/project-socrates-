@@ -2624,6 +2624,13 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
             const [genLanguage, setGenLanguage] = useState('en');
             const [pastedText, setPastedText] = useState('');
 
+            // Exam Security & Timing Controls (FlexiQuiz Benchmarked)
+            const [timeLimit, setTimeLimit] = useState(15);
+            const [passPct, setPassPct] = useState(70);
+            const [antiCheat, setAntiCheat] = useState(1);
+            const [shuffleQ, setShuffleQ] = useState(1);
+            const [shuffleOpt, setShuffleOpt] = useState(1);
+
             // Manual Question Paper Builder States
             const [generatorMode, setGeneratorMode] = useState('ai'); // 'ai' or 'manual'
             const [manualTitle, setManualTitle] = useState('');
@@ -2662,8 +2669,16 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                     trainer_id: user?.id || 'ADMIN',
                     audited_by: assignedAuditor || user?.name || 'Super Admin',
                     difficulty: manualDifficulty,
+                    time_limit_minutes: timeLimit,
+                    pass_percentage: passPct,
+                    enable_anti_cheat: antiCheat,
+                    shuffle_questions: shuffleQ,
+                    shuffle_options: shuffleOpt,
                     questions: manualQuestions.map(q => ({
-                        question: q.question_text,
+                        question_text: q.question_text,
+                        question_type: q.question_type || 'mcq_single',
+                        points_weight: q.points_weight || 1.0,
+                        negative_points: q.negative_points || 0.0,
                         options: [q.option_a, q.option_b, q.option_c, q.option_d],
                         correctIndex: q.correct_index,
                         approved: isFinalize ? 1 : q.approved
@@ -3202,6 +3217,45 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                             <option value="Easy">Easy (Low Complexity)</option>
                                             <option value="Medium">Medium (Standard Policy)</option>
                                             <option value="Hard">Hard (Exceptions/Deviations)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Exam Time Limit</label>
+                                        <select 
+                                            value={timeLimit} 
+                                            onChange={(e) => setTimeLimit(parseInt(e.target.value))} 
+                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
+                                        >
+                                            <option value="5">5 Minutes (Speed Quiz)</option>
+                                            <option value="10">10 Minutes</option>
+                                            <option value="15">15 Minutes (Standard)</option>
+                                            <option value="30">30 Minutes (Comprehensive)</option>
+                                            <option value="60">60 Minutes (Full Exam)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Passing Threshold (%)</label>
+                                        <select 
+                                            value={passPct} 
+                                            onChange={(e) => setPassPct(parseInt(e.target.value))} 
+                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
+                                        >
+                                            <option value="50">50% Pass Cutoff</option>
+                                            <option value="60">60% Pass Cutoff</option>
+                                            <option value="70">70% Standard Certification</option>
+                                            <option value="80">80% High Proficiency</option>
+                                            <option value="90">90% Master Class</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Anti-Cheat & Proctoring</label>
+                                        <select 
+                                            value={antiCheat} 
+                                            onChange={(e) => setAntiCheat(parseInt(e.target.value))} 
+                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
+                                        >
+                                            <option value="1">🔒 Strict Anti-Cheat (Tab Switch Detection)</option>
+                                            <option value="0">🔓 Standard Mode (Flexible)</option>
                                         </select>
                                     </div>
                                     <div>

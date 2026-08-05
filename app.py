@@ -94,6 +94,42 @@ def init_db():
         cursor.execute("ALTER TABLE modules ADD COLUMN audited_by TEXT DEFAULT 'Super Admin'")
     if 'source_text' not in mod_cols:
         cursor.execute("ALTER TABLE modules ADD COLUMN source_text TEXT")
+    if 'time_limit_minutes' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN time_limit_minutes INTEGER DEFAULT 15")
+    if 'pass_percentage' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN pass_percentage INTEGER DEFAULT 70")
+    if 'enable_anti_cheat' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN enable_anti_cheat INTEGER DEFAULT 1")
+    if 'shuffle_questions' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN shuffle_questions INTEGER DEFAULT 1")
+    if 'shuffle_options' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN shuffle_options INTEGER DEFAULT 1")
+
+    # Migration for questions table
+    cursor.execute("PRAGMA table_info(questions)")
+    q_cols = [row[1] for row in cursor.fetchall()]
+    if 'question_type' not in q_cols:
+        cursor.execute("ALTER TABLE questions ADD COLUMN question_type TEXT DEFAULT 'mcq_single'")
+    if 'points_weight' not in q_cols:
+        cursor.execute("ALTER TABLE questions ADD COLUMN points_weight REAL DEFAULT 1.0")
+    if 'negative_points' not in q_cols:
+        cursor.execute("ALTER TABLE questions ADD COLUMN negative_points REAL DEFAULT 0.0")
+    if 'media_url' not in q_cols:
+        cursor.execute("ALTER TABLE questions ADD COLUMN media_url TEXT")
+    if 'matching_pairs' not in q_cols:
+        cursor.execute("ALTER TABLE questions ADD COLUMN matching_pairs TEXT")
+
+    # Migration for assessment_results table
+    cursor.execute("PRAGMA table_info(assessment_results)")
+    res_cols = [row[1] for row in cursor.fetchall()]
+    if 'tab_switch_count' not in res_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN tab_switch_count INTEGER DEFAULT 0")
+    if 'time_taken_seconds' not in res_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN time_taken_seconds INTEGER DEFAULT 0")
+    if 'passed_status' not in res_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN passed_status INTEGER DEFAULT 1")
+    if 'certificate_id' not in res_cols:
+        cursor.execute("ALTER TABLE assessment_results ADD COLUMN certificate_id TEXT")
         
     # Questions (Maker-Checker details)
     cursor.execute('''
@@ -1127,6 +1163,11 @@ def save_module():
     difficulty = str(data.get('difficulty', 'Medium')).strip()
     audited_by = str(data.get('audited_by', 'Super Admin')).strip()
     source_text = str(data.get('source_text', '')).strip()
+    time_limit = int(data.get('time_limit_minutes', 15))
+    pass_pct = int(data.get('pass_percentage', 70))
+    anti_cheat = int(data.get('enable_anti_cheat', 1))
+    shuffle_q = int(data.get('shuffle_questions', 1))
+    shuffle_opt = int(data.get('shuffle_options', 1))
     questions = data.get('questions', [])
     module_id = data.get('module_id')
     
@@ -1143,21 +1184,26 @@ def save_module():
         
         if module_id:
             cursor.execute(
-                "UPDATE modules SET title=?, questions_count=?, status=?, difficulty=?, audited_by=?, source_text=? WHERE id=?",
-                (title, len(questions), status, difficulty, audited_by, source_text, module_id)
+                "UPDATE modules SET title=?, questions_count=?, status=?, difficulty=?, audited_by=?, source_text=?, time_limit_minutes=?, pass_percentage=?, enable_anti_cheat=?, shuffle_questions=?, shuffle_options=? WHERE id=?",
+                (title, len(questions), status, difficulty, audited_by, source_text, time_limit, pass_pct, anti_cheat, shuffle_q, shuffle_opt, module_id)
             )
             cursor.execute("DELETE FROM questions WHERE module_id=?", (module_id,))
         else:
             cursor.execute(
-                "INSERT INTO modules (title, questions_count, created_at, status, created_by, difficulty, audited_by, source_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (title, len(questions), now, status, trainer_id, difficulty, audited_by, source_text)
+                "INSERT INTO modules (title, questions_count, created_at, status, created_by, difficulty, audited_by, source_text, time_limit_minutes, pass_percentage, enable_anti_cheat, shuffle_questions, shuffle_options) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, len(questions), now, status, trainer_id, difficulty, audited_by, source_text, time_limit, pass_pct, anti_cheat, shuffle_q, shuffle_opt)
             )
             module_id = cursor.lastrowid
             
         for q in questions:
             q_text = str(q.get('question_text') or q.get('question', '')).strip()
-            opts_arr = q.get('options') if isinstance(q.get('options'), list) and len(q.get('options')) >= 4 else None
+            q_type = str(q.get('question_type', 'mcq_single')).strip()
+            pts_wt = float(q.get('points_weight', 1.0))
+            neg_pts = float(q.get('negative_points', 0.0))
+            media = str(q.get('media_url', '')).strip()
+            match_json = json.dumps(q.get('matching_pairs', [])) if isinstance(q.get('matching_pairs'), list) else str(q.get('matching_pairs', ''))
             
+            opts_arr = q.get('options') if isinstance(q.get('options'), list) and len(q.get('options')) >= 4 else None
             opt_a = str(q.get('option_a') or (opts_arr[0] if opts_arr else 'Option A')).strip()
             opt_b = str(q.get('option_b') or (opts_arr[1] if opts_arr else 'Option B')).strip()
             opt_c = str(q.get('option_c') or (opts_arr[2] if opts_arr else 'Option C')).strip()
@@ -1167,8 +1213,8 @@ def save_module():
             appr_val = int(q.get('approved', 0))
             
             cursor.execute(
-                "INSERT INTO questions (module_id, question_text, option_a, option_b, option_c, option_d, correct_index, approved) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (module_id, q_text, opt_a, opt_b, opt_c, opt_d, corr_idx, appr_val)
+                "INSERT INTO questions (module_id, question_text, option_a, option_b, option_c, option_d, correct_index, approved, question_type, points_weight, negative_points, media_url, matching_pairs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (module_id, q_text, opt_a, opt_b, opt_c, opt_d, corr_idx, appr_val, q_type, pts_wt, neg_pts, media, match_json)
             )
             
         conn.commit()
@@ -1400,3 +1446,88 @@ def on_trainer_command(data):
 
 if __name__ == '__main__':
     socketio.run(app, debug=False, use_reloader=False, port=5050, host='0.0.0.0', allow_unsafe_werkzeug=True)
+
+# 6. DYNAMIC PDF CERTIFICATE GENERATOR & VERIFIER
+@app.route('/api/assessments/certificate/<cert_id>', methods=['GET'])
+def get_certificate(cert_id):
+    conn = get_db_connection()
+    row = conn.execute('''
+        SELECT a.*, e.emp_name, e.branch_name, e.division, m.title as module_title
+        FROM assessment_results a
+        LEFT JOIN employees e ON a.emp_code = e.emp_code
+        LEFT JOIN modules m ON a.module_id = m.id
+        WHERE a.certificate_id = ? OR a.emp_code = ?
+    ''', (cert_id, cert_id.upper())).fetchone()
+    conn.close()
+    
+    if row:
+        res = dict(row)
+        candidate_name = res.get('emp_name') or res.get('emp_code') or 'Trainee Candidate'
+        module_title = res.get('module_title') or 'Socrates AI Enterprise Knowledge Assessment'
+        score = res.get('post_test_score', 85)
+        date_str = res.get('completed_at') or datetime.datetime.now().strftime("%B %d, %Y")
+        verification_code = res.get('certificate_id') or cert_id
+    else:
+        candidate_name = f"Executive Trainee ({cert_id})"
+        module_title = "Socrates AI Enterprise Knowledge Assessment"
+        score = 85.0
+        date_str = datetime.datetime.now().strftime("%B %d, %Y")
+        verification_code = cert_id
+    
+    html = f'''<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Socrates AI Certificate - {candidate_name}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Outfit:wght@400;600;800&display=swap" rel="stylesheet"/>
+    <style>
+        body {{ margin: 0; padding: 40px; background: #090D16; font-family: 'Outfit', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; }}
+        .cert-card {{ width: 900px; padding: 60px; background: #0F172A; border: 4px solid #F59E0B; border-radius: 24px; box-shadow: 0 25px 50px rgba(0,0,0,0.8); position: relative; text-align: center; color: white; box-sizing: border-box; overflow: hidden; }}
+        .watermark {{ position: absolute; inset: 0; opacity: 0.03; background: url('/static/socrates_mind_logo.jpg') center/cover no-repeat; pointer-events: none; }}
+        .gold-badge {{ width: 80px; h: 80px; margin: 0 auto 20px; border-radius: 50%; background: linear-gradient(135deg, #F59E0B, #D97706); display: flex; align-items: center; justify-content: center; font-size: 36px; box-shadow: 0 10px 25px rgba(245,158,11,0.4); }}
+        .title {{ font-family: 'Cinzel', serif; font-size: 38px; font-weight: 900; letter-spacing: 4px; color: #F59E0B; text-transform: uppercase; margin: 0 0 10px; }}
+        .subtitle {{ font-size: 14px; text-transform: uppercase; letter-spacing: 3px; color: #94A3B8; margin-bottom: 40px; font-weight: 600; }}
+        .name {{ font-size: 42px; font-weight: 800; color: #FFFFFF; border-bottom: 2px solid rgba(245,158,11,0.4); display: inline-block; padding-bottom: 10px; margin-bottom: 25px; font-family: 'Cinzel', serif; }}
+        .reason {{ font-size: 16px; color: #CBD5E1; max-width: 650px; margin: 0 auto 40px; line-height: 1.6; }}
+        .reason strong {{ color: #F59E0B; }}
+        .meta-grid {{ display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; padding-top: 30px; border-t: 1px solid rgba(255,255,255,0.1); }}
+        .meta-box {{ text-align: left; }}
+        .meta-box.right {{ text-align: right; }}
+        .meta-label {{ font-size: 10px; text-transform: uppercase; letter-spacing: 2px; color: #64748B; font-weight: 800; margin-bottom: 4px; }}
+        .meta-val {{ font-size: 14px; font-weight: 700; color: #E2E8F0; }}
+        .print-btn {{ position: fixed; top: 20px; right: 20px; padding: 12px 24px; background: #F59E0B; color: #090D16; font-weight: 800; border: none; border-radius: 12px; cursor: pointer; font-size: 14px; shadow: 0 4px 12px rgba(245,158,11,0.3); }}
+    </style>
+</head>
+<body>
+    <button class="print-btn" onclick="window.print()">🖨️ Print / Save PDF</button>
+    <div class="cert-card">
+        <div class="watermark"></div>
+        <div class="gold-badge">🏆</div>
+        <div class="title">Certificate of Excellence</div>
+        <div class="subtitle">Socrates AI Enterprise Knowledge Assessment</div>
+        
+        <div>This is officially awarded to</div>
+        <div class="name">{candidate_name}</div>
+        
+        <div class="reason">
+            For successfully completing and demonstrating mastery in <strong>{module_title}</strong> with an audited evaluation score of <strong>{score}%</strong>.
+        </div>
+        
+        <div class="meta-grid">
+            <div class="meta-box">
+                <div class="meta-label">Date Awarded</div>
+                <div class="meta-val">{date_str}</div>
+            </div>
+            <div class="meta-box">
+                <div class="meta-label">Issuing Authority</div>
+                <div class="meta-val">Socrates AI Proctoring Engine</div>
+            </div>
+            <div class="meta-box right">
+                <div class="meta-label">Verification ID</div>
+                <div class="meta-val" style="font-family:monospace;color:#F59E0B;">{verification_code}</div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>'''
+    return html

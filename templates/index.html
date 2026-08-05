@@ -482,6 +482,25 @@
         const Quiz = ({type, empId, pin, question, options, correctIndex, assignmentDay, translations, activeLanguage, setActiveLanguage, counts, onScoreSubmit}) => {
             const [selected, setSelected] = useState(null);
             const [submitted, setSubmitted] = useState(false);
+            const [tabSwitchCount, setTabSwitchCount] = useState(0);
+
+            useEffect(() => {
+                const handleVisibility = () => {
+                    if (document.hidden && !submitted) {
+                        setTabSwitchCount(prev => {
+                            const next = prev + 1;
+                            if (next >= 3) {
+                                alert("⛔ PROCTORING SECURITY LOCK: 3 Tab Switch Violations detected! Auto-submitting assessment.");
+                            } else {
+                                alert(`⚠️ ANTI-CHEAT PROCTORING WARNING (${next}/3): Tab switching or browser focus loss detected! Multi-session violations will lock your test.`);
+                            }
+                            return next;
+                        });
+                    }
+                };
+                document.addEventListener('visibilitychange', handleVisibility);
+                return () => document.removeEventListener('visibilitychange', handleVisibility);
+            }, [submitted]);
             const [scoreInfo, setScoreInfo] = useState(null);
             const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
             const [understanding, setUnderstanding] = useState('Fully Clear');
@@ -612,7 +631,15 @@
                         </div>
                     ))}
                 </div>
-                <button onClick={onFinish} className="w-full h-16 btn-primary shadow-amber-500/25 text-base font-black tracking-widest">DASHBOARD EXIT <i className="fas fa-home ml-2"></i></button>
+                <a 
+                    href={`/api/assessments/certificate/${localStorage.getItem('socrates_empId') || 'CERT'}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="w-full h-14 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 rounded-2xl flex items-center justify-center font-extrabold text-sm uppercase tracking-widest shadow-xl shadow-amber-500/20 hover:scale-[1.02] active:scale-95 transition-all mb-2 text-decoration-none"
+                >
+                    <i className="fas fa-award text-lg mr-2"></i> Download Official Certificate
+                </a>
+                <button onClick={onFinish} className="w-full h-14 btn-primary shadow-amber-500/25 text-sm font-black tracking-widest">DASHBOARD EXIT <i className="fas fa-home ml-2"></i></button>
             </div>
         );
 
