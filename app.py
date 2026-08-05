@@ -259,39 +259,43 @@ def update_trainer_status(trainer_id):
 @app.route('/api/roster', methods=['GET'])
 def get_roster():
     conn = get_db_connection()
-    search = request.args.get('search', '').strip()
+    search = request.args.get('search', '').strip() or request.args.get('q', '').strip()
     zone = request.args.get('zone', '').strip()
     division = request.args.get('division', '').strip()
-    branch = request.args.get('branch', '').strip()
-    bu = request.args.get('bu', '').strip()
+    branch = request.args.get('branch', '').strip() or request.args.get('branch_name', '').strip()
+    bu = request.args.get('bu', '').strip() or request.args.get('business_unit', '').strip()
     role = request.args.get('role', '').strip()
+    product = request.args.get('product', '').strip() or request.args.get('product_name', '').strip()
     status = request.args.get('status', '').strip()
     
     query = "SELECT * FROM employees WHERE 1=1"
     params = []
     
     if search:
-        query += " AND (UPPER(emp_name) LIKE ? OR UPPER(emp_code) LIKE ? OR UPPER(branch_name) LIKE ? OR UPPER(role) LIKE ?)"
+        query += " AND (UPPER(emp_name) LIKE ? OR UPPER(emp_code) LIKE ? OR UPPER(branch_name) LIKE ? OR UPPER(role) LIKE ? OR UPPER(division) LIKE ? OR UPPER(zone) LIKE ?)"
         term = f"%{search.upper()}%"
-        params.extend([term, term, term, term])
+        params.extend([term, term, term, term, term, term])
     if zone:
-        query += " AND UPPER(zone) = ?"
-        params.append(zone.upper())
+        query += " AND UPPER(TRIM(zone)) = UPPER(TRIM(?))"
+        params.append(zone)
     if division:
-        query += " AND UPPER(division) = ?"
-        params.append(division.upper())
+        query += " AND UPPER(TRIM(division)) = UPPER(TRIM(?))"
+        params.append(division)
     if branch:
-        query += " AND UPPER(branch_name) = ?"
-        params.append(branch.upper())
+        query += " AND UPPER(TRIM(branch_name)) = UPPER(TRIM(?))"
+        params.append(branch)
     if bu:
-        query += " AND UPPER(business_unit) = ?"
-        params.append(bu.upper())
+        query += " AND UPPER(TRIM(business_unit)) = UPPER(TRIM(?))"
+        params.append(bu)
     if role:
-        query += " AND UPPER(role) = ?"
-        params.append(role.upper())
+        query += " AND UPPER(TRIM(role)) = UPPER(TRIM(?))"
+        params.append(role)
+    if product:
+        query += " AND UPPER(TRIM(product_name)) = UPPER(TRIM(?))"
+        params.append(product)
     if status:
-        query += " AND UPPER(status) = ?"
-        params.append(status.upper())
+        query += " AND UPPER(TRIM(status)) = UPPER(TRIM(?))"
+        params.append(status)
         
     query += " ORDER BY emp_code ASC"
     
@@ -321,12 +325,12 @@ def get_roster():
 def get_roster_filters():
     conn = get_db_connection()
     try:
-        zones = [r[0] for r in conn.execute("SELECT DISTINCT zone FROM employees WHERE zone IS NOT NULL AND zone != '' ORDER BY zone").fetchall()]
-        divisions = [r[0] for r in conn.execute("SELECT DISTINCT division FROM employees WHERE division IS NOT NULL AND division != '' ORDER BY division").fetchall()]
-        branches = [r[0] for r in conn.execute("SELECT DISTINCT branch_name FROM employees WHERE branch_name IS NOT NULL AND branch_name != '' ORDER BY branch_name").fetchall()]
-        business_units = [r[0] for r in conn.execute("SELECT DISTINCT business_unit FROM employees WHERE business_unit IS NOT NULL AND business_unit != '' ORDER BY business_unit").fetchall()]
-        roles = [r[0] for r in conn.execute("SELECT DISTINCT role FROM employees WHERE role IS NOT NULL AND role != '' ORDER BY role").fetchall()]
-        products = [r[0] for r in conn.execute("SELECT DISTINCT product_name FROM employees WHERE product_name IS NOT NULL AND product_name != '' ORDER BY product_name").fetchall()]
+        zones = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(zone) FROM employees WHERE zone IS NOT NULL AND TRIM(zone) != '' ORDER BY zone").fetchall()]
+        divisions = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(division) FROM employees WHERE division IS NOT NULL AND TRIM(division) != '' ORDER BY division").fetchall()]
+        branches = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(branch_name) FROM employees WHERE branch_name IS NOT NULL AND TRIM(branch_name) != '' ORDER BY branch_name").fetchall()]
+        business_units = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(business_unit) FROM employees WHERE business_unit IS NOT NULL AND TRIM(business_unit) != '' ORDER BY business_unit").fetchall()]
+        roles = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(role) FROM employees WHERE role IS NOT NULL AND TRIM(role) != '' ORDER BY role").fetchall()]
+        products = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(product_name) FROM employees WHERE product_name IS NOT NULL AND TRIM(product_name) != '' ORDER BY product_name").fetchall()]
         
         conn.close()
         return jsonify({
