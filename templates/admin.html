@@ -2824,17 +2824,22 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                         setReviewModuleId(null);
                         setReviewTitle(data.title);
                         setReviewDifficulty(data.difficulty || 'Medium');
-                        // Map each question to have default approved=0 for auditor to audit
-                        const mappedQs = data.questions.map(q => ({
-                            question_text: q.question,
-                            option_a: q.options[0],
-                            option_b: q.options[1],
-                            option_c: q.options[2],
-                            option_d: q.options[3],
-                            correct_index: q.correctIndex,
-                            approved: 0,
-                            translations: q.translations
-                        }));
+                        // Map each question safely with fallbacks to avoid JS TypeError
+                        const mappedQs = (data.questions || []).map(q => {
+                            const opts = Array.isArray(q.options) && q.options.length >= 4 
+                                ? q.options 
+                                : [q.option_a || "Option A", q.option_b || "Option B", q.option_c || "Option C", q.option_d || "Option D"];
+                            return {
+                                question_text: q.question || q.question_text || "Socratic Policy Question",
+                                option_a: opts[0] || "Option A",
+                                option_b: opts[1] || "Option B",
+                                option_c: opts[2] || "Option C",
+                                option_d: opts[3] || "Option D",
+                                correct_index: q.correctIndex !== undefined ? q.correctIndex : (q.correct_index !== undefined ? q.correct_index : 0),
+                                approved: 0,
+                                translations: q.translations || {}
+                            };
+                        });
                         setReviewQuestions(mappedQs);
                         setActiveEditIdx(null);
                         setStatus('review');
