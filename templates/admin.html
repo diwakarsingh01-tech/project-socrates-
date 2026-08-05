@@ -485,7 +485,7 @@ background: rgba(217,119,6,0.1);
 
                         {/* Main Content Area - Scrollable */}
                         <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8">
-                            <div className="max-w-[1600px] mx-auto w-full pb-36 sm:pb-28 md:pb-8">
+                            <div className="w-full mx-auto pb-36 sm:pb-28 md:pb-8">
                                 {renderContent()}
                             </div>
                         </div>
@@ -2287,10 +2287,10 @@ filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
                         </div>
                     )}
 
-                    {/* Roster & Historical Upload Grid Split */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                        {/* Left / Main Column: Master Employee Roster */}
-                        <div className="lg:col-span-2 card overflow-hidden">
+                    {/* Full Width Master Employee Roster Workspace */}
+                    <div className="w-full">
+                        {/* Master Employee Roster */}
+                        <div className="w-full card overflow-hidden">
                             <div className="px-6 py-5 border-b border-slate-200/60 flex flex-wrap justify-between items-center gap-4 bg-white shadow-sm">
                                 <div>
                                     <h3 className="font-bold text-socrates-dark text-lg">Employee Master Roster</h3>
