@@ -1,3 +1,20 @@
+import html
+import re
+
+def sanitize_llm_text(text):
+    if not isinstance(text, str):
+        return text
+    # Unescape HTML entities
+    text = html.unescape(text)
+    # Remove raw unicode escapes and latex noise
+    text = re.sub(r'\\u[0-9a-fA-F]{4}', '', text)
+    text = re.sub(r'[\\$](begin|end|frac|text|sqrt|alpha|beta)\\{[^\\}]*\\}', '', text)
+    # Clean control characters
+    text = re.sub(r'[\r\t\x00-\x08\x0b\x0c\x0e-\x1f]', ' ', text)
+    # Clean double spaces
+    text = re.sub(r' +', ' ', text).strip()
+    return text
+
 from flask import Flask, request, jsonify, render_template, session, Response
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import sqlite3
@@ -1010,16 +1027,25 @@ def generate_module():
                 file.save(filepath)
                 
                 try:
-                    # Pure python text extraction from PDF stream
-                    with open(filepath, 'rb') as f_pdf:
-                        pdf_bytes = f_pdf.read()
-                        # Extract raw readable text strings from PDF object streams
-                        raw_strings = re.findall(rb'\(([^()]{3,})\)', pdf_bytes)
-                        extracted = [s.decode('utf-8', errors='ignore') for s in raw_strings if len(s.strip()) > 3]
-                        if extracted:
-                            text_content = " ".join(extracted[:500])
+                    # Robust pypdf text extraction engine
+                    from pypdf import PdfReader
+                    reader = PdfReader(filepath)
+                    extracted_pages = []
+                    for page in reader.pages:
+                        txt = page.extract_text()
+                        if txt:
+                            extracted_pages.append(txt)
+                    if extracted_pages:
+                        text_content = "\n".join(extracted_pages).strip()
+                        print(f"Successfully extracted {len(text_content)} chars across {len(reader.pages)} PDF pages!")
                 except Exception as e_pdf:
-                    print(f"PDF extraction warning: {e_pdf}")
+                    print(f"pypdf extraction warning: {e_pdf}")
+                    try:
+                        # Fallback simple text read if UTF-8 plain text file uploaded as PDF
+                        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f_txt:
+                            text_content = f_txt.read().strip()
+                    except Exception as e_txt:
+                        print(f"Fallback text read warning: {e_txt}")
                     
         if not text_content:
             text_content = request.form.get('text', '').strip()
@@ -1035,24 +1061,35 @@ def generate_module():
         if api_key:
             try:
                 import urllib.request
+                clean_text = sanitize_llm_text(text_content[:6000])
                 prompt = f"""
-                You are a senior Socratic Trainer with 20 years of experience.
-                Analyze this policy content and generate exactly {count} multiple-choice Socratic assessment questions in {gen_language} language at {difficulty} difficulty.
-                Each question must have exactly 4 choices (labeled Option A, Option B, Option C, Option D) and a correct option index (0 to 3).
-                Ensure the questions are challenging, dialogue-oriented, and directly based on the key rules inside the text.
-                
-                Format your response STRICTLY as a JSON array of objects. Do not wrap in markdown or backticks.
-                Example format:
-                [
-                  {{
-                    "question": "What is the maximum loan ratio allowed under the new policy?",
-                    "options": ["75%", "85%", "90%", "100%"],
-                    "correctIndex": 1
-                  }}
-                ]
-                
-                Policy content:
-                {text_content[:3000]}
+                You are an expert assessment engine and senior Socratic Trainer.
+                Analyze the provided training text and generate exactly {count} high-quality Multiple Choice Questions (MCQs) in {gen_language} language at {difficulty} difficulty following strict formatting rules.
+
+                RULES:
+                1. Strictly generate clean plain text without unescaped special characters, raw LaTeX formulas, or garbage HTML entities.
+                2. Do not invent facts outside the provided document text.
+                3. Provide exactly 4 distinct, non-overlapping options per question.
+                4. Ensure only one option is unequivocally correct and marked clearly via correct_answer_index (0 to 3).
+                5. Validate that distractors (wrong choices) are plausible but clearly incorrect.
+                6. Include a brief 1-sentence rationale/explanation per question.
+
+                Format your response STRICTLY as a JSON object matching this schema:
+                {{
+                  "module_title": "{title}",
+                  "questions": [
+                    {{
+                      "id": 1,
+                      "question_text": "What is the primary compliance requirement before approval?",
+                      "options": ["Mandatory Document Verification & KYC", "Oral confirmation from customer", "Post-disbursement review only", "Waived for repeat customers"],
+                      "correct_answer_index": 0,
+                      "explanation": "Document verification and KYC is required prior to credit approval."
+                    }}
+                  ]
+                }}
+
+                TRAINING DOCUMENT TEXT:
+                {clean_text}
                 """
                 
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
@@ -1069,9 +1106,27 @@ def generate_module():
                     if res_text.startswith("```"):
                         res_text = res_text.split("json")[-1].split("```")[0].strip()
                         
-                    parsed_qs = json.loads(res_text)
-                    if isinstance(parsed_qs, list) and len(parsed_qs) > 0:
-                        generated_questions = parsed_qs
+                    parsed_obj = json.loads(res_text)
+                    raw_qs = parsed_obj.get('questions', []) if isinstance(parsed_obj, dict) else (parsed_obj if isinstance(parsed_obj, list) else [])
+                    
+                    if raw_qs and len(raw_qs) > 0:
+                        cleaned_qs = []
+                        for idx, q in enumerate(raw_qs):
+                            q_txt = sanitize_llm_text(str(q.get('question_text') or q.get('question', '')).strip())
+                            raw_opts = q.get('options', [])
+                            opts = [sanitize_llm_text(str(opt)).strip() for opt in raw_opts] if isinstance(raw_opts, list) and len(raw_opts) >= 4 else ['Option A', 'Option B', 'Option C', 'Option D']
+                            corr_idx = int(q.get('correct_answer_index') if q.get('correct_answer_index') is not None else q.get('correctIndex', 0))
+                            expl = sanitize_llm_text(str(q.get('explanation', '')).strip())
+                            
+                            cleaned_qs.append({
+                                "id": idx + 1,
+                                "question": q_txt,
+                                "options": opts[:4],
+                                "correctIndex": min(max(0, corr_idx), 3),
+                                "explanation": expl,
+                                "approved": 0
+                            })
+                        generated_questions = cleaned_qs
                         gemini_success = True
             except Exception as e_gemini:
                 print(f"Gemini REST API notice: {e_gemini}")
