@@ -212,10 +212,21 @@ def admin_logout():
 def admin_diagnostics():
     return jsonify({
         "status": "success",
-        "database_type": "SQLite3 (Embedded)",
+        "database_type": "SQLite",
+        "is_ephemeral": False,
         "connection_status": "Connected",
         "database_url": DB_FILE,
         "connection_error": None
+    })
+
+@app.route('/api/gdrive/status', methods=['GET'])
+def gdrive_status():
+    gd_folder = os.environ.get('GD_FOLDER_ID', '')
+    return jsonify({
+        "status": "success",
+        "configured": bool(gd_folder),
+        "folder_id": gd_folder,
+        "service_account": "socrates-sync@skillful-octane-494413-a5.iam.gserviceaccount.com"
     })
 
 # 2. TRAINER MANAGEMENT (Super Admin Only)
