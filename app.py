@@ -602,6 +602,108 @@ def upload_historical_assessments():
             return jsonify({"status": "error", "message": f"Historical import failed: {str(e)}"}), 500
 
 
+
+# --- SINGLE & BULK ROSTER ACTIONS (EDIT & DELETE) ---
+@app.route('/api/roster/<emp_code>', methods=['PUT', 'DELETE'])
+def handle_single_roster_action(emp_code):
+    emp_code = emp_code.upper().strip()
+    conn = get_db_connection()
+    
+    if request.method == 'DELETE':
+        reason = request.args.get('reason', 'Individual Deletion').strip()
+        conn.execute("DELETE FROM employees WHERE UPPER(emp_code)=?", (emp_code,))
+        conn.execute("DELETE FROM assessment_results WHERE UPPER(emp_code)=?", (emp_code,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": f"Employee '{emp_code}' deleted successfully."})
+        
+    elif request.method == 'PUT':
+        data = request.json or {}
+        emp_name = data.get('emp_name', '').strip().upper()
+        branch_name = data.get('branch_name', '').strip().upper()
+        zone = data.get('zone', '').strip().upper()
+        division = data.get('division', '').strip().upper()
+        business_unit = data.get('business_unit', '').strip().upper()
+        role = data.get('role', '').strip().upper()
+        product_name = data.get('product_name', '').strip().upper()
+        status = data.get('status', 'ACTIVE').strip().upper()
+        
+        conn.execute("""
+            UPDATE employees SET
+                emp_name=COALESCE(NULLIF(?, ''), emp_name),
+                branch_name=COALESCE(NULLIF(?, ''), branch_name),
+                zone=COALESCE(NULLIF(?, ''), zone),
+                division=COALESCE(NULLIF(?, ''), division),
+                business_unit=COALESCE(NULLIF(?, ''), business_unit),
+                role=COALESCE(NULLIF(?, ''), role),
+                product_name=COALESCE(NULLIF(?, ''), product_name),
+                status=COALESCE(NULLIF(?, ''), status)
+            WHERE UPPER(emp_code)=?
+        """, (emp_name, branch_name, zone, division, business_unit, role, product_name, status, emp_code))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": f"Employee '{emp_code}' updated successfully."})
+
+@app.route('/api/roster/bulk-action', methods=['POST'])
+def handle_bulk_roster_action():
+    data = request.json or {}
+    action = data.get('action', '').lower()
+    emp_codes = [c.upper().strip() for c in data.get('emp_codes', []) if c]
+    reason = data.get('reason', 'Bulk Operation').strip()
+    
+    conn = get_db_connection()
+    
+    if action == 'delete':
+        if not emp_codes:
+            conn.execute("DELETE FROM employees")
+            conn.execute("DELETE FROM assessment_results")
+            count = "All"
+        else:
+            placeholders = ','.join(['?'] * len(emp_codes))
+            conn.execute(f"DELETE FROM employees WHERE UPPER(emp_code) IN ({placeholders})", emp_codes)
+            conn.execute(f"DELETE FROM assessment_results WHERE UPPER(emp_code) IN ({placeholders})", emp_codes)
+            count = len(emp_codes)
+            
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "message": f"Bulk deletion completed successfully! ({count} records deleted)"
+        })
+        
+    elif action == 'edit':
+        if not emp_codes:
+            conn.close()
+            return jsonify({"status": "error", "message": "No employees selected for bulk edit."}), 400
+            
+        placeholders = ','.join(['?'] * len(emp_codes))
+        updates = []
+        params = []
+        
+        for field in ['zone', 'division', 'branch_name', 'business_unit', 'role', 'product_name', 'status', 'change_detail']:
+            if field in data and data[field]:
+                updates.append(f"{field}=?")
+                params.append(str(data[field]).strip().upper())
+                
+        if not updates:
+            conn.close()
+            return jsonify({"status": "error", "message": "No fields provided to update."}), 400
+            
+        sql = f"UPDATE employees SET {','.join(updates)} WHERE UPPER(emp_code) IN ({placeholders})"
+        params.extend(emp_codes)
+        
+        conn.execute(sql, params)
+        conn.commit()
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "message": f"Bulk edit applied successfully to {len(emp_codes)} employees!"
+        })
+        
+    conn.close()
+    return jsonify({"status": "error", "message": "Invalid bulk action requested."}), 400
+
+
 # 4. MODULE MANAGEMENT (Maker-Checker & Dynamic AI Support)
 @app.route('/api/modules', methods=['GET', 'POST'])
 def handle_modules():
