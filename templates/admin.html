@@ -465,7 +465,7 @@ background: rgba(217,119,6,0.1);
 
                         {/* Main Content Area - Scrollable */}
                         <div className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8">
-                            <div className="max-w-[1600px] mx-auto w-full pb-20 md:pb-4">
+                            <div className="max-w-[1600px] mx-auto w-full pb-36 sm:pb-28 md:pb-8">
                                 {renderContent()}
                             </div>
                         </div>
@@ -473,8 +473,8 @@ background: rgba(217,119,6,0.1);
 
                     {/* Bottom Mobile Navigation Bar (Visible only on mobile screen widths) */}
 
-{/* Floating Mobile Bottom Navigation Dock (App Dock Style) */}
-                    <div className="md:hidden fixed bottom-3 left-3 right-3 z-40 bg-[#090D16]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-1.5 flex justify-around items-center">
+{/* Luxurious Animated Floating Mobile Bottom App Dock */}
+                    <div className="md:hidden fixed bottom-3 left-3 right-3 z-50 bg-[#090D16]/95 backdrop-blur-2xl border border-white/15 rounded-3xl shadow-[0_15px_35px_rgba(0,0,0,0.6)] p-1.5 flex justify-around items-center">
                         {[
                             { id: 'dashboard', icon: 'layer-group', label: 'Home' },
                             { id: 'live_session', icon: 'satellite-dish', label: 'Live' },
@@ -491,14 +491,14 @@ background: rgba(217,119,6,0.1);
                                         if (item.id === 'live_session') localStorage.removeItem('socrates_active_module');
                                         setView(item.id);
                                     }} 
-                                    className={`flex flex-col items-center justify-center min-w-[48px] h-12 py-1 px-2.5 transition-all rounded-xl relative ${
-                                        isActive ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/20 scale-105' : 'text-slate-400 hover:text-white'
+                                    className={`flex flex-col items-center justify-center min-w-[48px] h-12 py-1 px-2 transition-all duration-300 rounded-2xl relative ${
+                                        isActive ? 'bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 font-black shadow-lg shadow-amber-500/30 scale-105' : 'text-slate-400 hover:text-white active:scale-95'
                                     }`}
                                 >
-                                    <i className={`fas fa-${item.icon} text-sm ${isActive ? '' : 'opacity-80'}`}></i>
+                                    <i className={`fas fa-${item.icon} text-sm ${isActive ? 'animate-bounce' : 'opacity-80'}`} style={{ animationDuration: '2.5s' }}></i>
                                     <span className={`text-[9px] tracking-tight mt-0.5 ${isActive ? 'font-black' : 'font-semibold'}`}>{item.label}</span>
                                     {isActive && (
-                                        <span className="absolute -top-1 w-1.5 h-1.5 bg-amber-400 rounded-full animate-ping"></span>
+                                        <span className="absolute -top-1 w-2 h-2 bg-amber-400 rounded-full animate-ping"></span>
                                     )}
                                 </button>
                             );
