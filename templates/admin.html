@@ -183,6 +183,26 @@ background: rgba(217,119,6,0.1);
             return opt.replace(/^(Option\s+[A-D][:.-]?\s*|[A-D][:.-]\s*)/i, '').trim();
         };
 
+        const getModuleIcon = (title) => {
+            const t = (title || '').toLowerCase();
+            if (t.includes('2w') || t.includes('bike') || t.includes('motorcycle') || t.includes('two wheeler')) {
+                return { icon: 'fas fa-motorcycle', bg: 'from-amber-500 to-orange-600', badge: 'bg-amber-100 text-amber-800' };
+            }
+            if (t.includes('cv') || t.includes('truck') || t.includes('commercial') || t.includes('heavy')) {
+                return { icon: 'fas fa-truck-moving', bg: 'from-blue-600 to-indigo-700', badge: 'bg-blue-100 text-blue-800' };
+            }
+            if (t.includes('credit') || t.includes('loan') || t.includes('cibil') || t.includes('score') || t.includes('kyc')) {
+                return { icon: 'fas fa-credit-card', bg: 'from-emerald-500 to-teal-600', badge: 'bg-emerald-100 text-emerald-800' };
+            }
+            if (t.includes('policy') || t.includes('compliance') || t.includes('refresher') || t.includes('sop')) {
+                return { icon: 'fas fa-file-contract', bg: 'from-purple-600 to-violet-700', badge: 'bg-purple-100 text-purple-800' };
+            }
+            if (t.includes('roster') || t.includes('ops') || t.includes('sales') || t.includes('hr')) {
+                return { icon: 'fas fa-users-cog', bg: 'from-cyan-500 to-blue-600', badge: 'bg-cyan-100 text-cyan-800' };
+            }
+            return { icon: 'fas fa-brain', bg: 'from-amber-500 to-yellow-600', badge: 'bg-amber-100 text-amber-800' };
+        };
+
         // PRODUCTION DATABASE HANDLER (LOCALSTORAGE FALLBACK)
         const db = {
             get: (key) => JSON.parse(localStorage.getItem(key) || '[]'),
@@ -2679,10 +2699,11 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                 const trId = user?.id || 'ADMIN';
                 fetch(`/api/modules?trainer_id=${encodeURIComponent(trId)}`)
                     .then(res => res.json())
-                    .then(data => setModules(data))
+                    .then(data => setModules(Array.isArray(data) ? data : []))
                     .catch(err => {
                         console.error("Using offline fallback modules:", err);
-                        setModules(db.get('s_modules') || []);
+                        const fallback = db.get('s_modules');
+                        setModules(Array.isArray(fallback) ? fallback : []);
                     });
             };
 
