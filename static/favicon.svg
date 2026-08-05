@@ -1,5 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-      <rect width="512" height="512" rx="112" fill="#090D16"/>
-      <rect x="32" y="32" width="448" height="448" rx="96" fill="#0D111C" stroke="#D97706" stroke-width="16"/>
-      <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" font-family="Arial, sans-serif" font-weight="900" font-size="280" fill="#F59E0B">S</text>
-    </svg>
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="#090D16"/>
+  <rect x="32" y="32" width="448" height="448" rx="96" fill="#0D111C" stroke="url(#goldGrad)" stroke-width="16"/>
+  <path d="M256 120c-44 0-80 36-80 80 0 16 5 31 14 43-28 12-48 40-48 73 0 44 36 80 80 80h68c44 0 80-36 80-80 0-33-20-61-48-73 9-12 14-27 14-43 0-44-36-80-80-80z" fill="none" stroke="url(#goldGrad)" stroke-width="24" stroke-linecap="round"/>
+  <path d="M256 160v192M200 212c24 16 56 16 80 0M180 300c40 24 80 24 120 0" fill="none" stroke="#06B6D4" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="256" cy="160" r="16" fill="#F59E0B"/>
+  <circle cx="200" cy="212" r="12" fill="#06B6D4"/>
+  <circle cx="280" cy="212" r="12" fill="#06B6D4"/>
+  <circle cx="180" cy="300" r="12" fill="#F59E0B"/>
+  <circle cx="300" cy="300" r="12" fill="#F59E0B"/>
+</svg>
