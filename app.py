@@ -259,9 +259,61 @@ def update_trainer_status(trainer_id):
 @app.route('/api/roster', methods=['GET'])
 def get_roster():
     conn = get_db_connection()
-    emps = conn.execute("SELECT * FROM employees LIMIT 100").fetchall()
+    search = request.args.get('search', '').strip()
+    zone = request.args.get('zone', '').strip()
+    division = request.args.get('division', '').strip()
+    branch = request.args.get('branch', '').strip()
+    bu = request.args.get('bu', '').strip()
+    role = request.args.get('role', '').strip()
+    status = request.args.get('status', '').strip()
+    
+    query = "SELECT * FROM employees WHERE 1=1"
+    params = []
+    
+    if search:
+        query += " AND (UPPER(emp_name) LIKE ? OR UPPER(emp_code) LIKE ? OR UPPER(branch_name) LIKE ? OR UPPER(role) LIKE ?)"
+        term = f"%{search.upper()}%"
+        params.extend([term, term, term, term])
+    if zone:
+        query += " AND UPPER(zone) = ?"
+        params.append(zone.upper())
+    if division:
+        query += " AND UPPER(division) = ?"
+        params.append(division.upper())
+    if branch:
+        query += " AND UPPER(branch_name) = ?"
+        params.append(branch.upper())
+    if bu:
+        query += " AND UPPER(business_unit) = ?"
+        params.append(bu.upper())
+    if role:
+        query += " AND UPPER(role) = ?"
+        params.append(role.upper())
+    if status:
+        query += " AND UPPER(status) = ?"
+        params.append(status.upper())
+        
+    query += " ORDER BY emp_code ASC"
+    
+    limit_arg = request.args.get('limit')
+    if limit_arg and limit_arg.isdigit():
+        query += f" LIMIT {int(limit_arg)}"
+        
+    emps = conn.execute(query, params).fetchall()
     conn.close()
-    return jsonify([dict(e) for e in emps])
+    
+    results = []
+    for e in emps:
+        d = dict(e)
+        if d.get('extra_data'):
+            try:
+                import json
+                d['extra'] = json.loads(d['extra_data'])
+            except:
+                pass
+        results.append(d)
+        
+    return jsonify(results)
 
 
 # --- DYNAMIC ROSTER FILTERS & EXPORT ---
