@@ -229,31 +229,163 @@ def gdrive_status():
         "service_account": "socrates-sync@skillful-octane-494413-a5.iam.gserviceaccount.com"
     })
 
-# 2. TRAINER MANAGEMENT (Super Admin Only)
+# 2. TRAINER & ACCESS CONTROL MANAGEMENT
 @app.route('/api/trainers', methods=['GET', 'POST'])
 def handle_trainers():
     conn = get_db_connection()
     if request.method == 'GET':
-        trainers = conn.execute("SELECT trainer_id, name, zone, status, last_login FROM trainers WHERE role='Trainer'").fetchall()
+        trainers = conn.execute("SELECT trainer_id as id, name, zone, status, role, last_login, password as plain_password FROM trainers ORDER BY trainer_id ASC").fetchall()
         conn.close()
         return jsonify([dict(t) for t in trainers])
     
     elif request.method == 'POST':
-        data = request.json
-        conn.execute("INSERT INTO trainers (trainer_id, name, zone, password) VALUES (?, ?, ?, ?)",
-                     (data['id'], data['name'], data['zone'], data['password']))
+        data = request.json or {}
+        t_id = str(data.get('id', '')).upper().strip()
+        name = str(data.get('name', '')).strip()
+        password = str(data.get('password', 'password123')).strip()
+        role = str(data.get('role', 'Trainer')).strip()
+        zone = str(data.get('zone', 'ALL')).strip()
+        
+        if not t_id or not name:
+            conn.close()
+            return jsonify({"status": "error", "message": "Trainer ID and Name are required."}), 400
+            
+        conn.execute(
+            "INSERT INTO trainers (trainer_id, name, zone, password, role, status) VALUES (?, ?, ?, ?, ?, 'Active') ON CONFLICT(trainer_id) DO UPDATE SET name=excluded.name, password=excluded.password, role=excluded.role, status='Active'",
+            (t_id, name, zone, password, role)
+        )
         conn.commit()
         conn.close()
-        return jsonify({"status": "success"})
+        return jsonify({"status": "success", "message": f"Trainer '{t_id}' created successfully!"})
 
 @app.route('/api/trainers/<trainer_id>/status', methods=['PUT'])
 def update_trainer_status(trainer_id):
-    data = request.json
+    data = request.json or {}
     conn = get_db_connection()
-    conn.execute("UPDATE trainers SET status=? WHERE trainer_id=?", (data['status'], trainer_id))
+    conn.execute("UPDATE trainers SET status=? WHERE UPPER(trainer_id)=?", (data.get('status', 'Active'), trainer_id.upper()))
     conn.commit()
     conn.close()
     return jsonify({"status": "success"})
+
+@app.route('/api/trainers/<trainer_id>', methods=['PUT', 'DELETE'])
+def manage_single_trainer(trainer_id):
+    trainer_id = trainer_id.upper().strip()
+    
+    if trainer_id == 'ADMIN':
+        return jsonify({"status": "error", "message": "The primary Super Admin account 'ADMIN' cannot be modified or deleted."}), 403
+        
+    conn = get_db_connection()
+    if request.method == 'DELETE':
+        conn.execute("DELETE FROM trainers WHERE UPPER(trainer_id)=?", (trainer_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": f"Trainer '{trainer_id}' deleted successfully."})
+        
+    elif request.method == 'PUT':
+        data = request.json or {}
+        name = str(data.get('name', '')).strip()
+        password = str(data.get('password', '')).strip()
+        role = str(data.get('role', 'Trainer')).strip()
+        zone = str(data.get('zone', 'ALL')).strip()
+        
+        conn.execute("""
+            UPDATE trainers SET
+                name=COALESCE(NULLIF(?, ''), name),
+                password=COALESCE(NULLIF(?, ''), password),
+                role=COALESCE(NULLIF(?, ''), role),
+                zone=COALESCE(NULLIF(?, ''), zone)
+            WHERE UPPER(trainer_id)=?
+        """, (name, password, role, zone, trainer_id))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": f"Trainer profile '{trainer_id}' updated successfully."})
+
+@app.route('/api/trainers/upload', methods=['POST'])
+def bulk_upload_trainers():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part provided."}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No file selected."}), 400
+        
+    if file:
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        try:
+            conn = get_db_connection()
+            rows_processed = 0
+            
+            with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
+                reader = csv.reader(csvfile)
+                raw_headers = [h.strip().lower() for h in next(reader)]
+                
+                def find_idx(keywords):
+                    for idx, h in enumerate(raw_headers):
+                        if any(k in h for k in keywords):
+                            return idx
+                    return -1
+                    
+                id_idx = find_idx(['trainer id', 'id', 'trainer_id', 'code'])
+                name_idx = find_idx(['name', 'trainer name', 'trainer_name'])
+                pwd_idx = find_idx(['password', 'pass', 'pwd'])
+                role_idx = find_idx(['role', 'designation'])
+                zone_idx = find_idx(['zone', 'region'])
+                
+                if id_idx == -1:
+                    conn.close()
+                    return jsonify({"status": "error", "message": "Invalid CSV. Missing 'Trainer ID' column."}), 400
+                    
+                for r in reader:
+                    if not r or len(r) <= id_idx:
+                        continue
+                    t_id = r[id_idx].strip().upper()
+                    if not t_id or t_id == 'ADMIN':
+                        continue
+                        
+                    t_name = r[name_idx].strip().upper() if name_idx != -1 and len(r) > name_idx else f"TRAINER {t_id}"
+                    t_pwd = r[pwd_idx].strip() if pwd_idx != -1 and len(r) > pwd_idx else 'password123'
+                    t_role = r[role_idx].strip() if role_idx != -1 and len(r) > role_idx else 'Trainer'
+                    t_zone = r[zone_idx].strip() if zone_idx != -1 and len(r) > zone_idx else 'ALL'
+                    
+                    conn.execute("""
+                        INSERT INTO trainers (trainer_id, name, zone, password, role, status)
+                        VALUES (?, ?, ?, ?, ?, 'Active')
+                        ON CONFLICT(trainer_id) DO UPDATE SET
+                            name=excluded.name,
+                            zone=excluded.zone,
+                            password=excluded.password,
+                            role=excluded.role,
+                            status='Active'
+                    """, (t_id, t_name, t_zone, t_pwd, t_role))
+                    rows_processed += 1
+                    
+            conn.commit()
+            conn.close()
+            return jsonify({
+                "status": "success",
+                "message": f"Successfully processed {rows_processed} trainer accounts from CSV!"
+            })
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"Bulk upload failed: {str(e)}"}), 500
+
+@app.route('/api/admin/reset-database', methods=['POST'])
+def reset_database():
+    data = request.json or {}
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM employees")
+        conn.execute("DELETE FROM assessment_results")
+        conn.execute("DELETE FROM modules")
+        conn.execute("DELETE FROM questions")
+        conn.execute("DELETE FROM trainers WHERE UPPER(trainer_id) != 'ADMIN'")
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Database reset completed successfully."})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": f"Reset failed: {str(e)}"}), 500
 
 # 3. ROSTER MANAGEMENT
 @app.route('/api/roster', methods=['GET'])
