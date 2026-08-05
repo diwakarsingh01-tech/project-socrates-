@@ -535,12 +535,24 @@ def get_roster_filters():
         roles = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(role) FROM employees WHERE role IS NOT NULL AND TRIM(role) != '' ORDER BY role").fetchall()]
         products = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(product_name) FROM employees WHERE product_name IS NOT NULL AND TRIM(product_name) != '' ORDER BY product_name").fetchall()]
         
+        divisions_meta = [
+            {"name": row[0].strip(), "zone": (row[1] or '').strip()}
+            for row in conn.execute("SELECT DISTINCT TRIM(division), TRIM(zone) FROM employees WHERE division IS NOT NULL AND TRIM(division) != '' ORDER BY division").fetchall()
+        ]
+
+        branches_meta = [
+            {"name": row[0].strip(), "division": (row[1] or '').strip(), "zone": (row[2] or '').strip()}
+            for row in conn.execute("SELECT DISTINCT TRIM(branch_name), TRIM(division), TRIM(zone) FROM employees WHERE branch_name IS NOT NULL AND TRIM(branch_name) != '' ORDER BY branch_name").fetchall()
+        ]
+
         conn.close()
         return jsonify({
             "status": "success",
             "zones": zones,
             "divisions": divisions,
+            "divisions_meta": divisions_meta,
             "branches": branches,
+            "branches_meta": branches_meta,
             "business_units": business_units,
             "roles": roles,
             "products": products
