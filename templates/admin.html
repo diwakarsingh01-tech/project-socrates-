@@ -411,15 +411,22 @@ background: rgba(217,119,6,0.1);
                     <div className="flex-1 flex flex-col min-w-0 bg-[#F3F6FA]">
                         {/* Desktop & Tablet Top Bar */}
 
-<div className="h-16 md:h-20 bg-white/80 backdrop-blur-md border-b border-slate-200/80 px-4 md:px-8 flex flex-row justify-between items-center sticky top-0 z-30 shadow-sm shrink-0">
+<div className="h-16 md:h-20 bg-white/90 backdrop-blur-md border-b border-slate-200 px-4 md:px-8 flex flex-row justify-between items-center sticky top-0 z-30 shadow-sm shrink-0">
                             <div className="flex items-center gap-3 min-w-0">
                                 <button 
                                     onClick={() => setIsMobileMenuOpen(true)}
-                                    className="md:hidden p-2 text-slate-500 hover:bg-slate-100 rounded-xl shrink-0"
+                                    className="md:hidden w-10 h-10 flex items-center justify-center text-slate-700 bg-slate-100 hover:bg-slate-200 active:scale-95 rounded-xl shrink-0 transition-all border border-slate-200 shadow-sm"
+                                    aria-label="Open Navigation Menu"
                                 >
-                                    <i className="fas fa-bars text-lg"></i>
+                                    <i className="fas fa-bars text-base"></i>
                                 </button>
-                                <h1 className="text-base md:text-xl font-black text-slate-900 capitalize tracking-tight font-outfit truncate">{view.replace('_', ' ')}</h1>
+                                <div className="flex items-center gap-2 md:hidden">
+                                    <div className="w-8 h-8 rounded-lg overflow-hidden border border-amber-500/20 shadow-sm">
+                                        <img src="/static/socrates_mind_logo.jpg" className="w-full h-full object-cover" alt="Socrates AI" />
+                                    </div>
+                                    <span className="font-outfit font-black text-slate-900 text-sm tracking-tight">Socrates AI</span>
+                                </div>
+                                <h1 className="hidden md:block text-base md:text-xl font-black text-slate-900 capitalize tracking-tight font-outfit truncate">{view.replace('_', ' ')}</h1>
                                 {isSuperAdmin && (
                                     <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-1.5 shrink-0 ml-2 hidden sm:flex">
                                         <i className="fas fa-user-shield text-amber-600 text-[10px]"></i>
@@ -466,7 +473,8 @@ background: rgba(217,119,6,0.1);
 
                     {/* Bottom Mobile Navigation Bar (Visible only on mobile screen widths) */}
 
-<div className="md:hidden bg-white/95 backdrop-blur-md border-t border-slate-200/80 fixed bottom-0 left-0 right-0 z-40 flex justify-around pt-3 pb-[calc(10px+env(safe-area-inset-bottom))] shadow-[0_-8px_20px_rgba(0,0,0,0.05)] px-2">
+{/* Floating Mobile Bottom Navigation Dock (App Dock Style) */}
+                    <div className="md:hidden fixed bottom-3 left-3 right-3 z-40 bg-[#090D16]/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-1.5 flex justify-around items-center">
                         {[
                             { id: 'dashboard', icon: 'layer-group', label: 'Home' },
                             { id: 'live_session', icon: 'satellite-dish', label: 'Live' },
@@ -474,21 +482,27 @@ background: rgba(217,119,6,0.1);
                             { id: 'roster', icon: 'users-cog', label: 'Roster' },
                             { id: 'travel_hub', icon: 'map-marked-alt', label: 'Travel' },
                             { id: 'analytics', icon: 'chart-pie', label: 'Data' }
-                        ].map(item => (
-                            <button 
-                                key={item.id}
-                                onClick={() => {
-                                    if (item.id === 'live_session') localStorage.removeItem('socrates_active_module');
-                                    setView(item.id);
-                                }} 
-                                className={`flex flex-col items-center gap-1.5 px-2 py-1 transition-all rounded-xl ${
-                                    view === item.id ? 'text-amber-500' : 'text-slate-400 opacity-80'
-                                }`}
-                            >
-                                <i className={`fas fa-${item.icon} text-lg ${view === item.id ? 'animate-pulse' : ''}`}></i>
-                                <span className="text-[8px] font-black uppercase tracking-tighter">{item.label}</span>
-                            </button>
-                        ))}
+                        ].map(item => {
+                            const isActive = view === item.id;
+                            return (
+                                <button 
+                                    key={item.id}
+                                    onClick={() => {
+                                        if (item.id === 'live_session') localStorage.removeItem('socrates_active_module');
+                                        setView(item.id);
+                                    }} 
+                                    className={`flex flex-col items-center justify-center min-w-[48px] h-12 py-1 px-2.5 transition-all rounded-xl relative ${
+                                        isActive ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/20 scale-105' : 'text-slate-400 hover:text-white'
+                                    }`}
+                                >
+                                    <i className={`fas fa-${item.icon} text-sm ${isActive ? '' : 'opacity-80'}`}></i>
+                                    <span className={`text-[9px] tracking-tight mt-0.5 ${isActive ? 'font-black' : 'font-semibold'}`}>{item.label}</span>
+                                    {isActive && (
+                                        <span className="absolute -top-1 w-1.5 h-1.5 bg-amber-400 rounded-full animate-ping"></span>
+                                    )}
+                                </button>
+                            );
+                        })}
                     </div>
 
                     {/* Mobile Sidebar Navigation Drawer Overlay */}
