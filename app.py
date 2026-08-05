@@ -88,6 +88,12 @@ def init_db():
         cursor.execute("ALTER TABLE modules ADD COLUMN status TEXT DEFAULT 'Pending Audit'")
     if 'created_by' not in mod_cols:
         cursor.execute("ALTER TABLE modules ADD COLUMN created_by TEXT DEFAULT 'ADMIN'")
+    if 'difficulty' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN difficulty TEXT DEFAULT 'Medium'")
+    if 'audited_by' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN audited_by TEXT DEFAULT 'Super Admin'")
+    if 'source_text' not in mod_cols:
+        cursor.execute("ALTER TABLE modules ADD COLUMN source_text TEXT")
         
     # Questions (Maker-Checker details)
     cursor.execute('''
@@ -1115,11 +1121,14 @@ def generate_module():
 
 @app.route('/api/modules/save', methods=['POST'])
 def save_module():
-    data = request.json
-    title = data.get('title', 'AI Generated Module').strip()
-    trainer_id = data.get('trainer_id', 'ADMIN').strip()
+    data = request.json or {}
+    title = str(data.get('title', 'AI Generated Module')).strip()
+    trainer_id = str(data.get('trainer_id', 'ADMIN')).strip()
+    difficulty = str(data.get('difficulty', 'Medium')).strip()
+    audited_by = str(data.get('audited_by', 'Super Admin')).strip()
+    source_text = str(data.get('source_text', '')).strip()
     questions = data.get('questions', [])
-    module_id = data.get('module_id') # If editing an existing draft
+    module_id = data.get('module_id')
     
     if not questions:
         return jsonify({"status": "error", "message": "No questions provided to save."}), 400
@@ -1133,26 +1142,33 @@ def save_module():
         cursor = conn.cursor()
         
         if module_id:
-            # Update existing module
             cursor.execute(
-                "UPDATE modules SET title=?, questions_count=?, status=? WHERE id=?",
-                (title, len(questions), status, module_id)
+                "UPDATE modules SET title=?, questions_count=?, status=?, difficulty=?, audited_by=?, source_text=? WHERE id=?",
+                (title, len(questions), status, difficulty, audited_by, source_text, module_id)
             )
-            # Delete old questions to replace them with the newly audited ones
             cursor.execute("DELETE FROM questions WHERE module_id=?", (module_id,))
         else:
-            # Create new module
             cursor.execute(
-                "INSERT INTO modules (title, questions_count, created_at, status, created_by) VALUES (?, ?, ?, ?, ?)",
-                (title, len(questions), now, status, trainer_id)
+                "INSERT INTO modules (title, questions_count, created_at, status, created_by, difficulty, audited_by, source_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, len(questions), now, status, trainer_id, difficulty, audited_by, source_text)
             )
             module_id = cursor.lastrowid
             
         for q in questions:
-            opts = q.get('options', ["Option A", "Option B", "Option C", "Option D"])
+            q_text = str(q.get('question_text') or q.get('question', '')).strip()
+            opts_arr = q.get('options') if isinstance(q.get('options'), list) and len(q.get('options')) >= 4 else None
+            
+            opt_a = str(q.get('option_a') or (opts_arr[0] if opts_arr else 'Option A')).strip()
+            opt_b = str(q.get('option_b') or (opts_arr[1] if opts_arr else 'Option B')).strip()
+            opt_c = str(q.get('option_c') or (opts_arr[2] if opts_arr else 'Option C')).strip()
+            opt_d = str(q.get('option_d') or (opts_arr[3] if opts_arr else 'Option D')).strip()
+            
+            corr_idx = int(q.get('correct_index') if q.get('correct_index') is not None else q.get('correctIndex', 0))
+            appr_val = int(q.get('approved', 0))
+            
             cursor.execute(
                 "INSERT INTO questions (module_id, question_text, option_a, option_b, option_c, option_d, correct_index, approved) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (module_id, q.get('question_text', q.get('question')), opts[0], opts[1], opts[2], opts[3], q.get('correctIndex', q.get('correct_index', 0)), q.get('approved', 0))
+                (module_id, q_text, opt_a, opt_b, opt_c, opt_d, corr_idx, appr_val)
             )
             
         conn.commit()
