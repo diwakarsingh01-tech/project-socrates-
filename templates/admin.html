@@ -3160,8 +3160,8 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                             className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
                                         >
                                             <option value="">Awaiting Audit</option>
-                                            {(trainers || []).filter(t => t && t.id).map(t => (
-                                                <option key={t.id} value={t.name}>{t.name} ({t.id})</option>
+                                            {(trainers || []).filter(t => t && (t.id || t.trainer_id)).map(t => (
+                                                <option key={t.id || t.trainer_id} value={t.name}>{t.name} ({t.id || t.trainer_id})</option>
                                             ))}
                                         </select>
                                     </div>
@@ -3277,8 +3277,8 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                             className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-amber-500"
                                         >
                                             <option value="">Awaiting Audit</option>
-                                            {(trainers || []).filter(t => t && t.id).map(t => (
-                                                <option key={t.id} value={t.name}>{t.name} ({t.id})</option>
+                                            {(trainers || []).filter(t => t && (t.id || t.trainer_id)).map(t => (
+                                                <option key={t.id || t.trainer_id} value={t.name}>{t.name} ({t.id || t.trainer_id})</option>
                                             ))}
                                         </select>
                                     </div>
