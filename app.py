@@ -2452,6 +2452,139 @@ def save_module():
         "message": f"Module '{title}' saved successfully as {status}!"
     })
 
+@app.route('/api/modules/import_csv', methods=['POST'])
+def import_modules_csv():
+    """Import question papers from a manually-built CSV.
+
+    Format (one row per question; paper metadata repeats on every row):
+      title, auditor, time_limit_minutes, pass_percentage, enable_anti_cheat,
+      question, option_a, option_b, option_c, option_d, correct_index, approved
+    correct_index: 0-3 or A/B/C/D.  approved: 1 (ready) or 0 (pending audit).
+    Rows are grouped by title; each group becomes one module.
+    """
+    data = request.json or {}
+    csv_text = str(data.get('csv', '')).lstrip('\ufeff').strip()
+    trainer_id = str(data.get('trainer_id', 'ADMIN')).strip()
+    if not csv_text:
+        return jsonify({"status": "error", "message": "No CSV content provided."}), 400
+
+    try:
+        rows = list(csv.reader(io.StringIO(csv_text)))
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to parse CSV: {str(e)}"}), 400
+
+    # Drop a header row if the first cell is the literal header 'title'
+    if rows and rows[0] and str(rows[0][0]).strip().lower() == 'title':
+        rows = rows[1:]
+
+    def _csv_idx(v):
+        s = str(v or '').strip().upper()
+        if s in ('A', '0'):
+            return 0
+        if s in ('B', '1'):
+            return 1
+        if s in ('C', '2'):
+            return 2
+        if s in ('D', '3'):
+            return 3
+        return None
+
+    def _csv_int(v, default):
+        s = str(v or '').strip()
+        if not s:
+            return default
+        try:
+            return int(float(s))
+        except ValueError:
+            return default
+
+    groups = []
+    group_index = {}
+    for r_i, row in enumerate(rows, start=1):
+        cells = [str(c).strip() for c in row]
+        if len(cells) < 6:
+            return jsonify({"status": "error", "message": f"Row {r_i}: expected at least 6 columns (title, question, option_a..option_d, ...) — got {len(cells)}."}), 400
+        title = cells[0]
+        if not title:
+            return jsonify({"status": "error", "message": f"Row {r_i}: module title is empty."}), 400
+        q_text = cells[5]
+        if not q_text:
+            return jsonify({"status": "error", "message": f"Row {r_i}: question text is empty."}), 400
+        opts = [
+            cells[6] if len(cells) > 6 else '',
+            cells[7] if len(cells) > 7 else '',
+            cells[8] if len(cells) > 8 else '',
+            cells[9] if len(cells) > 9 else '',
+        ]
+        if any(not o for o in opts):
+            return jsonify({"status": "error", "message": f"Row {r_i}: all 4 options (option_a .. option_d) are required."}), 400
+        if len(set(o.lower() for o in opts)) < 4:
+            return jsonify({"status": "error", "message": f"Row {r_i}: the 4 options must be DISTINCT values."}), 400
+        idx = _csv_idx(cells[10] if len(cells) > 10 else '')
+        if idx is None:
+            return jsonify({"status": "error", "message": f"Row {r_i}: correct_index must be 0-3 or A/B/C/D — got '{cells[10] if len(cells) > 10 else ''}'."}), 400
+
+        if title not in group_index:
+            group_index[title] = len(groups)
+            groups.append({
+                'title': title,
+                'audited_by': cells[1] if len(cells) > 1 and cells[1] else 'Super Admin',
+                'time_limit': _csv_int(cells[2] if len(cells) > 2 else '', 15),
+                'pass_pct': _csv_int(cells[3] if len(cells) > 3 else '', 70),
+                'anti_cheat': _csv_int(cells[4] if len(cells) > 4 else '', 1),
+                'questions': [],
+                'seen_stems': set(),
+            })
+        g = groups[group_index[title]]
+        stem_key = _normalize_key(q_text)
+        if stem_key in g['seen_stems']:
+            return jsonify({"status": "error", "message": f"Row {r_i}: duplicate question inside module '{title}'."}), 400
+        g['seen_stems'].add(stem_key)
+        g['questions'].append({
+            'q_text': q_text,
+            'opts': opts,
+            'idx': idx,
+            'approved': _csv_int(cells[11] if len(cells) > 11 else '', 1),
+        })
+
+    if not groups:
+        return jsonify({"status": "error", "message": "No data rows found in CSV."}), 400
+
+    conn = get_db_connection()
+    imported = []
+    try:
+        now = datetime.datetime.now().strftime("%Y-%m-%d")
+        cursor = conn.cursor()
+        for g in groups:
+            all_approved = all(q['approved'] == 1 for q in g['questions'])
+            status = 'Ready' if all_approved else 'Pending Audit'
+            cursor.execute(
+                "INSERT INTO modules (title, questions_count, created_at, status, created_by, difficulty, audited_by, time_limit_minutes, pass_percentage, enable_anti_cheat, shuffle_questions, shuffle_options) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (g['title'], len(g['questions']), now, status, trainer_id, 'Medium', g['audited_by'], g['time_limit'], g['pass_pct'], g['anti_cheat'], 1, 1)
+            )
+            module_id = cursor.lastrowid
+            for q in g['questions']:
+                cursor.execute(
+                    "INSERT INTO questions (module_id, question_text, option_a, option_b, option_c, option_d, correct_index, approved, question_type, points_weight, negative_points, media_url, matching_pairs) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (module_id, q['q_text'], q['opts'][0], q['opts'][1], q['opts'][2], q['opts'][3], q['idx'], q['approved'], 'mcq_single', 1.0, 0.0, '', '')
+                )
+            imported.append({'module_id': module_id, 'title': g['title'], 'questions': len(g['questions']), 'status': status})
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({"status": "error", "message": f"Failed to import CSV: {str(e)}"}), 500
+    conn.close()
+
+    total_q = sum(m['questions'] for m in imported)
+    return jsonify({
+        "status": "success",
+        "imported": len(imported),
+        "questions": total_q,
+        "modules": imported,
+        "message": f"✓ Imported {len(imported)} module(s) with {total_q} question(s) from CSV!"
+    })
+
 # 5. ASSESSMENT SUBMISSION & DYNAMIC ANALYTICS
 @app.route('/api/assessments/submit', methods=['POST'])
 def submit_assessment():

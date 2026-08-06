@@ -2579,6 +2579,7 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
             const handleImportFile = (e) => {
                 const file = e.target.files[0];
                 if (!file) return;
+                if (file.name.toLowerCase().endsWith('.csv')) return handleImportCsvFile(file);
 
                 const reader = new FileReader();
                 reader.onload = (event) => {
@@ -2629,6 +2630,50 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                 };
                 reader.readAsText(file);
                 e.target.value = ''; // Reset input
+            };
+
+            // Import a manually-built question paper CSV (one row per question)
+            const handleImportCsvFile = (file) => {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    fetch('/api/modules/import_csv', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ csv: event.target.result, trainer_id: user?.id || 'ADMIN' })
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            alert(data.message || '✓ CSV imported successfully!');
+                            loadModules();
+                        } else {
+                            alert('❌ CSV import failed: ' + data.message);
+                        }
+                    })
+                    .catch(err => {
+                        console.error("CSV import crash:", err);
+                        alert("Error importing CSV: " + err.message);
+                    });
+                };
+                reader.readAsText(file);
+                document.getElementById('socrates-import-input').value = ''; // Reset input
+            };
+
+            // Download a ready-to-fill CSV template for manual question papers
+            const downloadCsvTemplate = () => {
+                const header = 'title,auditor,time_limit_minutes,pass_percentage,enable_anti_cheat,question,option_a,option_b,option_c,option_d,correct_index,approved';
+                const sample1 = 'GOLD LOAN POLICY REFRESHER MODULE,Trainer X,15,70,1,What is the maximum LTV allowed on a gold loan?,75%,80%,85%,90%,0,1';
+                const sample2 = 'GOLD LOAN POLICY REFRESHER MODULE,Trainer X,15,70,1,What is the rate of interest charged on a gold loan?,7.5%,8.0%,8.5%,9.0%,2,1';
+                const csv = [header, sample1, sample2].join('\n');
+                const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'socrates_module_import_template.csv';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
             };
 
             const handleResumeAudit = (mod) => {
@@ -3093,15 +3138,22 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                 <button 
                                     onClick={() => document.getElementById('socrates-import-input').click()} 
                                     className="btn-outline border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 py-1.5 px-2.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm transition-all"
-                                    title="Import Module JSON file"
+                                    title="Import Module — JSON file or manual CSV (see CSV Template)"
                                 >
                                     <i className="fas fa-file-import"></i> Import Module
+                                </button>
+                                <button 
+                                    onClick={downloadCsvTemplate} 
+                                    className="btn-outline border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 py-1.5 px-2.5 rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-sm transition-all"
+                                    title="Download the manual CSV template — fill it in Excel/Google Sheets and import it"
+                                >
+                                    <i className="fas fa-file-csv"></i> CSV Template
                                 </button>
                                 <input 
                                     type="file" 
                                     id="socrates-import-input" 
                                     onChange={handleImportFile} 
-                                    accept=".json" 
+                                    accept=".json,.csv" 
                                     className="hidden" 
                                 />
                                 <span className="text-xs font-bold bg-blue-100 text-socrates-primary px-2 py-1 rounded-md">{modules.length} Available</span>
@@ -3183,7 +3235,7 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                 );
                             })}
                             {modules.length === 0 && (
-                                <p className="text-center text-xs text-slate-400 py-10 italic">No modules available. Upload a policy above to generate one.</p>
+                                <p className="text-center text-xs text-slate-400 py-10 italic">No modules available. Create a paper in the Manual Builder, or import a module via JSON / CSV Template.</p>
                             )}
                         </div>
                     </div>
