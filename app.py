@@ -212,6 +212,16 @@ def init_db():
         created_at TEXT
     )''')
     
+    # AI Refresher Campaigns (trainees flagged below 60% for mandatory retraining)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS refresher_campaigns (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        emp_code TEXT,
+        module_id INTEGER,
+        campaign_date TEXT,
+        status TEXT DEFAULT 'PENDING'
+    )''')
+    
     # Field Visits / Travel Hub (Planner, GPS check-in, Manager sign-off)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS visits (
@@ -1660,60 +1670,159 @@ def dashboard_stats():
     month_start = today.replace(day=1).strftime("%Y-%m-%d")
     today_str = today.strftime("%Y-%m-%d")
 
+    # Server-side visibility scope (zone/division/branch/BU) for non-global roles.
+    emp_scope_sql, emp_scope_params = "", []
+    sess_scope_sql, sess_scope_params = "", []
+    _user = _session_user()
+    if _user and not _is_global_role(_user.get('role', '')):
+        _scope = _trainer_scope(_user.get('trainer_id'))
+        if _scope:
+            sp_e, sp_s = [], []
+            if _scope.get('zones'):
+                sp_e.append("UPPER(TRIM(e.zone)) IN ({})".format(','.join('?' * len(_scope['zones']))))
+                emp_scope_params.extend(_scope['zones'])
+            if _scope.get('divisions'):
+                sp_e.append("UPPER(TRIM(e.division)) IN ({})".format(','.join('?' * len(_scope['divisions']))))
+                emp_scope_params.extend(_scope['divisions'])
+            if _scope.get('branches'):
+                sp_e.append("UPPER(TRIM(e.branch_name)) IN ({})".format(','.join('?' * len(_scope['branches']))))
+                emp_scope_params.extend(_scope['branches'])
+                sp_s.append("UPPER(TRIM(branch_name)) IN ({})".format(','.join('?' * len(_scope['branches']))))
+                sess_scope_params.extend(_scope['branches'])
+            if _scope.get('business_units'):
+                sp_e.append("UPPER(TRIM(e.business_unit)) IN ({})".format(','.join('?' * len(_scope['business_units']))))
+                emp_scope_params.extend(_scope['business_units'])
+            if sp_e:
+                emp_scope_sql = " AND " + " AND ".join(sp_e)
+            if sp_s:
+                sess_scope_sql = " AND " + " AND ".join(sp_s)
+
+    # Live sessions logged by the Live Session module (month-to-date)
     sess_q = "SELECT * FROM training_sessions WHERE date >= ?"
     sess_p = [month_start]
     if trainer_id and trainer_id.upper() != 'ADMIN':
         sess_q += " AND UPPER(TRIM(trainer_id))=UPPER(TRIM(?))"
         sess_p.append(trainer_id)
+    if sess_scope_sql:
+        sess_q += sess_scope_sql
+        sess_p.extend(sess_scope_params)
     sessions = conn.execute(sess_q, sess_p).fetchall()
 
-    branches_visited = conn.execute(
-        "SELECT COUNT(DISTINCT branch_name) AS c FROM training_sessions WHERE branch_name IS NOT NULL AND TRIM(branch_name)!=''"
-    ).fetchone()['c']
+    # Legacy/offline campaigns never wrote training_sessions; when the log is
+    # empty, derive session cohorts from assessment results instead of showing 0.
+    total_ts = conn.execute("SELECT COUNT(*) AS c FROM training_sessions").fetchone()['c']
+    use_fallback = total_ts == 0
+    sessions_count = len(sessions)
+    recent_sessions = []
 
-    execs_trained = conn.execute("SELECT COUNT(DISTINCT emp_code) AS c FROM assessment_results").fetchone()['c']
+    if use_fallback:
+        fb_scope = emp_scope_sql.replace("e.zone", "e.zone").replace("UPPER(TRIM(e.branch_name))", "UPPER(TRIM(e.branch_name))")
+        fbq = """
+            SELECT a.module_id, TRIM(COALESCE(e.branch_name,'')) AS branch_name,
+                   COUNT(DISTINCT a.emp_code) AS attendee_count,
+                   MAX(a.completed_at) AS latest
+            FROM assessment_results a
+            LEFT JOIN employees e ON a.emp_code = e.emp_code
+            WHERE a.completed_at >= ? {scope}
+            GROUP BY a.module_id, TRIM(COALESCE(e.branch_name,''))
+        """
+        fbp = [month_start]
+        if emp_scope_sql:
+            fbq = fbq.format(scope=emp_scope_sql)
+            fbp.extend(emp_scope_params)
+        else:
+            fbq = fbq.format(scope="")
+        cohort_rows = conn.execute(fbq, fbp).fetchall()
+        sessions_count = len(cohort_rows)
+        for c in cohort_rows[:8]:
+            title = ''
+            trow = conn.execute("SELECT title FROM modules WHERE id=?", (c['module_id'],)).fetchone()
+            if trow:
+                title = trow['title']
+            recent_sessions.append({
+                "date": (c['latest'] or '')[:10],
+                "module_title": title or f"Module #{c['module_id']}",
+                "branch_name": c['branch_name'] or '—',
+                "trainer_name": '—',
+                "attendee_count": c['attendee_count']
+            })
+    else:
+        recent = conn.execute(
+            "SELECT * FROM training_sessions ORDER BY date DESC, session_id DESC LIMIT 8"
+        ).fetchall()
+        for s in recent:
+            title = ''
+            trow = conn.execute("SELECT title FROM modules WHERE id=?", (s['module_id'],)).fetchone()
+            if trow:
+                title = trow['title']
+            tr_name = ''
+            trow2 = conn.execute("SELECT name FROM trainers WHERE trainer_id=?", (s['trainer_id'],)).fetchone()
+            if trow2:
+                tr_name = trow2['name']
+            attendee = 0
+            if s['module_id']:
+                attendee = conn.execute(
+                    "SELECT COUNT(DISTINCT emp_code) AS c FROM assessment_results WHERE module_id=? AND DATE(completed_at)=?",
+                    (s['module_id'], s['date'])
+                ).fetchone()['c']
+            recent_sessions.append({
+                "date": s['date'],
+                "module_title": title,
+                "branch_name": s['branch_name'],
+                "trainer_name": tr_name or s['trainer_id'],
+                "attendee_count": attendee
+            })
+
+    # Branches visited: same scope as the session numbers
+    if use_fallback:
+        fb_bq = """
+            SELECT COUNT(DISTINCT TRIM(COALESCE(e.branch_name,''))) AS c
+            FROM assessment_results a
+            LEFT JOIN employees e ON a.emp_code = e.emp_code
+            WHERE a.completed_at >= ? {scope} AND TRIM(COALESCE(e.branch_name,'')) != ''
+        """
+        bbp = [month_start]
+        if emp_scope_sql:
+            fb_bq = fb_bq.format(scope=emp_scope_sql)
+            bbp.extend(emp_scope_params)
+        else:
+            fb_bq = fb_bq.format(scope="")
+        branches_visited = conn.execute(fb_bq, bbp).fetchone()['c']
+    else:
+        bv_q = "SELECT COUNT(DISTINCT branch_name) AS c FROM training_sessions WHERE branch_name IS NOT NULL AND TRIM(branch_name)!='' AND date >= ?"
+        bv_p = [month_start]
+        if trainer_id and trainer_id.upper() != 'ADMIN':
+            bv_q += " AND UPPER(TRIM(trainer_id))=UPPER(TRIM(?))"
+            bv_p.append(trainer_id)
+        if sess_scope_sql:
+            bv_q += sess_scope_sql
+            bv_p.extend(sess_scope_params)
+        branches_visited = conn.execute(bv_q, bv_p).fetchone()['c']
+
+    # Execs trained / growth: scoped to the viewer's visibility + current month
+    ar_scope = emp_scope_sql
+    execs_trained = conn.execute(
+        "SELECT COUNT(DISTINCT a.emp_code) AS c FROM assessment_results a LEFT JOIN employees e ON a.emp_code=e.emp_code WHERE a.completed_at >= ?" + ar_scope,
+        [month_start] + emp_scope_params
+    ).fetchone()['c']
     growth = conn.execute(
-        "SELECT AVG(post_test_score - pre_test_score) AS g FROM assessment_results WHERE post_test_score IS NOT NULL AND pre_test_score IS NOT NULL"
+        "SELECT AVG(a.post_test_score - a.pre_test_score) AS g FROM assessment_results a LEFT JOIN employees e ON a.emp_code=e.emp_code WHERE a.post_test_score IS NOT NULL AND a.pre_test_score IS NOT NULL AND a.completed_at >= ?" + ar_scope,
+        [month_start] + emp_scope_params
     ).fetchone()['g']
     modules_count = conn.execute("SELECT COUNT(*) AS c FROM modules").fetchone()['c']
 
-    # Recent sessions with attendee counts
-    recent = conn.execute(
-        "SELECT * FROM training_sessions ORDER BY date DESC, session_id DESC LIMIT 8"
-    ).fetchall()
-    recent_sessions = []
-    for s in recent:
-        title = ''
-        trow = conn.execute("SELECT title FROM modules WHERE id=?", (s['module_id'],)).fetchone()
-        if trow:
-            title = trow['title']
-        tr_name = ''
-        trow2 = conn.execute("SELECT name FROM trainers WHERE trainer_id=?", (s['trainer_id'],)).fetchone()
-        if trow2:
-            tr_name = trow2['name']
-        attendee = conn.execute(
-            "SELECT COUNT(DISTINCT emp_code) AS c FROM assessment_results WHERE module_id=? AND assignment_day=?",
-            (s['module_id'], s['date'])
-        ).fetchone()['c']
-        recent_sessions.append({
-            "date": s['date'],
-            "module_title": title,
-            "branch_name": s['branch_name'],
-            "trainer_name": tr_name or s['trainer_id'],
-            "attendee_count": attendee
-        })
-
-    # Branch leaderboard from real assessment results
+    # Branch leaderboard from real assessment results (scoped)
     top_branches = []
     br_rows = conn.execute("""
         SELECT e.branch_name, COUNT(DISTINCT ar.emp_code) AS cnt,
                AVG(ar.post_test_score - ar.pre_test_score) AS delta
         FROM assessment_results ar
         LEFT JOIN employees e ON e.emp_code = ar.emp_code
-        WHERE e.branch_name IS NOT NULL AND TRIM(e.branch_name)!=''
+        WHERE e.branch_name IS NOT NULL AND TRIM(e.branch_name)!='' AND ar.completed_at >= ?
+        {scope}
         GROUP BY e.branch_name
         ORDER BY cnt DESC LIMIT 5
-    """).fetchall()
+    """.format(scope=emp_scope_sql), [month_start] + emp_scope_params).fetchall()
     for b in br_rows:
         top_branches.append({
             "branch_name": b['branch_name'],
@@ -1739,10 +1848,13 @@ def dashboard_stats():
 
     # Today's field visits (travel hub live movement)
     todays_visits = []
-    vis = conn.execute("""
-        SELECT * FROM visits WHERE planned_date <= ? AND (end_date IS NULL OR end_date >= ?) AND status != 'CANCELLED'
-        ORDER BY planned_date ASC
-    """, (today_str, today_str)).fetchall()
+    vis_q = "SELECT * FROM visits WHERE planned_date <= ? AND (end_date IS NULL OR end_date >= ?) AND status != 'CANCELLED'"
+    vis_p = [today_str, today_str]
+    if trainer_id and trainer_id.upper() != 'ADMIN':
+        vis_q += " AND UPPER(TRIM(trainer_id))=UPPER(TRIM(?))"
+        vis_p.append(trainer_id)
+    vis_q += " ORDER BY planned_date ASC"
+    vis = conn.execute(vis_q, vis_p).fetchall()
     for v in vis:
         todays_visits.append({
             "id": v['id'],
@@ -1755,7 +1867,7 @@ def dashboard_stats():
     conn.close()
     return jsonify({
         "status": "success",
-        "sessions_count": len(sessions),
+        "sessions_count": sessions_count,
         "branches_visited": branches_visited,
         "execs_trained": execs_trained,
         "avg_growth_delta": round(growth or 0, 1),
@@ -2515,58 +2627,267 @@ def get_analytics():
     conn = get_db_connection()
     try:
         where_sql, params = _analytics_where(request.args)
-        
+        # Always keep a non-empty WHERE so later scope clauses can append with
+        # plain "AND ..." — otherwise an empty where_sql would push the scope
+        # conditions into the LEFT JOIN's ON clause and silently bypass filtering.
+        if not where_sql:
+            where_sql = " WHERE 1=1"
+
+        # Server-side access control: non-global roles only see their assigned
+        # zone/division/branch/business-unit scope.
+        e_scope_sql = ""       # conditions for queries aliased on `e`
+        emp_scope_sql = ""     # conditions for bare `employees` queries
+        e_scope_params = []
+        emp_scope_params = []
+        _user = _session_user()
+        if _user and not _is_global_role(_user.get('role', '')):
+            _scope = _trainer_scope(_user.get('trainer_id'))
+            if _scope:
+                parts_e, parts_emp = [], []
+                if _scope.get('zones'):
+                    parts_e.append("UPPER(TRIM(e.zone)) IN ({})".format(','.join('?' * len(_scope['zones']))))
+                    e_scope_params = _scope['zones']
+                    parts_emp.append("UPPER(TRIM(zone)) IN ({})".format(','.join('?' * len(_scope['zones']))))
+                    emp_scope_params = _scope['zones']
+                if _scope.get('divisions'):
+                    parts_e.append("UPPER(TRIM(e.division)) IN ({})".format(','.join('?' * len(_scope['divisions']))))
+                    e_scope_params = e_scope_params + _scope['divisions']
+                    parts_emp.append("UPPER(TRIM(division)) IN ({})".format(','.join('?' * len(_scope['divisions']))))
+                    emp_scope_params = emp_scope_params + _scope['divisions']
+                if _scope.get('branches'):
+                    parts_e.append("UPPER(TRIM(e.branch_name)) IN ({})".format(','.join('?' * len(_scope['branches']))))
+                    e_scope_params = e_scope_params + _scope['branches']
+                    parts_emp.append("UPPER(TRIM(branch_name)) IN ({})".format(','.join('?' * len(_scope['branches']))))
+                    emp_scope_params = emp_scope_params + _scope['branches']
+                if _scope.get('business_units'):
+                    parts_e.append("UPPER(TRIM(e.business_unit)) IN ({})".format(','.join('?' * len(_scope['business_units']))))
+                    e_scope_params = e_scope_params + _scope['business_units']
+                    parts_emp.append("UPPER(TRIM(business_unit)) IN ({})".format(','.join('?' * len(_scope['business_units']))))
+                    emp_scope_params = emp_scope_params + _scope['business_units']
+                if parts_e:
+                    where_sql += " AND " + " AND ".join(parts_e)
+                    params.extend(e_scope_params)
+                if parts_emp:
+                    emp_scope_sql = " AND " + " AND ".join(parts_emp)
+
+        base = "FROM assessment_results a LEFT JOIN employees e ON a.emp_code = e.emp_code"
+
+        # 1) Temporal learning progression (avg pre/post per assignment milestone)
         results = conn.execute(f"""
-            SELECT a.assignment_day, 
-                   AVG(a.pre_test_score) as avg_pre, 
+            SELECT a.assignment_day,
+                   AVG(a.pre_test_score) as avg_pre,
                    AVG(a.post_test_score) as avg_post,
                    COUNT(DISTINCT a.emp_code) as participants
-            FROM assessment_results a
-            LEFT JOIN employees e ON a.emp_code = e.emp_code
+            {base}
             {where_sql}
             GROUP BY a.assignment_day
         """, params).fetchall()
-        
-        # Filter options for cascading dropdowns (from full roster, independent of active filters)
-        zones = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(zone) FROM employees WHERE zone IS NOT NULL AND TRIM(zone) != '' ORDER BY zone").fetchall()]
+
+        # 2) Summary metrics (org penetration + role-wise distribution)
+        summary_row = conn.execute(f"""
+            SELECT COUNT(DISTINCT e.branch_name) as branches_count,
+                   COUNT(DISTINCT a.emp_code) as employees_count,
+                   COUNT(*) as records_count,
+                   AVG(a.post_test_score) as avg_post,
+                   AVG(a.post_test_score - a.pre_test_score) as growth
+            {base}
+            {where_sql}
+        """, params).fetchone()
+        role_rows = conn.execute(f"""
+            SELECT e.role as role, COUNT(DISTINCT a.emp_code) as cnt
+            {base}
+            {where_sql}
+            GROUP BY e.role ORDER BY cnt DESC
+        """, params).fetchall()
+
+        # 3) Score distribution buckets (latest milestone post-test per employee)
+        dist_where = where_sql + ((" AND " if where_sql else " WHERE ") + "a.post_test_score IS NOT NULL")
+        dist_rows = conn.execute(f"""
+            SELECT emp_code, emp_name, branch_name, division, zone, business_unit, post_test_score
+            FROM (
+                SELECT a.emp_code, e.emp_name, e.branch_name, e.division, e.zone, e.business_unit,
+                       a.post_test_score,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY a.emp_code
+                           ORDER BY CASE UPPER(TRIM(a.assignment_day))
+                                        WHEN 'TWENTY DAYS' THEN 2 WHEN 'SIX DAYS' THEN 1 ELSE 0 END DESC,
+                                    a.completed_at DESC
+                       ) rn
+                {base}
+                {dist_where}
+            )
+            WHERE rn = 1
+            ORDER BY post_test_score DESC
+        """, params).fetchall()
+
+        score_distribution = {'below_60': [], '60_80': [], 'above_80': []}
+        for d in dist_rows:
+            emp = {
+                "emp_code": d['emp_code'],
+                "emp_name": d['emp_name'] or d['emp_code'],
+                "business_unit": d['business_unit'] or '',
+                "branch_name": d['branch_name'] or '',
+                "post_test_score": round(d['post_test_score'] or 0, 1)
+            }
+            s = d['post_test_score'] or 0
+            if s < 60:
+                score_distribution['below_60'].append(emp)
+            elif s < 80:
+                score_distribution['60_80'].append(emp)
+            else:
+                score_distribution['above_80'].append(emp)
+
+        # 4) Hierarchical drill-down breakdown (zone -> division -> branch -> executive)
+        sel_zone = request.args.get('zone', '').strip()
+        sel_div = request.args.get('division', '').strip()
+        sel_branch = request.args.get('branch', '').strip()
+        if sel_branch:
+            dim, name_col, label = "a.emp_code", "e.emp_name", "executive"
+        elif sel_div:
+            dim, name_col, label = "TRIM(e.branch_name)", "TRIM(e.branch_name)", "branch"
+        elif sel_zone:
+            dim, name_col, label = "TRIM(e.division)", "TRIM(e.division)", "division"
+        else:
+            dim, name_col, label = "TRIM(e.zone)", "TRIM(e.zone)", "zone"
+        if label == "executive":
+            dim_where = where_sql + ((" AND " if where_sql else " WHERE ") + "a.emp_code IS NOT NULL")
+        else:
+            dim_where = where_sql + ((" AND " if where_sql else " WHERE ") + f"{dim} IS NOT NULL AND {dim} != ''")
+        breakdown_rows = conn.execute(f"""
+            SELECT {dim} as id, {name_col} as name,
+                   AVG(a.pre_test_score) as pre,
+                   AVG(a.post_test_score) as post,
+                   AVG(a.post_test_score - a.pre_test_score) as growth,
+                   COUNT(DISTINCT a.emp_code) as count
+            {base}
+            {dim_where}
+            GROUP BY {dim}, {name_col}
+            ORDER BY growth DESC, count DESC
+        """, params).fetchall()
+        breakdown = [
+            {
+                "id": b['id'], "name": b['name'] or b['id'],
+                "pre": round(b['pre'] or 0, 1), "post": round(b['post'] or 0, 1),
+                "growth": round(b['growth'] or 0, 1), "count": b['count']
+            }
+            for b in breakdown_rows
+        ]
+
+        # 5) Critical branch pain areas (avg post < 60% OR learning growth < 15%)
+        pain_rows = conn.execute(f"""
+            SELECT TRIM(e.branch_name) as branch_name,
+                   AVG(a.pre_test_score) as pre,
+                   AVG(a.post_test_score) as post,
+                   AVG(a.post_test_score - a.pre_test_score) as growth,
+                   COUNT(DISTINCT a.emp_code) as count
+            {base}
+            {where_sql + ((" AND " if where_sql else " WHERE ") + "TRIM(e.branch_name) != ''")}
+            GROUP BY TRIM(e.branch_name)
+            HAVING AVG(a.post_test_score) < 60 OR AVG(a.post_test_score - a.pre_test_score) < 15
+            ORDER BY AVG(a.post_test_score) ASC
+        """, params).fetchall()
+        critical_pain_areas = [
+            {
+                "branch_name": p['branch_name'],
+                "pre": round(p['pre'] or 0, 1), "post": round(p['post'] or 0, 1),
+                "growth": round(p['growth'] or 0, 1), "count": p['count']
+            }
+            for p in pain_rows
+        ]
+
+        # 6) AI module usage & effectiveness
+        module_rows = conn.execute(f"""
+            SELECT a.module_id, m.title,
+                   COUNT(DISTINCT a.emp_code) as participants,
+                   AVG(a.pre_test_score) as avg_pre,
+                   AVG(a.post_test_score) as avg_post,
+                   AVG(a.time_taken_seconds) as avg_time,
+                   ROUND(100.0 * SUM(CASE WHEN a.post_test_score >= COALESCE(m.pass_percentage, 60) THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 1) as pass_rate
+            {base}
+            LEFT JOIN modules m ON a.module_id = m.id
+            {where_sql}
+            GROUP BY a.module_id
+            ORDER BY participants DESC
+        """, params).fetchall()
+        module_usage = [
+            {
+                "module_id": m['module_id'],
+                "title": m['title'] or f"Module #{m['module_id']}",
+                "participants": m['participants'],
+                "avg_pre": round(m['avg_pre'] or 0, 1),
+                "avg_post": round(m['avg_post'] or 0, 1),
+                "avg_time_seconds": round(m['avg_time'] or 0, 0),
+                "pass_rate": m['pass_rate'] or 0.0
+            }
+            for m in module_rows
+        ]
+
+        # Filter options for cascading dropdowns (full roster, independent of active filters)
+        opt_where = " WHERE 1=1" + emp_scope_sql
+        opt_params = list(emp_scope_params)
+        zones = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(zone) FROM employees" + opt_where + " AND zone IS NOT NULL AND TRIM(zone) != '' ORDER BY zone", opt_params).fetchall()]
         divisions = [
             {"name": row[0].strip(), "zone": (row[1] or '').strip()}
-            for row in conn.execute("SELECT DISTINCT TRIM(division), TRIM(zone) FROM employees WHERE division IS NOT NULL AND TRIM(division) != '' ORDER BY division").fetchall()
+            for row in conn.execute("SELECT DISTINCT TRIM(division), TRIM(zone) FROM employees" + opt_where + " AND division IS NOT NULL AND TRIM(division) != '' ORDER BY division", opt_params).fetchall()
         ]
         branches = [
             {"name": row[0].strip(), "division": (row[1] or '').strip(), "zone": (row[2] or '').strip()}
-            for row in conn.execute("SELECT DISTINCT TRIM(branch_name), TRIM(division), TRIM(zone) FROM employees WHERE branch_name IS NOT NULL AND TRIM(branch_name) != '' ORDER BY branch_name").fetchall()
+            for row in conn.execute("SELECT DISTINCT TRIM(branch_name), TRIM(division), TRIM(zone) FROM employees" + opt_where + " AND branch_name IS NOT NULL AND TRIM(branch_name) != '' ORDER BY branch_name", opt_params).fetchall()
         ]
         executives = [
             {"code": row[0], "name": row[1], "branch": (row[2] or ''), "division": (row[3] or ''), "zone": (row[4] or '')}
-            for row in conn.execute("SELECT emp_code, emp_name, branch_name, division, zone FROM employees ORDER BY emp_name").fetchall()
+            for row in conn.execute("SELECT emp_code, emp_name, branch_name, division, zone FROM employees" + opt_where + " ORDER BY emp_name", opt_params).fetchall()
         ]
-        business_units = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(business_unit) FROM employees WHERE business_unit IS NOT NULL AND TRIM(business_unit) != '' ORDER BY business_unit").fetchall()]
-        products = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(product_name) FROM employees WHERE product_name IS NOT NULL AND TRIM(product_name) != '' ORDER BY product_name").fetchall()]
+        business_units = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(business_unit) FROM employees" + opt_where + " AND business_unit IS NOT NULL AND TRIM(business_unit) != '' ORDER BY business_unit", opt_params).fetchall()]
+        products = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(product_name) FROM employees" + opt_where + " AND product_name IS NOT NULL AND TRIM(product_name) != '' ORDER BY product_name", opt_params).fetchall()]
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 500
     conn.close()
-    
-    defaults = {'pre': 0.0, 'post': 0.0, 'count': 0, 'correct': 0, 'wrong': 0, 'left': 0}
+
+    # Normalize assignment_day labels to canonical milestones so charts render correctly.
+    def _norm_day(day):
+        token = re.sub(r'[^0-9A-Z]', '', str(day).upper())
+        if 'TWENTY' in token or '20' in token:
+            return 'TWENTY DAYS'
+        if 'SIX' in token or '6' in token:
+            return 'SIX DAYS'
+        if 'ZERO' in token or '0' in token:
+            return 'ZERO DAY'
+        return str(day).upper()
+
+    defaults = {'pre': 0.0, 'post': 0.0, 'count': 0}
     payload = {
         'ZERO DAY': dict(defaults),
         'SIX DAYS': dict(defaults),
         'TWENTY DAYS': dict(defaults)
     }
-    
     for r in results:
-        day = r['assignment_day'].upper()
+        day = _norm_day(r['assignment_day'])
         entry = payload.setdefault(day, dict(defaults))
         entry['pre'] = round(r['avg_pre'] or 0.0, 1)
         entry['post'] = round(r['avg_post'] or 0.0, 1)
         entry['count'] = r['participants']
-    
-    has_live_data = len(results) > 0
-    
+
+    summary_metrics = {
+        "branches_count": summary_row['branches_count'] or 0,
+        "employees_count": summary_row['employees_count'] or 0,
+        "records_count": summary_row['records_count'] or 0,
+        "avg_post": round(summary_row['avg_post'] or 0.0, 1),
+        "growth": round(summary_row['growth'] or 0.0, 1),
+        "role_wise": {r['role'] or 'UNASSIGNED': r['cnt'] for r in role_rows}
+    }
+    has_live_data = (summary_row['records_count'] or 0) > 0
+
     return jsonify({
         "status": "success",
         "temporal": payload,
+        "summary_metrics": summary_metrics,
+        "score_distribution": score_distribution,
+        "breakdown": breakdown,
+        "critical_pain_areas": critical_pain_areas,
+        "topic_knowledge_gaps": [],
+        "module_usage": module_usage,
         "filter_options": {
             "zones": zones,
             "divisions": divisions,
@@ -2653,6 +2974,121 @@ def export_analytics():
         headers={"Content-disposition": "attachment; filename=Socrates_Analytics_Report.csv"}
     )
 
+@app.route('/api/trainers/performance', methods=['GET'])
+def trainers_performance():
+    """Trainer Productivity & Quality comparison matrix.
+    Live sessions are logged in training_sessions; when no session rows exist
+    yet (legacy offline campaigns), trainers fall back to platform-wide
+    averages so the report is never misleading/empty."""
+    conn = get_db_connection()
+    try:
+        start_date = request.args.get('start_date', '').strip()
+        end_date = request.args.get('end_date', '').strip()
+        trainers = conn.execute(
+            "SELECT trainer_id, name, zone FROM trainers ORDER BY name ASC"
+        ).fetchall()
+        total_sessions = conn.execute("SELECT COUNT(*) AS c FROM training_sessions").fetchone()['c']
+        platform_growth = conn.execute(
+            "SELECT AVG(post_test_score - pre_test_score) AS g FROM assessment_results WHERE post_test_score IS NOT NULL AND pre_test_score IS NOT NULL"
+        ).fetchone()['g'] or 0
+
+        fb = conn.execute("""
+            SELECT AVG(rating) AS avg_rating,
+                   AVG(CASE UPPER(TRIM(understanding))
+                           WHEN 'FULLY CLEAR' THEN 100 WHEN 'PARTIALLY' THEN 60 WHEN 'NEED HELP' THEN 30 ELSE NULL END) AS clarity,
+                   AVG(CASE WHEN UPPER(TRIM(manpower_saved)) LIKE 'YES%' OR UPPER(TRIM(manpower_saved)) LIKE '%FASTER%'
+                                 OR UPPER(TRIM(manpower_saved)) LIKE '%SAVES%' OR UPPER(TRIM(manpower_saved)) LIKE '%SAVED%' THEN 100
+                            WHEN UPPER(TRIM(manpower_saved)) LIKE 'SOMEWHAT%' OR UPPER(TRIM(manpower_saved)) LIKE '%PARTIALLY%' THEN 60
+                            WHEN UPPER(TRIM(manpower_saved)) LIKE 'NO%' OR UPPER(TRIM(manpower_saved)) LIKE '%NOT%' THEN 30
+                            ELSE NULL END) AS nps
+            FROM session_feedback
+        """).fetchone()
+
+        result = []
+        for t in trainers:
+            tid = t['trainer_id']
+            if total_sessions > 0:
+                sq = "SELECT COUNT(*) AS c FROM training_sessions WHERE UPPER(TRIM(trainer_id))=UPPER(TRIM(?))"
+                sp = [tid]
+                if start_date:
+                    sq += " AND date >= ?"; sp.append(start_date)
+                if end_date:
+                    sq += " AND date <= ?"; sp.append(end_date)
+                s_count = conn.execute(sq, sp).fetchone()['c']
+                gq = "SELECT AVG(post_test_score - pre_test_score) AS g FROM assessment_results WHERE module_id IN (SELECT DISTINCT module_id FROM training_sessions WHERE UPPER(TRIM(trainer_id))=UPPER(TRIM(?)))"
+                gp = [tid]
+                if start_date:
+                    gq += " AND completed_at >= ?"; gp.append(start_date)
+                if end_date:
+                    gq += " AND completed_at <= ?"; gp.append(end_date + " 23:59")
+                growth = conn.execute(gq, gp).fetchone()['g'] or platform_growth
+                fq = """SELECT AVG(f.rating) AS avg_rating,
+                                AVG(CASE UPPER(TRIM(f.understanding))
+                                        WHEN 'FULLY CLEAR' THEN 100 WHEN 'PARTIALLY' THEN 60 WHEN 'NEED HELP' THEN 30 ELSE NULL END) AS clarity,
+                                AVG(CASE WHEN UPPER(TRIM(f.manpower_saved)) LIKE 'YES%' OR UPPER(TRIM(f.manpower_saved)) LIKE '%FASTER%'
+                                              OR UPPER(TRIM(f.manpower_saved)) LIKE '%SAVES%' OR UPPER(TRIM(f.manpower_saved)) LIKE '%SAVED%' THEN 100
+                                         WHEN UPPER(TRIM(f.manpower_saved)) LIKE 'SOMEWHAT%' OR UPPER(TRIM(f.manpower_saved)) LIKE '%PARTIALLY%' THEN 60
+                                         WHEN UPPER(TRIM(f.manpower_saved)) LIKE 'NO%' OR UPPER(TRIM(f.manpower_saved)) LIKE '%NOT%' THEN 30
+                                         ELSE NULL END) AS nps
+                         FROM session_feedback f
+                         WHERE f.session_id IN (SELECT session_id FROM training_sessions WHERE UPPER(TRIM(trainer_id))=UPPER(TRIM(?)))"""
+                fb_row = conn.execute(fq, [tid]).fetchone()
+            else:
+                s_count = 0
+                growth = platform_growth
+                fb_row = fb
+
+            result.append({
+                "trainer_id": tid,
+                "name": t['name'] or tid,
+                "sessions_count": s_count,
+                "avg_rating": round(fb_row['avg_rating'] or 0, 1) if fb_row else 0,
+                "clarity_index": round(fb_row['clarity'] or 0, 0) if fb_row else 0,
+                "nps": round(fb_row['nps'] or 0, 0) if fb_row else 0,
+                "growth_delta": round(growth or 0, 1)
+            })
+        conn.close()
+        return jsonify(result)
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/refresher/campaign', methods=['POST'])
+def push_refresher_campaign():
+    """Flag trainees (below 60%) for a mandatory AI Socratic refresher campaign."""
+    data = request.json or {}
+    emp_codes = data.get('emp_codes') or []
+    if not isinstance(emp_codes, list) or len(emp_codes) == 0:
+        return jsonify({"status": "error", "message": "No employees selected for the refresher campaign."}), 400
+    emp_codes = [str(x).strip().upper() for x in emp_codes if str(x).strip()]
+    module_id = data.get('module_id')
+    try:
+        module_id = int(module_id) if module_id else None
+    except (TypeError, ValueError):
+        module_id = None
+    conn = get_db_connection()
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    pushed = 0
+    try:
+        for code in emp_codes:
+            exists = conn.execute(
+                "SELECT 1 FROM refresher_campaigns WHERE emp_code=? AND status='PENDING'",
+                (code,)
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO refresher_campaigns (emp_code, module_id, campaign_date, status) VALUES (?, ?, ?, 'PENDING')",
+                    (code, module_id, now)
+                )
+                pushed += 1
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": f"Failed to push campaign: {str(e)}"}), 500
+    conn.close()
+    msg = f"🚀 Refresher campaign pushed to {pushed} trainee(s)." if pushed else "All selected trainees are already in a pending refresher campaign."
+    return jsonify({"status": "success", "message": msg, "pushed": pushed})
+
 @app.route('/api/feedback/submit', methods=['POST'])
 def submit_feedback():
     data = request.json or {}
@@ -2687,6 +3123,22 @@ def on_join_session(data):
     join_room(pin)
     print(f"Employee {emp_id} connected to session PIN: {pin}")
     
+    # Persist a live session row when the trainer opens the room (feeds Analytics Hub)
+    if emp_id == 'TRAINER':
+        try:
+            trainer_id = session.get('user', {}).get('trainer_id')
+            if trainer_id:
+                conn = sqlite3.connect(DB_FILE)
+                conn.execute(
+                    "INSERT INTO training_sessions (session_id, date, trainer_id) VALUES (?, ?, ?) "
+                    "ON CONFLICT(session_id) DO NOTHING",
+                    (pin, datetime.datetime.now().strftime("%Y-%m-%d"), trainer_id)
+                )
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"trainer session persist failed: {e}")
+
     # Initialize session registry if trainer starts a new session room
     if pin not in SESSION_REGISTRY:
         SESSION_REGISTRY[pin] = {
@@ -2729,6 +3181,23 @@ def on_trainer_broadcast(data):
             }
         SESSION_REGISTRY[pin]["push_time"] = time.time()
         SESSION_REGISTRY[pin]["correct_index"] = int(data.get('correctIndex', -1))
+        
+        # Attach the module to this live session row so Analytics Hub reports
+        # show the real module title and attendee counts.
+        try:
+            mod_id = data.get('module_id')
+            trainer_id = session.get('user', {}).get('trainer_id')
+            if mod_id and trainer_id:
+                conn = sqlite3.connect(DB_FILE)
+                conn.execute(
+                    "INSERT INTO training_sessions (session_id, date, trainer_id, module_id) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(session_id) DO UPDATE SET module_id=excluded.module_id",
+                    (pin, datetime.datetime.now().strftime("%Y-%m-%d"), trainer_id, mod_id)
+                )
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"session module persist failed: {e}")
         
     # Broadcast payload to trainee screens, but strip the answer key (correctIndex)
     # and the full module object (contains correct answers) from the client-visible payload.

@@ -4894,7 +4894,7 @@ if (selectedBranch) url += `branch=${encodeURIComponent(selectedBranch)}&`;
                 fetch('/api/trainers/performance')
                     .then(res => res.json())
                     .then(data => {
-                        setTrainersPerf(data);
+                        setTrainersPerf(Array.isArray(data) ? data : []);
                         setLoadingTrainers(false);
                     })
                     .catch(err => {
@@ -4990,7 +4990,9 @@ if (selectedZone) filtersUsed.push(`Zone: ${selectedZone}`);
                 if (analytics.critical_pain_areas && analytics.critical_pain_areas.length > 0) {
                     painAreasStr = analytics.critical_pain_areas.map(p => `   • ${p.branch_name} (Post-Test: ${p.post}%, Growth: ${p.growth}%, Evaluated: ${p.count})`).join("\n");
                 } else {
-                    painAreasStr = "   • None identified! All branches meeting the standard performance thresholds.";
+                    painAreasStr = hasLive
+                        ? "   • None identified! All branches are meeting the standard performance thresholds."
+                        : "   • No assessment records in this scope yet — pain areas will populate once trainees complete tests.";
                 }
 
                 // Format topic knowledge gaps
@@ -4998,7 +5000,7 @@ if (selectedZone) filtersUsed.push(`Zone: ${selectedZone}`);
                 if (analytics.topic_knowledge_gaps && analytics.topic_knowledge_gaps.length > 0) {
                     topicGapsStr = analytics.topic_knowledge_gaps.map(g => `   • ${g.milestone} (${g.topic}): Avg Post-Test: ${g.avg_post}% | Gap Failure Rate: ${g.failure_rate}%`).join("\n");
                 } else {
-                    topicGapsStr = "   • None identified! Topic milestones showing complete policy compliance.";
+                    topicGapsStr = "   • Topic-level analysis requires per-question answer logs (not recorded yet in the current schema).";
                 }
 
                 // Format trainer comparative matrix
@@ -5102,7 +5104,11 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
                 (!selectedZone || b.zone === selectedZone) && 
                 (!selectedDiv || b.division === selectedDiv)
             );
-            const filteredExecutives = filterOptions.executives.filter(e => !selectedBranch || e.branch === selectedBranch);
+            const filteredExecutives = filterOptions.executives.filter(e => 
+                (!selectedZone || e.zone === selectedZone) && 
+                (!selectedDiv || e.division === selectedDiv) &&
+                (!selectedBranch || e.branch === selectedBranch)
+            );
 
             const resetFilters = () => {
                 setSelectedZone('');
@@ -5123,11 +5129,11 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
 
             const hasLive = analytics?.has_live_data;
 
-            // Compute delta and memory decay retention metrics
-            const zeroDayGrowth = Math.round(temporal['ZERO DAY'].post - temporal['ZERO DAY'].pre);
-            const sixDayGrowth = Math.round(temporal['SIX DAYS'].post - temporal['SIX DAYS'].pre);
-            const twentyDayGrowth = Math.round(temporal['TWENTY DAYS'].post - temporal['TWENTY DAYS'].pre);
-            const memoryDecay = Math.round(temporal['TWENTY DAYS'].post - temporal['ZERO DAY'].post);
+            // Memory decay (Day 20 post vs Day 0 post) is only meaningful when both
+            // longitudinal milestones have real records; otherwise show an honest
+            // "insufficient data" state instead of a misleading 0 or negative value.
+            const hasLongitudinal = hasLive && temporal['ZERO DAY'].count > 0 && temporal['TWENTY DAYS'].count > 0;
+            const memoryDecay = hasLongitudinal ? Math.round(temporal['TWENTY DAYS'].post - temporal['ZERO DAY'].post) : null;
 
             return (
                 <div className="card overflow-hidden">
@@ -5213,8 +5219,7 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
 <select 
                                             value={selectedDiv} 
                                             onChange={(e) => { setSelectedDiv(e.target.value); setSelectedBranch(''); setSelectedEmp(''); }} 
-                                            disabled={!selectedZone}
-                                            className="input-field bg-white py-2 text-xs font-semibold disabled:bg-slate-100 disabled:text-slate-400"
+                                            className="input-field bg-white py-2 text-xs font-semibold"
                                         >
                                             <option value="">All Divisions</option>
                                             {filteredDivisions.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
@@ -5227,8 +5232,7 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
                                         <select 
                                             value={selectedBranch} 
                                             onChange={(e) => { setSelectedBranch(e.target.value); setSelectedEmp(''); }} 
-                                            disabled={!selectedDiv}
-                                            className="input-field bg-white py-2 text-xs font-semibold disabled:bg-slate-100 disabled:text-slate-400"
+                                            className="input-field bg-white py-2 text-xs font-semibold"
                                         >
                                             <option value="">All Branches</option>
                                             {filteredBranches.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
@@ -5241,8 +5245,7 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
                                         <select 
                                             value={selectedEmp} 
                                             onChange={(e) => setSelectedEmp(e.target.value)} 
-                                            disabled={!selectedBranch}
-                                            className="input-field bg-white py-2 text-xs font-semibold disabled:bg-slate-100 disabled:text-slate-400"
+                                            className="input-field bg-white py-2 text-xs font-semibold"
                                         >
                                             <option value="">All Executives</option>
                                             {filteredExecutives.map(e => <option key={e.code} value={e.code}>{e.name} ({e.code})</option>)}
@@ -5318,44 +5321,43 @@ value={selectedProduct}
                                 {!hasLive && (
                                     <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 text-blue-800 text-xs font-semibold flex items-center gap-2.5 animate-fade-in shadow-sm">
                                         <i className="fas fa-info-circle text-sm text-blue-500"></i>
-                                        <span>No live trainees have submitted results yet. Displaying industry baseline placeholders.</span>
+                                        <span>No assessment results in this scope yet. Charts will populate as trainees complete tests.</span>
                                     </div>
                                 )}
 
-                                {/* Analytical Metrics Breakdown (Correct, Wrong, Left) */}
+                                {/* Analytical Metrics Overview (participants, avg post, growth) */}
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                                    <div className="bg-white border border-blue-100 rounded-2xl p-5 shadow-sm flex items-center justify-between transition-all hover:shadow-md hover:border-blue-200">
+                                        <div className="space-y-1">
+                                            <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest">Total Participants</p>
+                                            <p className="text-3xl font-black text-slate-900 font-outfit">
+                                                {analytics?.summary_metrics?.employees_count ?? 0}
+                                            </p>
+                                        </div>
+                                        <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center text-xl shadow-inner border border-blue-100">
+                                            <i className="fas fa-users"></i>
+                                        </div>
+                                    </div>
                                     <div className="bg-white border border-emerald-100 rounded-2xl p-5 shadow-sm flex items-center justify-between transition-all hover:shadow-md hover:border-emerald-200">
                                         <div className="space-y-1">
-                                            <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest">Total Correct</p>
-
-<p className="text-3xl font-black text-slate-900 font-outfit">
-                                                {Object.values(temporal).reduce((sum, d) => sum + (d.correct || 0), 0)}
+                                            <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest">Avg. Post-Test</p>
+                                            <p className="text-3xl font-black text-slate-900 font-outfit">
+                                                {analytics?.summary_metrics?.avg_post ?? 0}%
                                             </p>
                                         </div>
                                         <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center text-xl shadow-inner border border-emerald-100">
                                             <i className="fas fa-check-circle"></i>
                                         </div>
                                     </div>
-                                    <div className="bg-white border border-red-100 rounded-2xl p-5 shadow-sm flex items-center justify-between transition-all hover:shadow-md hover:border-red-200">
+                                    <div className="bg-white border border-violet-100 rounded-2xl p-5 shadow-sm flex items-center justify-between transition-all hover:shadow-md hover:border-violet-200">
                                         <div className="space-y-1">
-                                            <p className="text-[10px] font-extrabold text-red-600 uppercase tracking-widest">Total Incorrect</p>
+                                            <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest">Overall Learning Growth</p>
                                             <p className="text-3xl font-black text-slate-900 font-outfit">
-                                                {Object.values(temporal).reduce((sum, d) => sum + (d.wrong || 0), 0)}
+                                                {analytics?.summary_metrics?.growth ?? 0}%
                                             </p>
                                         </div>
-                                        <div className="w-12 h-12 bg-red-50 text-red-600 rounded-full flex items-center justify-center text-xl shadow-inner border border-red-100">
-                                            <i className="fas fa-times-circle"></i>
-                                        </div>
-                                    </div>
-                                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center justify-between transition-all hover:shadow-md hover:border-slate-300">
-                                        <div className="space-y-1">
-                                            <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">Total Left/Unattempted</p>
-                                            <p className="text-3xl font-black text-slate-900 font-outfit">
-                                                {Object.values(temporal).reduce((sum, d) => sum + (d.left || 0), 0)}
-                                            </p>
-                                        </div>
-                                        <div className="w-12 h-12 bg-slate-50 text-slate-500 rounded-full flex items-center justify-center text-xl shadow-inner border border-slate-100">
-                                            <i className="fas fa-hourglass-half"></i>
+                                        <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-full flex items-center justify-center text-xl shadow-inner border border-violet-100">
+                                            <i className="fas fa-chart-line"></i>
                                         </div>
                                     </div>
                                 </div>
@@ -5382,80 +5384,42 @@ value={selectedProduct}
                                                 <div className="w-8 h-8 border-3 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
                                                 <span className="text-xs font-bold text-slate-400">Loading learning deltas...</span>
                                             </div>
+                                        ) : !hasLive ? (
+                                            <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
+                                                <i className="fas fa-chart-bar text-3xl text-slate-200"></i>
+                                                <span className="text-xs font-bold">No assessment results to chart yet.</span>
+                                            </div>
                                         ) : (
                                             <div className="h-64 flex items-end justify-around pb-6 pt-4 relative border-b border-slate-200 px-4">
-                                                {/* Zero Day Bars */}
-                                                <div className="flex flex-col items-center w-28 group">
-                                                    <div className="flex items-end gap-3 h-44 relative">
-                                                        <div 
-                                                            style={{ height: `${temporal['ZERO DAY'].pre}%` }} 
-                                                            className="w-8 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
-                                                            title={`Pre-Test: ${temporal['ZERO DAY'].pre}%`}
-                                                        >
-                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-blue-600">{temporal['ZERO DAY'].pre}%</span>
+                                                {Object.keys(temporal).map(dayKey => {
+                                                    const d = temporal[dayKey];
+                                                    const growth = Math.round(d.post - d.pre);
+                                                    const labelMap = { 'ZERO DAY': 'Zero Day', 'SIX DAYS': 'Six Days', 'TWENTY DAYS': 'Twenty Days' };
+                                                    return (
+                                                        <div key={dayKey} className="flex flex-col items-center w-28 group">
+                                                            <div className="flex items-end gap-3 h-44 relative">
+                                                                <div 
+                                                                    style={{ height: `${d.pre}%` }} 
+                                                                    className="w-8 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
+                                                                    title={`Pre-Test: ${d.pre}%`}
+                                                                >
+                                                                    <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-blue-600">{d.pre}%</span>
+                                                                </div>
+                                                                <div 
+                                                                    style={{ height: `${d.post}%` }} 
+                                                                    className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
+                                                                    title={`Post-Test: ${d.post}%`}
+                                                                >
+                                                                    <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-600">{d.post}%</span>
+                                                                </div>
+                                                            </div>
+                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4">{labelMap[dayKey] || dayKey}</span>
+                                                            <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1.5 shadow-sm">
+                                                                <i className="fas fa-arrow-up mr-0.5"></i> +{growth}%
+                                                            </span>
                                                         </div>
-                                                        <div 
-                                                            style={{ height: `${temporal['ZERO DAY'].post}%` }} 
-                                                            className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
-                                                            title={`Post-Test: ${temporal['ZERO DAY'].post}%`}
-                                                        >
-                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-600">{temporal['ZERO DAY'].post}%</span>
-                                                        </div>
-                                                    </div>
-                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4">Zero Day</span>
-                                                    <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1.5 shadow-sm">
-                                                        <i className="fas fa-arrow-up mr-0.5"></i> +{zeroDayGrowth}%
-                                                    </span>
-                                                </div>
-
-                                                {/* Six Days Bars */}
-                                                <div className="flex flex-col items-center w-28 group">
-                                                    <div className="flex items-end gap-3 h-44 relative">
-                                                        <div 
-                                                            style={{ height: `${temporal['SIX DAYS'].pre}%` }} 
-                                                            className="w-8 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
-                                                            title={`Pre-Test: ${temporal['SIX DAYS'].pre}%`}
-                                                        >
-                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-blue-600">{temporal['SIX DAYS'].pre}%</span>
-                                                        </div>
-                                                        <div 
-                                                            style={{ height: `${temporal['SIX DAYS'].post}%` }}
-
-className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
-                                                            title={`Post-Test: ${temporal['SIX DAYS'].post}%`}
-                                                        >
-                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-600">{temporal['SIX DAYS'].post}%</span>
-                                                        </div>
-                                                    </div>
-                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4">Six Days</span>
-                                                    <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1.5 shadow-sm">
-                                                        <i className="fas fa-arrow-up mr-0.5"></i> +{sixDayGrowth}%
-                                                    </span>
-                                                </div>
-
-                                                {/* Twenty Days Bars */}
-                                                <div className="flex flex-col items-center w-28 group">
-                                                    <div className="flex items-end gap-3 h-44 relative">
-                                                        <div 
-                                                            style={{ height: `${temporal['TWENTY DAYS'].pre}%` }} 
-                                                            className="w-8 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
-                                                            title={`Pre-Test: ${temporal['TWENTY DAYS'].pre}%`}
-                                                        >
-                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-blue-600">{temporal['TWENTY DAYS'].pre}%</span>
-                                                        </div>
-                                                        <div 
-                                                            style={{ height: `${temporal['TWENTY DAYS'].post}%` }} 
-                                                            className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
-                                                            title={`Post-Test: ${temporal['TWENTY DAYS'].post}%`}
-                                                        >
-                                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-600">{temporal['TWENTY DAYS'].post}%</span>
-                                                        </div>
-                                                    </div>
-                                                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4">Twenty Days</span>
-                                                    <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1.5 shadow-sm">
-                                                        <i className="fas fa-arrow-up mr-0.5"></i> +{twentyDayGrowth}%
-                                                    </span>
-                                                </div>
+                                                    );
+                                                })}
                                             </div>
                                         )}
                                     </div>
@@ -5471,6 +5435,11 @@ className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg sha
                                         {loading ? (
                                             <div className="h-44 flex items-center justify-center">
                                                 <div className="w-6 h-6 border-2 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
+                                            </div>
+                                        ) : !hasLongitudinal ? (
+                                            <div className="h-44 flex flex-col items-center justify-center gap-2 text-slate-400">
+                                                <i className="fas fa-hourglass-half text-2xl text-slate-200"></i>
+                                                <span className="text-xs font-bold">Insufficient longitudinal data — Day 0 and Day 20 post-tests are needed to compute retention.</span>
                                             </div>
                                         ) : (
                                             <div className="space-y-6">
@@ -5512,8 +5481,7 @@ className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg sha
                                                         <div>
                                                             <div className="text-[10px] font-bold uppercase tracking-wider">Retention Performance</div>
                                                             <div className="text-xs font-semibold mt-0.5">
-
-{memoryDecay >= 0 
+                                                                {memoryDecay >= 0 
                                                                     ? "Learning retained successfully!" 
                                                                     : `Early memory decay detected!`}
                                                             </div>
@@ -5638,6 +5606,70 @@ onClick={() => setSelectedEmp(row.id)}
                                                             </tr>
                                                         ))
                                                     )
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* AI Module Usage & Effectiveness */}
+                                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                                    <div className="px-6 py-4 border-b border-socrates-border bg-slate-50 flex justify-between items-center">
+                                        <div>
+                                            <h4 className="font-bold text-sm text-socrates-dark tracking-tight">
+                                                <i className="fas fa-robot text-socrates-primary mr-1.5"></i> AI Module Usage &amp; Effectiveness
+                                            </h4>
+                                            <p className="text-[9px] text-slate-400 font-medium">Participants, score lift and pass rates per AI training module</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead className="bg-slate-50/50 text-slate-500 border-b border-slate-200">
+                                                <tr>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px]">Module</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Participants</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg. Pre-Test</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg. Post-Test</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg. Time</th>
+                                                    <th className="px-6 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Pass Rate</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {loading ? (
+                                                    <tr>
+                                                        <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
+                                                            <i className="fas fa-spinner fa-spin text-xl text-slate-200 mr-2"></i>
+                                                            Loading module usage...
+                                                        </td>
+                                                    </tr>
+                                                ) : (!analytics?.module_usage || analytics.module_usage.length === 0) ? (
+                                                    <tr>
+                                                        <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
+                                                            <i className="fas fa-folder-open text-xl text-slate-200 mb-2 block"></i>
+                                                            No module assessments recorded in this scope.
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    analytics.module_usage.map(mod => (
+                                                        <tr key={mod.module_id} className="hover:bg-slate-50/40 transition-colors">
+                                                            <td className="px-6 py-4 font-extrabold text-socrates-dark">{mod.title}</td>
+                                                            <td className="px-6 py-4 font-bold text-slate-600 text-center">{mod.participants}</td>
+                                                            <td className="px-6 py-4 text-slate-600 font-bold text-center">{mod.avg_pre}%</td>
+                                                            <td className="px-6 py-4 text-slate-600 font-bold text-center">{mod.avg_post}%</td>
+                                                            <td className="px-6 py-4 text-slate-500 font-bold text-center">
+                                                                {mod.avg_time_seconds ? `${Math.round(mod.avg_time_seconds / 60)}m ${Math.round(mod.avg_time_seconds % 60)}s` : '—'}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold ${
+                                                                    mod.pass_rate >= 80 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                                                    : mod.pass_rate >= 60 ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                                                                    : 'bg-rose-50 text-rose-700 border border-rose-100'
+                                                                }`}>
+                                                                    {mod.pass_rate}%
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))
                                                 )}
                                             </tbody>
                                         </table>
@@ -5831,7 +5863,7 @@ Push Refresher Campaign
                                         <div className="space-y-4">
                                             {(!analytics?.topic_knowledge_gaps || analytics.topic_knowledge_gaps.length === 0) ? (
                                                 <div className="text-center py-6 text-slate-400 text-xs font-semibold">
-                                                    No topic clearance records compiled yet.
+                                                    No topic clearance records compiled yet. Question-level answer logs are not recorded yet — this requires per-question tracking.
                                                 </div>
                                             ) : (
                                                 analytics.topic_knowledge_gaps.map(gap => {
@@ -5883,27 +5915,33 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                         <div className="space-y-4">
                                             {/* Calculations card */}
                                             <div className={`p-4 rounded-xl border flex items-center justify-between shadow-sm ${
-                                                memoryDecay >= 0 
-                                                    ? 'bg-emerald-50/50 border-emerald-200 text-emerald-800' 
-                                                    : 'bg-rose-50/50 border-rose-200 text-rose-800'
+                                                memoryDecay === null
+                                                    ? 'bg-slate-50 border-slate-200 text-slate-500'
+                                                    : memoryDecay >= 0 
+                                                        ? 'bg-emerald-50/50 border-emerald-200 text-emerald-800' 
+                                                        : 'bg-rose-50/50 border-rose-200 text-rose-800'
                                             }`}>
                                                 <div className="flex items-center gap-3">
                                                     <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg ${
-                                                        memoryDecay >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
+                                                        memoryDecay === null
+                                                            ? 'bg-slate-100 text-slate-500'
+                                                            : memoryDecay >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
                                                     }`}>
-                                                        <i className={memoryDecay >= 0 ? "fas fa-shield-halved" : "fas fa-skull-crossbones"}></i>
+                                                        <i className={memoryDecay === null ? "fas fa-hourglass-half" : memoryDecay >= 0 ? "fas fa-shield-halved" : "fas fa-skull-crossbones"}></i>
                                                     </div>
                                                     <div>
                                                         <div className="text-[9px] font-extrabold uppercase tracking-wider">Retention Health</div>
                                                         <div className="text-xs font-semibold mt-0.5">
-                                                            {memoryDecay >= 0 
-                                                                ? "Trainees are retaining knowledge successfully!" 
-                                                                : `Early knowledge decay detected (-${Math.abs(memoryDecay)}%)`}
+                                                            {memoryDecay === null 
+                                                                ? "Insufficient longitudinal data — Day 0 and Day 20 post-tests are needed."
+                                                                : memoryDecay >= 0 
+                                                                    ? "Trainees are retaining knowledge successfully!" 
+                                                                    : `Early knowledge decay detected (-${Math.abs(memoryDecay)}%)`}
                                                         </div>
                                                     </div>
                                                 </div>
                                                 <span className="text-sm font-extrabold whitespace-nowrap">
-                                                    {memoryDecay >= 0 ? `+${memoryDecay}%` : `${memoryDecay}%`}
+                                                    {memoryDecay === null ? '—' : memoryDecay >= 0 ? `+${memoryDecay}%` : `${memoryDecay}%`}
 
 </span>
                                             </div>
@@ -5911,7 +5949,9 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                             {/* Actionable recommendations card */}
                                             <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-sm text-[10px] font-semibold text-slate-600 leading-relaxed">
                                                 <div className="font-extrabold text-xs text-socrates-dark mb-1.5 flex items-center gap-1"><i className="fas fa-magic text-socrates-primary"></i> Socrates AI Recommendation:</div>
-                                                {memoryDecay >= 0 ? (
+                                                {memoryDecay === null ? (
+                                                    <span>Longitudinal comparison is pending. Once Day 0 and Day 20 post-test records exist, the system will evaluate retention and recommend refresher actions.</span>
+                                                ) : memoryDecay >= 0 ? (
                                                     <span>No training action required. Learning pathways are exceptionally stable, and branches are operating at high proficiency. Keep maintaining standard monthly micro-sessions.</span>
                                                 ) : (
                                                     <span>
@@ -5942,7 +5982,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                             {(!analytics?.critical_pain_areas || analytics.critical_pain_areas.length === 0) ? (
                                                 <div className="p-4 rounded-xl border border-emerald-100 bg-emerald-50/30 text-emerald-800 text-xs font-semibold flex items-center gap-2 shadow-sm">
                                                     <i className="fas fa-check-circle text-emerald-500"></i>
-                                                    <span>All branches are meeting minimum proficiency standards!</span>
+                                                    <span>{hasLive ? 'All branches are meeting minimum proficiency standards.' : 'No training records in this scope yet.'}</span>
                                                 </div>
                                             ) : (
                                                 analytics.critical_pain_areas.map(pain => (
@@ -5975,7 +6015,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                         <div className="space-y-4 max-h-72 overflow-y-auto pr-1">
                                             {(!analytics?.topic_knowledge_gaps || analytics.topic_knowledge_gaps.length === 0) ? (
                                                 <div className="text-center py-6 text-slate-400 text-xs font-semibold">
-                                                    No topic gap data compiled yet.
+                                                    No topic gap data compiled yet. Question-level answer logs are not recorded yet — this requires per-question tracking.
                                                 </div>
                                             ) : (
                                                 analytics.topic_knowledge_gaps.map(gap => (
@@ -6042,7 +6082,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                                 ) : trainersPerf.length === 0 ? (
                                                     <tr>
                                                         <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
-                                                            No trainer performance data found. Complete feedback forms first!
+                                                            No sessions logged yet — trainer metrics will appear once live sessions and feedback forms are recorded.
                                                         </td>
                                                     </tr>
                                                 ) : (
