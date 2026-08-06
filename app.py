@@ -321,6 +321,25 @@ def init_db():
         updated_at TEXT
     )''')
     
+    # Per-question live-test attempts (1-mark model, append-only per attempt).
+    # One row per (session, trainee, question) — enables skipped/late tracking,
+    # per-question analytics and accurate podium marks.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS question_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT,
+        emp_code TEXT,
+        module_id INTEGER,
+        question_idx INTEGER,
+        question_id INTEGER,
+        given_answer INTEGER,
+        is_correct INTEGER DEFAULT 0,
+        marks_obtained INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'answered',
+        submitted_at TEXT,
+        UNIQUE(session_id, emp_code, question_idx)
+    )''')
+    
     conn.commit()
     conn.close()
 
@@ -3508,6 +3527,113 @@ def export_analytics():
         headers={"Content-disposition": "attachment; filename=Socrates_Analytics_Report.csv"}
     )
 
+@app.route('/api/analytics/live-scoring', methods=['GET'])
+def analytics_live_scoring():
+    """Per-question live-test analytics from question_attempts:
+    score distribution, averages by module/trainer, and threshold counts."""
+    conn = get_db_connection()
+    try:
+        module_id = request.args.get('module_id')
+        trainer_id = request.args.get('trainer_id')
+        date_from = request.args.get('start_date') or request.args.get('date_from')
+        date_to = request.args.get('end_date') or request.args.get('date_to')
+
+        clauses, params = [], []
+        if module_id:
+            clauses.append("qa.module_id=?")
+            params.append(module_id)
+        if trainer_id:
+            clauses.append("ts.trainer_id=?")
+            params.append(trainer_id)
+        if date_from:
+            clauses.append("qa.submitted_at >= ?")
+            params.append(date_from)
+        if date_to:
+            clauses.append("qa.submitted_at <= ?")
+            params.append(date_to + " 23:59:59")
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+        rows = conn.execute(f"""
+            SELECT qa.session_id, qa.emp_code, qa.module_id,
+                   m.title AS module_title, m.questions_count AS m_count,
+                   ts.trainer_id,
+                   e.emp_name, e.branch_name,
+                   SUM(qa.marks_obtained) AS marks,
+                   COUNT(*) AS attempts,
+                   COALESCE(SUM(CASE WHEN qa.status='answered' THEN 1 ELSE 0 END),0) AS answered,
+                   COALESCE(SUM(CASE WHEN qa.status='skipped' THEN 1 ELSE 0 END),0) AS skipped,
+                   COALESCE(SUM(CASE WHEN qa.status='late' THEN 1 ELSE 0 END),0) AS late,
+                   MAX(qa.question_idx)+1 AS q_count
+            FROM question_attempts qa
+            LEFT JOIN modules m ON qa.module_id = m.id
+            LEFT JOIN training_sessions ts ON qa.session_id = ts.session_id
+            LEFT JOIN employees e ON qa.emp_code = e.emp_code
+            {where}
+            GROUP BY qa.session_id, qa.emp_code, qa.module_id
+        """, params).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    conn.close()
+
+    students = []
+    buckets = {"0-20": 0, "21-40": 0, "41-60": 0, "61-80": 0, "81-100": 0}
+    thresholds = {"above_80": 0, "above_60": 0, "above_40": 0}
+    for r in rows:
+        total = r['m_count'] or r['q_count'] or 1
+        pct = round((r['marks'] or 0) / total * 100, 1)
+        incomplete = (r['q_count'] or 0) < (r['m_count'] or r['q_count'] or 1)
+        students.append({
+            'session_id': r['session_id'], 'emp_code': r['emp_code'],
+            'emp_name': r['emp_name'] or r['emp_code'], 'branch_name': r['branch_name'] or '',
+            'module_id': r['module_id'], 'module_title': r['module_title'] or ('Module %s' % r['module_id']),
+            'trainer_id': r['trainer_id'] or '',
+            'marks': r['marks'] or 0, 'total_questions': total, 'percentage': pct,
+            'answered': r['answered'], 'skipped': r['skipped'], 'late': r['late'],
+            'incomplete': incomplete
+        })
+        if pct <= 20:
+            buckets["0-20"] += 1
+        elif pct <= 40:
+            buckets["21-40"] += 1
+        elif pct <= 60:
+            buckets["41-60"] += 1
+        elif pct <= 80:
+            buckets["61-80"] += 1
+        else:
+            buckets["81-100"] += 1
+        if pct >= 80:
+            thresholds["above_80"] += 1
+        if pct >= 60:
+            thresholds["above_60"] += 1
+        if pct >= 40:
+            thresholds["above_40"] += 1
+
+    by_module, by_trainer = {}, {}
+    for s in students:
+        by_module.setdefault(s['module_title'], []).append(s['percentage'])
+        by_trainer.setdefault(s['trainer_id'] or 'Unknown', []).append(s['percentage'])
+    module_avg = [
+        {'module': k, 'students': len(v), 'avg_percentage': round(sum(v) / len(v), 1)}
+        for k, v in sorted(by_module.items(), key=lambda x: -len(x[1]))
+    ]
+    trainer_avg = [
+        {'trainer': k, 'students': len(v), 'avg_percentage': round(sum(v) / len(v), 1)}
+        for k, v in sorted(by_trainer.items(), key=lambda x: -len(x[1]))
+    ]
+
+    n = len(students)
+    return jsonify({
+        "status": "success",
+        "total_students": n,
+        "average_percentage": round(sum(s['percentage'] for s in students) / n, 1) if n else 0,
+        "distribution": buckets,
+        "thresholds": thresholds,
+        "by_module": module_avg,
+        "by_trainer": trainer_avg,
+        "students": students
+    })
+
 @app.route('/api/trainers/performance', methods=['GET'])
 def trainers_performance():
     """Trainer Productivity & Quality comparison matrix.
@@ -3663,8 +3789,65 @@ def _session_state(pin):
             "active_module": None,
             "module_id": None,
             "assignment_day": None,
+            # Server-authoritative live-test timing (seconds since epoch).
+            "test_started_at": 0.0,
+            "question_started_at": 0.0,
+            "test_duration_sec": 1200,     # default 20 min; overridden from module config
+            "question_timeout_sec": 60,    # per-question countdown (client auto-submits)
+            "total_questions": 0,
         }
     return SESSION_REGISTRY[pin]
+
+def _record_attempt(pin, emp_id, reg, question_idx, given_answer, is_correct, marks, status, question_id=None):
+    """Persist one per-question attempt row (idempotent per session/emp/question)."""
+    try:
+        conn = sqlite3.connect(DB_FILE)
+        if status == 'late':
+            # A 'skipped' row may already exist (skip-on-next ran first). Upgrade
+            # it to 'late' so the student's delayed answer is still preserved
+            # (given_answer recorded, 0 marks) instead of being silently lost.
+            conn.execute(
+                "UPDATE question_attempts SET status='late', given_answer=?, is_correct=?, marks_obtained=0 "
+                "WHERE session_id=? AND emp_code=? AND question_idx=? AND status='skipped'",
+                (given_answer if given_answer is not None else -1, 1 if is_correct else 0,
+                 pin, emp_id, question_idx)
+            )
+        conn.execute(
+            "INSERT OR IGNORE INTO question_attempts "
+            "(session_id, emp_code, module_id, question_idx, question_id, given_answer, is_correct, marks_obtained, status, submitted_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (pin, emp_id, reg.get('module_id'), question_idx, question_id,
+             given_answer if given_answer is not None else -1,
+             1 if is_correct else 0, marks, status,
+             datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"attempt persist failed: {e}")
+
+def _leaderboard_payload(reg):
+    """Build the podium-ready leaderboard: marks (1/question), %, correct/wrong/skipped."""
+    total = reg.get('total_questions', 0) or 0
+    rows = []
+    for code, p in reg.get('leaderboard', {}).items():
+        marks = p.get('score', 0)
+        rows.append({
+            'emp_code': code,
+            'emp_name': p.get('name', code),
+            'score': marks,
+            'marks': marks,
+            'total_questions': total,
+            'percentage': round((marks / total) * 100, 1) if total else 0,
+            'correct_count': p.get('correct_count', 0),
+            'wrong_count': p.get('wrong_count', 0),
+            'skipped_count': p.get('skipped_count', 0),
+            'last_speed': p.get('last_speed', 0.0),
+            'last_correct': p.get('last_correct', False),
+            'branch_name': p.get('branch_name', ''),
+        })
+    rows.sort(key=lambda x: (-x['score'], x['emp_name'].lower()))
+    return rows
 
 @socketio.on('join_session')
 def on_join_session(data):
@@ -3695,14 +3878,20 @@ def on_join_session(data):
         if emp_id not in SESSION_REGISTRY[pin]["leaderboard"]:
             conn = sqlite3.connect(DB_FILE)
             cursor = conn.cursor()
-            cursor.execute("SELECT emp_name FROM employees WHERE emp_code=?", (emp_id,))
+            cursor.execute("SELECT emp_name, branch_name FROM employees WHERE emp_code=?", (emp_id,))
             row = cursor.fetchone()
             conn.close()
             emp_name = row[0] if row else emp_id
+            branch_name = row[1] if row else ''
             
             SESSION_REGISTRY[pin]["leaderboard"][emp_id] = {
                 "name": emp_name,
+                "branch_name": branch_name,
                 "score": 0,
+                "correct_count": 0,
+                "wrong_count": 0,
+                "skipped_count": 0,
+                "last_answered_idx": -1,
                 "last_speed": 0.0,
                 "last_correct": False
             }
@@ -3714,12 +3903,22 @@ def on_join_session(data):
     # the right assessment instead of showing an empty waiting screen.
     if emp_id and emp_id != 'TRAINER':
         mod = reg.get('active_module') or {}
+        now = time.time()
+        q_timeout = reg.get('question_timeout_sec', 60)
+        q_remaining = max(0, int(q_timeout - (now - reg.get('question_started_at', 0.0)))) if reg.get('question_started_at') else q_timeout
+        t_dur = reg.get('test_duration_sec', 1200)
+        t_remaining = max(0, int(t_dur - (now - reg.get('test_started_at', 0.0)))) if reg.get('test_started_at') else t_dur
         emit('session_info', {
             'module_id': reg.get('module_id'),
             'module_title': mod.get('title') if isinstance(mod, dict) else None,
             'view': reg.get('view'),
             'assignment_day': reg.get('assignment_day'),
-            'total_questions': len(mod.get('questions') or []) if isinstance(mod, dict) else 0
+            'total_questions': len(mod.get('questions') or []) if isinstance(mod, dict) else 0,
+            'question_idx': reg.get('question_idx', 0),
+            'question_remaining_sec': q_remaining,
+            'test_remaining_sec': t_remaining,
+            'question_timeout_sec': q_timeout,
+            'test_duration_sec': t_dur,
         }, room=request.sid)
 
 @socketio.on('trainer_broadcast')
@@ -3731,21 +3930,62 @@ def on_trainer_broadcast(data):
     # Track the live-session state on every broadcast so a trainer reload or a
     # freshly-joined trainee can restore the exact running module & phase.
     reg['view'] = view
-    if data.get('question_idx') is not None:
-        reg['question_idx'] = data.get('question_idx')
+    new_idx = data.get('question_idx')
+    if new_idx is not None:
+        reg['question_idx'] = new_idx
     if data.get('forceLanguage'):
         reg['language_override'] = data.get('forceLanguage')
     if data.get('assignment_day'):
         reg['assignment_day'] = data.get('assignment_day')
     if data.get('activeModule'):
         reg['active_module'] = data.get('activeModule')
+        mod = data.get('activeModule') if isinstance(data.get('activeModule'), dict) else {}
+        tlm = mod.get('time_limit_minutes')
+        if tlm:
+            reg['test_duration_sec'] = int(tlm) * 60
     if data.get('module_id'):
         reg['module_id'] = data.get('module_id')
+    if data.get('totalQs'):
+        reg['total_questions'] = data.get('totalQs')
 
-    # If pushing a live assessment quiz, capture start timing for speed bonus
     if view in ['pretest', 'posttest']:
-        reg["push_time"] = time.time()
+        now = time.time()
+        reg["push_time"] = now
         reg["correct_index"] = int(data.get('correctIndex', -1))
+        # Question-level timer resets on every pushed question.
+        reg["question_started_at"] = now
+        # New phase (e.g. pre-test finished -> post-test starts): reset all
+        # trainee state so scores/counters/answer-locks start fresh. Without
+        # this, the duplicate-submission guard would block every post-test answer.
+        if view != reg.get('timed_phase'):
+            for code in reg.get('leaderboard', {}):
+                p = reg['leaderboard'][code]
+                p['score'] = 0
+                p['correct_count'] = 0
+                p['wrong_count'] = 0
+                p['skipped_count'] = 0
+                p['last_answered_idx'] = -1
+                p['last_correct'] = False
+        # Test-level timer starts once, at the first question of the phase.
+        if reg.get("test_started_at", 0.0) == 0.0 or view != reg.get('timed_phase'):
+            reg["test_started_at"] = now
+        reg["timed_phase"] = view
+
+        # --- Skip-on-next: any trainee who never answered a now-past question
+        # gets an explicit 'skipped' attempt (0 marks) so the per-question log
+        # and podium are complete even when trainer advances faster than some.
+        skip_happened = False
+        if isinstance(new_idx, int):
+            for code, player in reg.get('leaderboard', {}).items():
+                last = player.get('last_answered_idx', -1)
+                if new_idx > last + 1:
+                    for qi in range(last + 1, new_idx):
+                        _record_attempt(pin, code, reg, qi, None, False, 0, 'skipped')
+                        player['skipped_count'] += 1
+                        skip_happened = True
+                    player['last_answered_idx'] = new_idx - 1
+        if skip_happened:
+            emit('leaderboard_update', {'leaderboard': _leaderboard_payload(reg)}, room=pin)
         
         # Attach the module to this live session row so Analytics Hub reports
         # show the real module title and attendee counts.
@@ -3763,86 +4003,122 @@ def on_trainer_broadcast(data):
                 conn.close()
         except Exception as e:
             print(f"session module persist failed: {e}")
-        
+
     # Broadcast payload to trainee screens, but strip the answer key (correctIndex)
     # and the full module object (contains correct answers) from the client-visible payload.
     relay = dict(data)
     relay.pop('correctIndex', None)
     relay.pop('activeModule', None)
+    # Include the authoritative timer snapshot so client countdowns stay in sync.
+    now = time.time()
+    q_timeout = reg.get('question_timeout_sec', 60)
+    t_dur = reg.get('test_duration_sec', 1200)
+    relay['question_remaining_sec'] = max(0, int(q_timeout - (now - reg.get('question_started_at', 0.0)))) if reg.get('question_started_at') else q_timeout
+    relay['test_remaining_sec'] = max(0, int(t_dur - (now - reg.get('test_started_at', 0.0)))) if reg.get('test_started_at') else t_dur
+    relay['question_timeout_sec'] = q_timeout
+    relay['test_duration_sec'] = t_dur
     emit('change_view', relay, room=pin)
+
+    # Dedicated timer broadcast for the trainer's Live Session display, so the
+    # admin sees the same authoritative countdowns as the students.
+    emit('timer_sync', {
+        'question_remaining_sec': relay['question_remaining_sec'],
+        'test_remaining_sec': relay['test_remaining_sec'],
+        'question_timeout_sec': q_timeout,
+        'test_duration_sec': t_dur,
+        'timed_phase': view if view in ('pretest', 'posttest') else reg.get('timed_phase'),
+    }, room=pin)
 
 @socketio.on('submit_vote')
 def on_submit_vote(data):
     pin = str(data.get('pin'))
     emp_id = data.get('emp_id')
     answer_idx = int(data.get('answer_idx', 0))
-    
-    points_earned = 0
-    speed_bonus = 0
+    q_idx = int(data.get('question_idx', 0))
+    reg = _session_state(pin)
+
     is_correct = False
+    marks_obtained = 0
+    status = 'answered'
     response_time = 0.0
-    
-    if pin in SESSION_REGISTRY:
-        session = SESSION_REGISTRY[pin]
-        push_time = session.get("push_time", 0.0)
-        correct_index = session.get("correct_index", -1)
-        
+    question_id = None
+
+    # Late lock: the trainer has already advanced past this question, so this
+    # submission is recorded as 'late' with 0 marks and never counted.
+    if q_idx < reg.get('question_idx', q_idx):
+        status = 'late'
+
+    player = reg.get('leaderboard', {}).get(emp_id)
+    if player is None:
+        conn = sqlite3.connect(DB_FILE)
+        cursor = conn.cursor()
+        cursor.execute("SELECT emp_name, branch_name FROM employees WHERE emp_code=?", (emp_id,))
+        row = cursor.fetchone()
+        conn.close()
+        player = {
+            "name": row[0] if row else emp_id,
+            "branch_name": row[1] if row else '',
+            "score": 0,
+            "correct_count": 0,
+            "wrong_count": 0,
+            "skipped_count": 0,
+            "last_answered_idx": -1,
+            "last_speed": 0.0,
+            "last_correct": False
+        }
+        reg["leaderboard"][emp_id] = player
+
+    # Duplicate-submission guard: ignore repeats of an already-answered question
+    # (client retries, timer auto-submit races). Late submissions are still
+    # acknowledged with a score_confirmation below so the student's UI never
+    # hangs on "Evaluating response..." after the trainer advanced.
+    if status != 'late' and player.get('last_answered_idx', -1) >= q_idx:
+        return
+
+    if status != 'late':
+        push_time = reg.get("push_time", 0.0)
         if push_time > 0.0:
             response_time = time.time() - push_time
-            
-        if answer_idx == correct_index:
-            is_correct = True
-            base_points = 1000
-            # Answering within 20 seconds yields a speed bonus
-            speed_bonus = max(0, int(1000 - (response_time * 50)))
-            points_earned = base_points + speed_bonus
-            
-        # Ensure student is registered
-        if emp_id not in session["leaderboard"]:
-            conn = sqlite3.connect(DB_FILE)
-            cursor = conn.cursor()
-            cursor.execute("SELECT emp_name FROM employees WHERE emp_code=?", (emp_id,))
-            row = cursor.fetchone()
-            conn.close()
-            emp_name = row[0] if row else emp_id
-            
-            session["leaderboard"][emp_id] = {
-                "name": emp_name,
-                "score": 0,
-                "last_speed": 0.0,
-                "last_correct": False
-            }
-            
-        # Update session points
-        session["leaderboard"][emp_id]["score"] += points_earned
-        session["leaderboard"][emp_id]["last_speed"] = round(response_time, 2)
-        session["leaderboard"][emp_id]["last_correct"] = is_correct
-        
+        correct_index = reg.get("correct_index", -1)
+        is_correct = (answer_idx == correct_index)
+        marks_obtained = 1 if is_correct else 0
+        player["score"] += marks_obtained
+        if is_correct:
+            player["correct_count"] += 1
+        else:
+            player["wrong_count"] += 1
+        player["last_answered_idx"] = q_idx
+        player["last_speed"] = round(response_time, 2)
+        player["last_correct"] = is_correct
+
+        # Resolve the DB question id for the attempt row (analytics join).
+        mod = reg.get('active_module') or {}
+        qs = mod.get('questions') if isinstance(mod, dict) else None
+        if isinstance(qs, list) and q_idx < len(qs):
+            question_id = (qs[q_idx] or {}).get('id')
+
+    _record_attempt(pin, emp_id, reg, q_idx, answer_idx, is_correct, marks_obtained, status, question_id)
+
     # Broadcast standard vote updates for presenter chart
     emit('vote_update', {'emp_id': emp_id, 'answer_idx': answer_idx}, room=pin)
-    
-    # Emit score confirmation details back to student tab for immediate screen celebrations
+
+    # Emit score confirmation details back to student tab for immediate feedback.
+    total = reg.get('total_questions', 0) or 0
     emit('score_confirmation', {
-        'points': points_earned,
-        'speed_bonus': speed_bonus,
         'is_correct': is_correct,
-        'total_score': SESSION_REGISTRY[pin]["leaderboard"][emp_id]["score"] if pin in SESSION_REGISTRY else points_earned,
+        'marks_obtained': marks_obtained,
+        'status': status,
+        'marks_total': total,
+        'correct_count': player["correct_count"],
+        'wrong_count': player["wrong_count"],
+        'skipped_count': player["skipped_count"],
+        'total_score': player["score"],
+        'percentage': round((player["score"] / total) * 100, 1) if total else 0,
         'response_time': round(response_time, 2)
     }, room=request.sid)
-    
-    # Broadcast updated sorted leaderboard list to presenter control drawer
-    if pin in SESSION_REGISTRY:
-        leaderboard_sorted = []
-        for code, player in SESSION_REGISTRY[pin]["leaderboard"].items():
-            leaderboard_sorted.append({
-                'emp_code': code,
-                'emp_name': player['name'],
-                'score': player['score'],
-                'last_speed': player['last_speed'],
-                'last_correct': player['last_correct']
-            })
-        leaderboard_sorted.sort(key=lambda x: x['score'], reverse=True)
-        emit('leaderboard_update', {'leaderboard': leaderboard_sorted}, room=pin)
+
+    # Broadcast updated sorted leaderboard (marks + %) to the presenter.
+    emit('leaderboard_update', {'leaderboard': _leaderboard_payload(reg)}, room=pin)
 
 @socketio.on('trainer_command')
 def on_trainer_command(data):
@@ -3853,7 +4129,11 @@ def on_trainer_command(data):
         if pin in SESSION_REGISTRY:
             for code in SESSION_REGISTRY[pin]["leaderboard"]:
                 SESSION_REGISTRY[pin]["leaderboard"][code]["score"] = 0
-            emit('leaderboard_update', {'leaderboard': []}, room=pin)
+                SESSION_REGISTRY[pin]["leaderboard"][code]["correct_count"] = 0
+                SESSION_REGISTRY[pin]["leaderboard"][code]["wrong_count"] = 0
+                SESSION_REGISTRY[pin]["leaderboard"][code]["skipped_count"] = 0
+                SESSION_REGISTRY[pin]["leaderboard"][code]["last_answered_idx"] = -1
+            emit('leaderboard_update', {'leaderboard': _leaderboard_payload(SESSION_REGISTRY[pin])}, room=pin)
             
     # Forward general custom commands (e.g. final confetti podium) to all clients
     emit('client_command', data, room=pin)
@@ -3866,17 +4146,65 @@ def on_get_session_state(data):
         return
     reg = _session_state(pin)
     mod = reg.get('active_module') or {}
+    now = time.time()
+    q_timeout = reg.get('question_timeout_sec', 60)
+    t_dur = reg.get('test_duration_sec', 1200)
     emit('session_state_response', {
         'active_module': mod if isinstance(mod, dict) else None,
         'current_view': reg.get('view'),
         'current_question_idx': reg.get('question_idx', 0),
         'language_override': reg.get('language_override', 'en'),
         'assignment_day': reg.get('assignment_day'),
+        'question_remaining_sec': max(0, int(q_timeout - (now - reg.get('question_started_at', 0.0)))) if reg.get('question_started_at') else q_timeout,
+        'test_remaining_sec': max(0, int(t_dur - (now - reg.get('test_started_at', 0.0)))) if reg.get('test_started_at') else t_dur,
+        'question_timeout_sec': q_timeout,
+        'test_duration_sec': t_dur,
         'connected_trainees': [
             {'id': code, 'name': p.get('name', code) if isinstance(p, dict) else code}
             for code, p in reg.get('leaderboard', {}).items()
-        ]
+        ],
+        'leaderboard': _leaderboard_payload(reg)
     }, room=request.sid)
+
+@socketio.on('request_sync')
+def on_request_sync(data):
+    """Student-side reconciliation: re-push the canonical question/view/timer
+    state so a client that missed a broadcast (drop, slow device, refresh)
+    snaps back to the server's current question index."""
+    pin = str(data.get('pin', ''))
+    if not pin:
+        return
+    reg = _session_state(pin)
+    mod = reg.get('active_module') or {}
+    now = time.time()
+    q_timeout = reg.get('question_timeout_sec', 60)
+    t_dur = reg.get('test_duration_sec', 1200)
+    # NOTE: this is the student-safe snapshot — no answers (correct_index), no
+    # module object. The question text + options are included so a client that
+    # missed a broadcast can fully re-sync (not just the index).
+    sync_payload = {
+        'view': reg.get('view'),
+        'question_idx': reg.get('question_idx', 0),
+        'module_id': reg.get('module_id'),
+        'module_title': mod.get('title') if isinstance(mod, dict) else None,
+        'assignment_day': reg.get('assignment_day'),
+        'total_questions': reg.get('total_questions', 0),
+        'question_remaining_sec': max(0, int(q_timeout - (now - reg.get('question_started_at', 0.0)))) if reg.get('question_started_at') else q_timeout,
+        'test_remaining_sec': max(0, int(t_dur - (now - reg.get('test_started_at', 0.0)))) if reg.get('test_started_at') else t_dur,
+        'question_timeout_sec': q_timeout,
+        'test_duration_sec': t_dur,
+        'forceLanguage': reg.get('language_override', 'en')
+    }
+    if isinstance(mod, dict):
+        qs = mod.get('questions') or []
+        qi = reg.get('question_idx', 0)
+        if isinstance(qs, list) and qi < len(qs):
+            qobj = qs[qi] or {}
+            if qobj.get('question_text'):
+                sync_payload['question'] = qobj.get('question_text')
+                sync_payload['options'] = [qobj.get('option_a'), qobj.get('option_b'), qobj.get('option_c'), qobj.get('option_d')]
+                sync_payload['translations'] = qobj.get('translations') or {}
+    emit('session_sync', sync_payload, room=request.sid)
 
 @socketio.on('leave_session')
 def on_leave_session(data):
@@ -3887,11 +4215,7 @@ def on_leave_session(data):
     if emp_id and pin in SESSION_REGISTRY:
         SESSION_REGISTRY[pin]['leaderboard'].pop(emp_id, None)
         emit('leaderboard_update', {
-            'leaderboard': [
-                {'emp_code': c, 'emp_name': p.get('name', c), 'score': p.get('score', 0),
-                 'last_speed': p.get('last_speed', 0.0), 'last_correct': p.get('last_correct', False)}
-                for c, p in SESSION_REGISTRY[pin]['leaderboard'].items()
-            ]
+            'leaderboard': _leaderboard_payload(SESSION_REGISTRY[pin])
         }, room=pin)
     emit('user_disconnected', {'emp_id': emp_id}, room=pin)
 
