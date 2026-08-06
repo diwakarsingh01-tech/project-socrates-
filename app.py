@@ -3650,12 +3650,29 @@ import time
 
 SESSION_REGISTRY = {}
 
+def _session_state(pin):
+    """Lazy-init the in-memory registry entry for a live session PIN."""
+    if pin not in SESSION_REGISTRY:
+        SESSION_REGISTRY[pin] = {
+            "push_time": 0.0,
+            "correct_index": -1,
+            "leaderboard": {},
+            "view": None,
+            "question_idx": 0,
+            "language_override": "en",
+            "active_module": None,
+            "module_id": None,
+            "assignment_day": None,
+        }
+    return SESSION_REGISTRY[pin]
+
 @socketio.on('join_session')
 def on_join_session(data):
     pin = str(data.get('pin'))
     emp_id = data.get('emp_id')
     join_room(pin)
     print(f"Employee {emp_id} connected to session PIN: {pin}")
+    reg = _session_state(pin)
     
     # Persist a live session row when the trainer opens the room (feeds Analytics Hub)
     if emp_id == 'TRAINER':
@@ -3673,14 +3690,6 @@ def on_join_session(data):
         except Exception as e:
             print(f"trainer session persist failed: {e}")
 
-    # Initialize session registry if trainer starts a new session room
-    if pin not in SESSION_REGISTRY:
-        SESSION_REGISTRY[pin] = {
-            "push_time": 0.0,
-            "correct_index": -1,
-            "leaderboard": {}
-        }
-        
     # Register trainee in current session leaderboard
     if emp_id and emp_id != 'TRAINER':
         if emp_id not in SESSION_REGISTRY[pin]["leaderboard"]:
@@ -3700,21 +3709,43 @@ def on_join_session(data):
             
     emit('user_connected', {'emp_id': emp_id}, room=pin)
 
+    # Give a freshly-joined trainee immediate context about the running module
+    # (module title, current phase) so the QR/link flow visibly "connects" to
+    # the right assessment instead of showing an empty waiting screen.
+    if emp_id and emp_id != 'TRAINER':
+        mod = reg.get('active_module') or {}
+        emit('session_info', {
+            'module_id': reg.get('module_id'),
+            'module_title': mod.get('title') if isinstance(mod, dict) else None,
+            'view': reg.get('view'),
+            'assignment_day': reg.get('assignment_day'),
+            'total_questions': len(mod.get('questions') or []) if isinstance(mod, dict) else 0
+        }, room=request.sid)
+
 @socketio.on('trainer_broadcast')
 def on_trainer_broadcast(data):
     pin = str(data.get('pin'))
     view = data.get('view')
-    
+    reg = _session_state(pin)
+
+    # Track the live-session state on every broadcast so a trainer reload or a
+    # freshly-joined trainee can restore the exact running module & phase.
+    reg['view'] = view
+    if data.get('question_idx') is not None:
+        reg['question_idx'] = data.get('question_idx')
+    if data.get('forceLanguage'):
+        reg['language_override'] = data.get('forceLanguage')
+    if data.get('assignment_day'):
+        reg['assignment_day'] = data.get('assignment_day')
+    if data.get('activeModule'):
+        reg['active_module'] = data.get('activeModule')
+    if data.get('module_id'):
+        reg['module_id'] = data.get('module_id')
+
     # If pushing a live assessment quiz, capture start timing for speed bonus
     if view in ['pretest', 'posttest']:
-        if pin not in SESSION_REGISTRY:
-            SESSION_REGISTRY[pin] = {
-                "push_time": 0.0,
-                "correct_index": -1,
-                "leaderboard": {}
-            }
-        SESSION_REGISTRY[pin]["push_time"] = time.time()
-        SESSION_REGISTRY[pin]["correct_index"] = int(data.get('correctIndex', -1))
+        reg["push_time"] = time.time()
+        reg["correct_index"] = int(data.get('correctIndex', -1))
         
         # Attach the module to this live session row so Analytics Hub reports
         # show the real module title and attendee counts.
@@ -3826,6 +3857,43 @@ def on_trainer_command(data):
             
     # Forward general custom commands (e.g. final confetti podium) to all clients
     emit('client_command', data, room=pin)
+
+@socketio.on('get_session_state')
+def on_get_session_state(data):
+    """Restore the trainer's Live Session tab after a reload/refresh."""
+    pin = str(data.get('pin', ''))
+    if not pin:
+        return
+    reg = _session_state(pin)
+    mod = reg.get('active_module') or {}
+    emit('session_state_response', {
+        'active_module': mod if isinstance(mod, dict) else None,
+        'current_view': reg.get('view'),
+        'current_question_idx': reg.get('question_idx', 0),
+        'language_override': reg.get('language_override', 'en'),
+        'assignment_day': reg.get('assignment_day'),
+        'connected_trainees': [
+            {'id': code, 'name': p.get('name', code) if isinstance(p, dict) else code}
+            for code, p in reg.get('leaderboard', {}).items()
+        ]
+    }, room=request.sid)
+
+@socketio.on('leave_session')
+def on_leave_session(data):
+    """Trainee exit / logout: leave the room and drop the live leaderboard entry."""
+    pin = str(data.get('pin', ''))
+    emp_id = data.get('emp_id')
+    leave_room(pin)
+    if emp_id and pin in SESSION_REGISTRY:
+        SESSION_REGISTRY[pin]['leaderboard'].pop(emp_id, None)
+        emit('leaderboard_update', {
+            'leaderboard': [
+                {'emp_code': c, 'emp_name': p.get('name', c), 'score': p.get('score', 0),
+                 'last_speed': p.get('last_speed', 0.0), 'last_correct': p.get('last_correct', False)}
+                for c, p in SESSION_REGISTRY[pin]['leaderboard'].items()
+            ]
+        }, room=pin)
+    emit('user_disconnected', {'emp_id': emp_id}, room=pin)
 
 # 6. DYNAMIC PDF CERTIFICATE GENERATOR & VERIFIER
 @app.route('/api/assessments/certificate/<cert_id>', methods=['GET'])

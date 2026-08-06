@@ -6822,12 +6822,19 @@ const [connectedTrainees, setConnectedTrainees] = useState([]);
                     }));
                 });
 
+                socket.on('user_disconnected', (data) => {
+                    if (data.emp_id && data.emp_id !== 'TRAINER') {
+                        setConnectedTrainees(prev => prev.filter(u => u.id !== data.emp_id));
+                    }
+                });
+
                 socket.on('leaderboard_update', (data) => setLeaderboard(data.leaderboard || []));
                 socket.on('client_command', (data) => { if (data.command === 'show_podium') setShowPodium(true); });
 
                 return () => {
                     socket.off('session_state_response');
                     socket.off('user_connected');
+                    socket.off('user_disconnected');
                     socket.off('vote_update');
                     socket.off('leaderboard_update');
                     socket.off('client_command');
