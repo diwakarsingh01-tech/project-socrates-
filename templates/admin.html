@@ -2647,7 +2647,21 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                     method: 'POST',
                     body: formData
                 })
-                .then(res => res.json())
+                .then(async res => {
+                    let body;
+                    try {
+                        body = await res.json();
+                    } catch (e) {
+                        // Non-JSON response (e.g. nginx 413 HTML page) — report the
+                        // real HTTP status instead of a generic network error.
+                        throw { notJson: true, status: res.status };
+                    }
+                    if (!res.ok || (body && body.status === 'error')) {
+                        if (body && body.status === 'error') throw { apiMessage: body.message || 'Generation failed' };
+                        throw { status: res.status };
+                    }
+                    return body;
+                })
                 .then(data => {
                     if (data.status === 'success') {
                         // Open the Auditor panel with generated draft questions
@@ -2682,8 +2696,20 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                     }
                 })
                 .catch(err => {
-                    console.error("AI generator fetch crash:", err);
-                    alert("Network error while contacting the AI generator. Please try again.");
+                    console.error("AI generator failure:", err);
+                    let errMsg;
+                    if (err && err.apiMessage) {
+                        errMsg = "AI Generation failed: " + err.apiMessage;
+                    } else if (err && err.status === 413) {
+                        errMsg = "File is too large for the server (max ~20 MB). Please upload a smaller PDF.";
+                    } else if (err && err.status >= 500) {
+                        errMsg = "Server error (" + err.status + "). Please try again in a moment.";
+                    } else if (err && err.notJson) {
+                        errMsg = "Server returned an unexpected response (" + err.status + "). Please try again.";
+                    } else {
+                        errMsg = "Network error while contacting the AI generator. Please try again.";
+                    }
+                    alert(errMsg);
                     setStatus('idle');
                 });
             };

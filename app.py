@@ -2193,17 +2193,34 @@ def _mcq_from_chunk(chunk, all_chunks, idx):
     topic = _topic_of(chunk)
     n = len(all_chunks)
     others = []
+    seen_keys = {_normalize_key(chunk)}
     seen_topics = set()
+    # Pass 1: prefer distractors from DIFFERENT topics (best option variety).
     offset = 1
     while len(others) < 3 and offset < n:
-        cand = all_chunks[(idx + offset) % n]
+        cand = all_chunks[(idx + offset * 7) % n]
         offset += 1
-        if cand == chunk:
+        ck = _normalize_key(cand)
+        if ck in seen_keys:
             continue
         t = _topic_of(cand)
         if t and t.lower() in seen_topics:
             continue
-        seen_topics.add(t.lower())
+        if t:
+            seen_topics.add(t.lower())
+        seen_keys.add(ck)
+        others.append(cand)
+    # Pass 2: if the document is homogeneous (repeated topics), fill the remaining
+    # slots with any other DISTINCT statement so full question sets are still
+    # produced instead of silently returning 3-4 questions.
+    offset = 1
+    while len(others) < 3 and offset < n:
+        cand = all_chunks[(idx + offset * 13) % n]
+        offset += 1
+        ck = _normalize_key(cand)
+        if ck in seen_keys:
+            continue
+        seen_keys.add(ck)
         others.append(cand)
     if len(others) >= 3:
         pos = idx % 4
@@ -2274,6 +2291,13 @@ def _synthesize_doc_questions(text_content, count, title):
             if key and key not in seen:
                 seen.add(key)
                 chunks.append(s)
+    # Bound the chunk set with a balanced sample (start/middle/end). A multi-MB PDF
+    # can yield 30k+ clauses; scanning all of them for distractors per question is
+    # O(n^2) and stalls the generator (57s+ observed live). Sampling ~400 chunks
+    # keeps every section represented while keeping generation instant.
+    if len(chunks) > 400:
+        step = max(1, len(chunks) // 400)
+        chunks = chunks[::step][:400]
     questions = []
     seen_keys = set()
     for i in range(len(chunks)):
@@ -2330,14 +2354,23 @@ def generate_module():
                     # Robust pypdf text extraction engine
                     from pypdf import PdfReader
                     reader = PdfReader(filepath)
+                    pages = list(reader.pages)
+                    # Bound extraction: sample pages evenly across the document so
+                    # very large PDFs (1000+ pages) don't stall generation for tens
+                    # of seconds, while every section stays represented.
+                    MAX_EXTRACT_PAGES = 60
+                    if len(pages) > MAX_EXTRACT_PAGES:
+                        step = len(pages) / MAX_EXTRACT_PAGES
+                        indices = sorted({int(i * step) for i in range(MAX_EXTRACT_PAGES)})
+                        pages = [pages[i] for i in indices]
                     extracted_pages = []
-                    for page in reader.pages:
+                    for page in pages:
                         txt = page.extract_text()
                         if txt:
                             extracted_pages.append(txt)
                     if extracted_pages:
                         text_content = "\n".join(extracted_pages).strip()
-                        print(f"Successfully extracted {len(text_content)} chars across {len(reader.pages)} PDF pages!")
+                        print(f"Successfully extracted {len(text_content)} chars across {len(pages)}/{len(reader.pages)} PDF pages!")
                 except Exception as e_pdf:
                     print(f"pypdf extraction warning: {e_pdf}")
                     try:
