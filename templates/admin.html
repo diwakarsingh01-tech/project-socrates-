@@ -9,6 +9,7 @@
     <script src="/static/vendor/react-dom.development.js" crossorigin></script>
     <script src="/static/vendor/babel.min.js"></script>
     <script src="/static/vendor/tailwindcss.js"></script>
+    <link rel="stylesheet" href="/static/vendor/font-awesome/css/all.min.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
@@ -707,7 +708,7 @@ modules_count: 0,
 
                         {/* Execs Trained */}
                         <div className="card p-6 border-l-4 border-l-amber-600 bg-white relative overflow-hidden transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 group">
-                            <div className="absolute right-3 top-3 w-10 h-10 rounded-lg bg-amber-500/5 text-amber-600 flex items-center justify-center text-sm font-semibold opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all"><i className="fas fa-users-class"></i></div>
+                            <div className="absolute right-3 top-3 w-10 h-10 rounded-lg bg-amber-500/5 text-amber-600 flex items-center justify-center text-sm font-semibold opacity-70 group-hover:opacity-100 group-hover:scale-105 transition-all"><i className="fas fa-people-group"></i></div>
                             <div className="text-xs text-slate-500 font-bold mb-1 uppercase tracking-wider">Execs Trained</div>
                             <div className="text-3xl font-extrabold text-socrates-dark">{stats.execs_trained}</div>
                             <div className="text-xs text-slate-500 mt-3 font-semibold flex items-center gap-1.5"><i className="fas fa-globe"></i> Active across zones</div>
@@ -5506,7 +5507,7 @@ className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg sha
                                                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg ${
                                                             memoryDecay >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'
                                                         }`}>
-                                                            <i className={memoryDecay >= 0 ? "fas fa-shield-virus" : "fas fa-brain-circuit"}></i>
+                                                            <i className={memoryDecay >= 0 ? "fas fa-shield-virus" : "fas fa-brain"}></i>
                                                         </div>
                                                         <div>
                                                             <div className="text-[10px] font-bold uppercase tracking-wider">Retention Performance</div>
@@ -5890,7 +5891,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                                     <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-lg ${
                                                         memoryDecay >= 0 ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
                                                     }`}>
-                                                        <i className={memoryDecay >= 0 ? "fas fa-shield-check" : "fas fa-skull-crossbones"}></i>
+                                                        <i className={memoryDecay >= 0 ? "fas fa-shield-halved" : "fas fa-skull-crossbones"}></i>
                                                     </div>
                                                     <div>
                                                         <div className="text-[9px] font-extrabold uppercase tracking-wider">Retention Health</div>
@@ -6459,7 +6460,7 @@ return {
                                     <i className="fas fa-trophy"></i> Rankings
                                 </button>
                                 <button onClick={() => setActiveTab('trainees')} className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === 'trainees' ? 'bg-white text-slate-900 shadow-lg' : 'text-slate-400 hover:text-white'}`}>
-                                    <i className="fas fa-users-class"></i> Trainee Feed ({connectedTrainees.length})
+                                    <i className="fas fa-people-group"></i> Trainee Feed ({connectedTrainees.length})
                                 </button>
                             </div>
 
@@ -6668,7 +6669,7 @@ return {
 
                                 <div className="space-y-4">
                                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center justify-between">
-                                        <span><i className="fas fa-users-class text-emerald-600 mr-2"></i> Connected Feed</span>
+                                        <span><i className="fas fa-people-group text-emerald-600 mr-2"></i> Connected Feed</span>
                                         <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">{connectedTrainees.length}</span>
                                     </h4>
                                     <div className="max-h-60 overflow-y-auto pr-2 space-y-2 no-scrollbar">
