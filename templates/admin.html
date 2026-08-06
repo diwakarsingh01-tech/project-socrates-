@@ -626,18 +626,20 @@ modules_count: 0,
                 fetch(`/api/modules?trainer_id=${encodeURIComponent(trId)}`)
                     .then(res => res.json())
                     .then(data => {
-                        setModules(data);
-                        if (data.length > 0) {
-                            setSelectedModId(data[0].id.toString());
+                        const list = Array.isArray(data) ? data : [];
+                        setModules(list);
+                        if (list.length > 0) {
+                            setSelectedModId(list[0].id.toString());
                         }
                         setLoading(false);
                     })
                     .catch(err => {
                         console.error("Dashboard fetch modules error:", err);
                         const fallback = db.get('s_modules') || [];
-                        setModules(fallback);
-                        if (fallback.length > 0) {
-                            setSelectedModId(fallback[0].id.toString());
+                        const list = Array.isArray(fallback) ? fallback : [];
+                        setModules(list);
+                        if (list.length > 0) {
+                            setSelectedModId(list[0].id.toString());
                         }
                         setLoading(false);
                     });
@@ -664,13 +666,14 @@ modules_count: 0,
                 loadSyncStatus();
             }, [user]);
 
-            const selectedModule = modules.find(m => m.id.toString() === selectedModId);
+            const moduleList = Array.isArray(modules) ? modules : [];
+            const selectedModule = moduleList.find(m => m.id.toString() === selectedModId);
             const isPendingAudit = selectedModule && selectedModule.status === 'Pending Audit';
             const approvedCount = selectedModule?.questions ? selectedModule.questions.filter(q => q.approved === 1).length : 0;
             const totalCount = selectedModule?.questions_count || selectedModule?.questions?.length || 15;
 
             const startSession = () => {
-                if(!selectedModId || modules.length === 0) {
+                if(!selectedModId || moduleList.length === 0) {
                     alert("Please select a module first.");
                     return;
                 }
@@ -957,7 +960,7 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                                 </div>
                                 <div className="space-y-4">
                                     {stats.pending_audits && stats.pending_audits.map((mod, idx) => {
-                                        const pct = Math.round((mod.approved_count / mod.questions_count) * 100);
+                                        const pct = mod.questions_count > 0 ? Math.round((mod.approved_count / mod.questions_count) * 100) : 0;
                                         return (
                                             <div key={idx} className="p-3.5 rounded-xl border border-purple-100 bg-purple-50/10 hover:bg-purple-50/30 transition-all">
                                                 <div className="flex items-center justify-between mb-1">
@@ -1051,6 +1054,7 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
             const [selBu, setSelBu] = useState('');
             const [selRole, setSelRole] = useState('');
             const [selProduct, setSelProduct] = useState('');
+            const [selStatus, setSelStatus] = useState('');
             const [filterOptions, setFilterOptions] = useState({ 
                 zones: [], divisions: [], branches: [], divisions_meta: [], branches_meta: [],
                 business_units: [], roles: [], products: []
@@ -1081,8 +1085,9 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                     .catch(err => console.error("Error loading roster filters:", err));
             };
 
-             const loadEmps = (zoneVal = selZone, divVal = selDiv, branchVal = selBranch, searchVal = searchQuery, buVal = selBu, roleVal = selRole, productVal = selProduct) => {
+             const loadEmps = (zoneVal = selZone, divVal = selDiv, branchVal = selBranch, searchVal = searchQuery, buVal = selBu, roleVal = selRole, productVal = selProduct, statusVal = selStatus) => {
                 setIsLoadingEmps(true);
+                const noFilters = !zoneVal && !divVal && !branchVal && !searchVal && !buVal && !roleVal && !productVal && !statusVal;
                 let url = '/api/roster?';
                 if (zoneVal) url += `zone=${encodeURIComponent(zoneVal)}&`;
                 if (divVal) url += `division=${encodeURIComponent(divVal)}&`;
@@ -1090,6 +1095,7 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                 if (buVal) url += `business_unit=${encodeURIComponent(buVal)}&`;
                 if (roleVal) url += `role=${encodeURIComponent(roleVal)}&`;
                 if (productVal) url += `product_name=${encodeURIComponent(productVal)}&`;
+                if (statusVal) url += `status=${encodeURIComponent(statusVal)}&`;
                 if (searchVal) url += `q=${encodeURIComponent(searchVal)}&`;
 
                 fetch(url)
@@ -1097,8 +1103,13 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                     .then(data => {
                         setEmps(data);
                         setFilteredCount(data.length);
-                        if (!zoneVal && !divVal && !branchVal && !searchVal && !buVal && !roleVal && !productVal) {
+                        if (noFilters) {
                             setTotalCount(data.length);
+                        } else {
+                            // "Total Roster" must reflect the full company roster, not the filtered subset
+                            fetch('/api/roster').then(r => r.json()).then(all => {
+                                setTotalCount(Array.isArray(all) ? all.length : data.length);
+                            }).catch(() => {});
                         }
                         setIsLoadingEmps(false);
                     })
@@ -1107,7 +1118,7 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                         const fallbackData = db.get('s_roster') || [];
                         setEmps(fallbackData);
                         setFilteredCount(fallbackData.length);
-                        if (!zoneVal && !divVal && !branchVal && !searchVal && !buVal && !roleVal && !productVal) {
+                        if (noFilters) {
                             setTotalCount(fallbackData.length);
                         }
                         setIsLoadingEmps(false);
@@ -1121,6 +1132,7 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                 let newBu = selBu;
                 let newRole = selRole;
                 let newProduct = selProduct;
+                let newStatus = selStatus;
 
                 if (type === 'zone') {
                     newZone = val;
@@ -1146,9 +1158,12 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                 } else if (type === 'product') {
                     newProduct = val;
                     setSelProduct(val);
+                } else if (type === 'status') {
+                    newStatus = val;
+                    setSelStatus(val);
                 }
 
-loadEmps(newZone, newDiv, newBranch, searchQuery, newBu, newRole, newProduct);
+loadEmps(newZone, newDiv, newBranch, searchQuery, newBu, newRole, newProduct, newStatus);
             };
 
             const handleSearch = (val) => {
@@ -1501,7 +1516,7 @@ const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business 
                     body: JSON.stringify({
                         emp_codes: selectedEmpCodes,
                         action: 'delete',
-                        reason: reason.strip || reason.trim() || 'BULK DELETION'
+                        reason: (reason && reason.trim()) || 'BULK DELETION'
                     })
                 })
                 .then(res => res.json())
@@ -1715,7 +1730,7 @@ const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business 
                                                     <select value={editDivision} onChange={e => setEditDivision(e.target.value)} className="input-field bg-white">
                                                         {filterOptions.divisions_meta
 
-.filter(d => !editZone || d.zone === editZone)
+.filter(d => !editZone || (d.zone || '').trim().toUpperCase() === editZone.trim().toUpperCase())
                                                             .map((d, idx) => <option key={idx} value={d.name}>{d.name}</option>)}
                                                     </select>
                                                 ) : (
@@ -1729,7 +1744,7 @@ const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business 
                                                 <select value={editZone} onChange={e => {
                                                     const newZone = e.target.value;
                                                     setEditZone(newZone);
-                                                    const possibleDivs = filterOptions.divisions_meta.filter(d => d.zone === newZone);
+                                                    const possibleDivs = filterOptions.divisions_meta.filter(d => (d.zone || '').trim().toUpperCase() === newZone.trim().toUpperCase());
                                                     if (possibleDivs.length > 0) {
                                                         setEditDivision(possibleDivs[0].name);
                                                     } else {
@@ -1837,7 +1852,7 @@ const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business 
                                                     <select value={bulkDivision} onChange={e => setBulkDivision(e.target.value)} className="input-field bg-white">
                                                         <option value="">-- No Change --</option>
                                                         {filterOptions.divisions_meta
-                                                            .filter(d => !bulkZone || d.zone === bulkZone)
+                                                            .filter(d => !bulkZone || (d.zone || '').trim().toUpperCase() === bulkZone.trim().toUpperCase())
                                                             .map((d, idx) => <option key={idx} value={d.name}>{d.name}</option>)}
                                                     </select>
                                                 ) : (
@@ -1852,7 +1867,7 @@ const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business 
                                                     const newZone = e.target.value;
                                                     setBulkZone(newZone);
                                                     if (newZone) {
-                                                        const possibleDivs = filterOptions.divisions_meta.filter(d => d.zone === newZone);
+                                                        const possibleDivs = filterOptions.divisions_meta.filter(d => (d.zone || '').trim().toUpperCase() === newZone.trim().toUpperCase());
                                                         if (possibleDivs.length > 0) {
                                                             setBulkDivision(possibleDivs[0].name);
                                                         } else {
@@ -2182,7 +2197,7 @@ filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
                                     <select value={selDiv} onChange={e => handleFilterChange('division', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
                                         <option value="">All Divisions</option>
                                         {filterOptions.divisions_meta && filterOptions.divisions_meta
-                                            .filter(d => !selZone || d.zone === selZone)
+                                            .filter(d => !selZone || (d.zone || '').trim().toUpperCase() === selZone.trim().toUpperCase())
                                             .map((d, idx) => <option key={idx} value={d.name}>{d.name} ({d.zone})</option>)}
                                     </select>
                                 </div>
@@ -2191,7 +2206,7 @@ filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
                                     <select value={selBranch} onChange={e => handleFilterChange('branch', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
                                         <option value="">All Branches</option>
                                         {filterOptions.branches_meta && filterOptions.branches_meta
-                                            .filter(br => !selDiv || br.division === selDiv)
+                                            .filter(br => (!selDiv || (br.division || '').trim().toUpperCase() === selDiv.trim().toUpperCase()) && (!selZone || (br.zone || '').trim().toUpperCase() === selZone.trim().toUpperCase()))
                                             .map((br, idx) => <option key={idx} value={br.name}>{br.name} ({br.division})</option>)}
                                     </select>
                                 </div>
@@ -2217,10 +2232,17 @@ filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
                                         {filterOptions.products && filterOptions.products.map((p, idx) => <option key={idx} value={p}>{p}</option>)}
                                     </select>
                                 </div>
+                                <div>
+                                    <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Status</label>
+                                    <select value={selStatus} onChange={e => handleFilterChange('status', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
+                                        <option value="">All Statuses</option>
+                                        {filterOptions.statuses && filterOptions.statuses.map((s, idx) => <option key={idx} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
                             </div>
-                            {(selZone || selDiv || selBranch || selBu || selRole || selProduct || searchQuery) && (
+                            {(selZone || selDiv || selBranch || selBu || selRole || selProduct || selStatus || searchQuery) && (
                                 <div className="bg-[#E11D48]/5 border-b border-[#E11D48]/10 px-6 py-2 flex items-center justify-end">
-                                    <button onClick={() => { setSelZone(''); setSelDiv(''); setSelBranch(''); setSelBu(''); setSelRole(''); setSelProduct(''); setSearchQuery(''); loadEmps('', '', '', '', '', '', ''); }} className="text-xs text-[#E11D48] hover:text-white hover:bg-[#E11D48] font-bold flex items-center justify-center gap-1.5 bg-white border border-[#E11D48]/15 rounded-lg px-4 py-1.5 transition-all shadow-sm">
+                                    <button onClick={() => { setSelZone(''); setSelDiv(''); setSelBranch(''); setSelBu(''); setSelRole(''); setSelProduct(''); setSelStatus(''); setSearchQuery(''); loadEmps('', '', '', '', '', '', '', ''); }} className="text-xs text-[#E11D48] hover:text-white hover:bg-[#E11D48] font-bold flex items-center justify-center gap-1.5 bg-white border border-[#E11D48]/15 rounded-lg px-4 py-1.5 transition-all shadow-sm">
                                         <i className="fas fa-times-circle"></i> Clear All Active Filters
                                     </button>
                                 </div>
@@ -2243,7 +2265,7 @@ filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
                                 </div>
                             </div>
                             <div className="overflow-x-auto">
-                                <table className="w-full text-left text-sm border-collapse">
+                                <table className="w-full text-left text-sm border-collapse min-w-[1200px]">
                                     <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                                         <tr>
                                             <th className="px-6 py-4 w-12 text-center">
@@ -2289,7 +2311,7 @@ filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
                                             ))
                                         ) : emps.length === 0 ? (
                                             <tr>
-                                                <td colSpan="10" className="px-6 py-12 text-center text-slate-400 font-medium">
+                                                <td colSpan="11" className="px-6 py-12 text-center text-slate-400 font-medium">
                                                     <i className="fas fa-users text-4xl text-slate-200 mb-3 block"></i>
                                                     No employees registered yet. Upload a CSV roster to begin.
                                                 </td>
@@ -2440,8 +2462,18 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
 
             const handleSaveManualPaper = (isFinalize) => {
                 if (!manualTitle.trim()) return alert('Please enter a Question Paper Title.');
-                const invalid = manualQuestions.find(q => !q.question_text.trim() || !q.option_a.trim() || !q.option_b.trim());
-                if (invalid) return alert('Please complete question text and at least options A & B for all questions.');
+                const invalid = manualQuestions.find(q => {
+                    const opts = [q.option_a, q.option_b, q.option_c, q.option_d].map(o => (o || '').trim());
+                    return !q.question_text.trim() || opts.some(o => !o);
+                });
+                if (invalid) return alert('Please complete the question text and ALL 4 options for every question.');
+                const dupOpt = manualQuestions.find(q => {
+                    const opts = [q.option_a, q.option_b, q.option_c, q.option_d].map(o => o.trim().toLowerCase());
+                    return new Set(opts).size < 4;
+                });
+                if (dupOpt) return alert('Each question needs 4 DISTINCT options — duplicate options are not allowed.');
+                const stems = manualQuestions.map(q => q.question_text.trim().toLowerCase());
+                if (new Set(stems).size < stems.length) return alert('Duplicate question text detected — every question must be unique.');
 
                 const payload = {
                     title: manualTitle.trim(),
@@ -2454,12 +2486,12 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                     shuffle_questions: shuffleQ,
                     shuffle_options: shuffleOpt,
                     questions: manualQuestions.map(q => ({
-                        question_text: q.question_text,
+                        question_text: q.question_text.trim(),
                         question_type: q.question_type || 'mcq_single',
                         points_weight: q.points_weight || 1.0,
                         negative_points: q.negative_points || 0.0,
-                        options: [q.option_a, q.option_b, q.option_c, q.option_d],
-                        correctIndex: q.correct_index,
+                        options: [q.option_a, q.option_b, q.option_c, q.option_d].map(o => (o || '').trim()),
+                        correctIndex: Math.min(3, Math.max(0, parseInt(q.correct_index) || 0)),
                         approved: isFinalize ? 1 : q.approved
                     }))
                 };
@@ -2556,7 +2588,7 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                             source_text: parsed.source_text || '',
                             questions: (parsed.questions || []).map(q => ({
                                 question_text: q.question_text || q.question,
-                                options: [q.option_a, q.option_b, q.option_c, q.option_d] || q.options,
+                                options: (Array.isArray(q.options) && q.options.length >= 4) ? q.options : [q.option_a || "Option A", q.option_b || "Option B", q.option_c || "Option C", q.option_d || "Option D"],
                                 correctIndex: q.correct_index !== undefined ? q.correct_index : q.correctIndex,
                                 approved: q.approved !== undefined ? q.approved : 1,
                                 translations: q.translations || {}
@@ -2592,6 +2624,9 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
 
             const startGenerator = () => {
                 if(!title) return alert("Please enter a Module Title.");
+                if(!selectedFile && !pastedText.trim()) return alert("Please upload a training PDF or paste training text first.");
+                if(selectedFile && !selectedFile.name.toLowerCase().endsWith('.pdf')) return alert("Please upload a valid PDF file (.pdf).");
+                if(selectedFile && selectedFile.size > 15 * 1024 * 1024) return alert("PDF file is too large (max 15 MB).");
 
                 setStatus('loading');
                 const formData = new FormData();
@@ -2639,6 +2674,7 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                         setStatus('review');
                         setTitle('');
                         setSelectedFile(null);
+                        setPastedText('');
                     } else {
                         alert("AI Generation failed: " + data.message);
                         setStatus('idle');
@@ -2646,7 +2682,7 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                 })
                 .catch(err => {
                     console.error("AI generator fetch crash:", err);
-                    alert("System error. Running offline fallback draft.");
+                    alert("Network error while contacting the AI generator. Please try again.");
                     setStatus('idle');
                 });
             };
@@ -2658,7 +2694,7 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                 setReviewDifficulty(mod.difficulty || 'Medium');
                 if (mod.source_text) setPastedText(mod.source_text);
                 // Map from database questions structure back to auditor draft
-                const mappedQs = mod.questions.map(q => ({
+                const mappedQs = (Array.isArray(mod.questions) ? mod.questions : []).map(q => ({
                     id: q.id,
                     question_text: q.question_text,
                     option_a: q.option_a,
@@ -2700,6 +2736,11 @@ const toggleQuestionApproval = (idx) => {
                     module_id: reviewModuleId,
                     difficulty: reviewDifficulty,
                     source_text: pastedText,
+                    time_limit_minutes: timeLimit,
+                    pass_percentage: passPct,
+                    enable_anti_cheat: antiCheat,
+                    shuffle_questions: shuffleQ,
+                    shuffle_options: shuffleOpt,
                     questions: reviewQuestions.map(q => ({
                         question: q.question_text,
                         options: [q.option_a, q.option_b, q.option_c, q.option_d],
@@ -3039,16 +3080,15 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Number of Questions</label>
-                                        <select 
-                                            value={qCount} 
-                                            onChange={(e) => setQCount(parseInt(e.target.value))} 
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="50"
+                                            value={qCount}
+                                            onChange={(e) => setQCount(Math.min(50, Math.max(1, parseInt(e.target.value) || 15)))}
                                             className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
-                                        >
-                                            <option value="5">5 Questions</option>
-                                            <option value="10">10 Questions</option>
-                                            <option value="15">15 Questions</option>
-                                            <option value="20">20 Questions</option>
-                                        </select>
+                                            placeholder="e.g. 14 or 15"
+                                        />
                                     </div>
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Translation Language</label>
@@ -3232,6 +3272,11 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                     <button 
                                         onClick={() => {
                                             if (!manualTitle.trim()) return alert('Please enter a Question Paper Title.');
+                                            const bad = manualQuestions.find(q => {
+                                                const opts = [q.option_a, q.option_b, q.option_c, q.option_d].map(o => (o || '').trim());
+                                                return !q.question_text.trim() || opts.some(o => !o);
+                                            });
+                                            if (bad) return alert('Please complete the question text and ALL 4 options for every question before auditing.');
                                             setReviewTitle(manualTitle.trim());
                                             setReviewDifficulty(manualDifficulty);
                                             setReviewQuestions(manualQuestions);
@@ -6278,14 +6323,16 @@ return {
                         question: q.question_text,
                         options: [q.option_a, q.option_b, q.option_c, q.option_d],
                         correctIndex: q.correct_index,
-                        translations: q.translations
+                        translations: q.translations,
+                        totalQs: activeModule.questions.length
                     };
                 } else {
                     qData = {
                         question: currentQ.question,
                         options: currentQ.options,
                         correctIndex: currentQ.correctIndex,
-                        translations: currentQ.translations
+                        translations: currentQ.translations,
+                        totalQs: currentQ.totalQs
                     };
                 }
 
@@ -6299,7 +6346,9 @@ return {
                     translations: qData.translations,
                     forceLanguage: selectedLanguageOverride,
                     activeModule: activeModule,
-                    question_idx: qIdx
+                    module_id: activeModule.id,
+                    question_idx: qIdx,
+                    totalQs: qData.totalQs
                 });
             };
 
@@ -6320,7 +6369,9 @@ return {
                     translations: q.translations,
                     forceLanguage: selectedLanguageOverride,
                     activeModule: activeModule,
-                    question_idx: newIdx
+                    module_id: activeModule.id,
+                    question_idx: newIdx,
+                    totalQs: activeModule.questions.length
                 });
             };
 

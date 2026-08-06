@@ -199,10 +199,17 @@
                 const saved = localStorage.getItem('socrates_activeOptions');
                 return saved ? JSON.parse(saved) : [];
             });
-            const [activeCorrectIndex, setActiveCorrectIndex] = useState(() => {
-                const saved = localStorage.getItem('socrates_activeCorrectIndex');
-                return saved !== null ? parseInt(saved) : null;
+            const [activeModuleId, setActiveModuleId] = useState(() => {
+                const saved = localStorage.getItem('socrates_activeModuleId');
+                return saved !== null ? parseInt(saved) : 1;
             });
+            const [securityLock, setSecurityLock] = useState(false);
+            const [certificateId, setCertificateId] = useState(() => localStorage.getItem('socrates_certificate_id') || '');
+            const [passedStatus, setPassedStatus] = useState(() => {
+                const saved = localStorage.getItem('socrates_passed_status');
+                return saved !== null ? (saved === 'true' || saved === '1') : null;
+            });
+
             const [activeAssignmentDay, setActiveAssignmentDay] = useState(() => localStorage.getItem('socrates_activeAssignmentDay') || 'zero day');
             const [activeTranslations, setActiveTranslations] = useState(() => {
                 const saved = localStorage.getItem('socrates_activeTranslations');
@@ -216,6 +223,7 @@
             const [unattemptedCount, setUnattemptedCount] = useState(() => parseInt(localStorage.getItem('socrates_unattemptedCount') || '0'));
 
             const [totalQuestions, setTotalQuestions] = useState(() => parseInt(localStorage.getItem('socrates_totalQuestions') || '0'));
+            const [moduleTotalQs, setModuleTotalQs] = useState(0);
 
             const [preTestScore, setPreTestScore] = useState(null);
             const [postTestScore, setPostTestScore] = useState(null);
@@ -238,6 +246,7 @@
                     const cQIdx = qIdxRef.current;
                     const cHasSub = subRef.current;
 
+                    const viewChanged = !!data.view && data.view !== cView;
                     if (data.view) {
                         if ((cView === 'pretest' || cView === 'posttest') && !cHasSub && cQuestion && !data.sync) setUnattemptedCount(prev => prev + 1);
                         setView(data.view);
@@ -247,7 +256,7 @@
                                    (data.question && data.question !== cQuestion);
 
                     if (isNewQ) {
-                        if (!cHasSub && cQuestion && !data.sync) setUnattemptedCount(prev => prev + 1);
+                        if (!cHasSub && cQuestion && !data.sync && !viewChanged) setUnattemptedCount(prev => prev + 1);
                         setActiveQuestion(data.question || '');
                         if (data.question_idx !== undefined) setActiveQIdx(data.question_idx);
                         if (!data.sync) setTotalQuestions(prev => prev + 1);
@@ -255,7 +264,8 @@
                     }
 
                     if (data.options) setActiveOptions(data.options);
-                    if (data.correctIndex !== undefined) setActiveCorrectIndex(data.correctIndex);
+                    if (data.module_id) setActiveModuleId(data.module_id);
+                    if (data.totalQs) setModuleTotalQs(data.totalQs);
                     if (data.assignment_day) setActiveAssignmentDay(data.assignment_day);
                     if (data.translations) setActiveTranslations(data.translations); else if (data.question) setActiveTranslations({});
                     if (data.forceLanguage) setActiveLanguage(data.forceLanguage);
@@ -265,6 +275,7 @@
                     if (data.command === 'reset_scores') {
                         setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0); setTotalQuestions(0); setHasSubmittedCurrent(false);
                         setActiveQIdx(-1);
+                        setSecurityLock(false);
                         localStorage.removeItem('socrates_correctCount');
                         localStorage.removeItem('socrates_activeQIdx');
                     }
@@ -281,7 +292,7 @@
                 localStorage.setItem('socrates_activeQuestion', activeQuestion || '');
                 localStorage.setItem('socrates_activeQIdx', activeQIdx.toString());
                 localStorage.setItem('socrates_activeOptions', JSON.stringify(activeOptions));
-                localStorage.setItem('socrates_activeCorrectIndex', activeCorrectIndex);
+                localStorage.setItem('socrates_activeModuleId', activeModuleId);
                 localStorage.setItem('socrates_activeAssignmentDay', activeAssignmentDay || '');
                 localStorage.setItem('socrates_activeTranslations', JSON.stringify(activeTranslations));
                 localStorage.setItem('socrates_correctCount', correctCount);
@@ -289,7 +300,9 @@
                 localStorage.setItem('socrates_unattemptedCount', unattemptedCount);
                 localStorage.setItem('socrates_totalQuestions', totalQuestions);
                 localStorage.setItem('socrates_hasSubmittedCurrent', hasSubmittedCurrent.toString());
-            }, [view, empId, empDetails, pin, activeQuestion, activeQIdx, activeOptions, activeCorrectIndex, activeAssignmentDay, activeTranslations, correctCount, wrongCount, unattemptedCount, totalQuestions, hasSubmittedCurrent]);
+                localStorage.setItem('socrates_certificate_id', certificateId || '');
+                localStorage.setItem('socrates_passed_status', passedStatus === null ? '' : passedStatus.toString());
+            }, [view, empId, empDetails, pin, activeQuestion, activeQIdx, activeOptions, activeModuleId, activeAssignmentDay, activeTranslations, correctCount, wrongCount, unattemptedCount, totalQuestions, hasSubmittedCurrent, certificateId, passedStatus]);
 
             const renderContent = () => {
                 switch(view) {
@@ -299,9 +312,14 @@
                         return (
                             <Quiz 
                                 type={view === 'pretest' ? "Pre-Test" : "Post-Test"}
-                                empId={empId} pin={pin} question={activeQuestion} options={activeOptions} correctIndex={activeCorrectIndex}
+                                empId={empId} pin={pin} question={activeQuestion} options={activeOptions} moduleId={activeModuleId}
                                 assignmentDay={activeAssignmentDay} translations={activeTranslations} activeLanguage={activeLanguage}
                                 setActiveLanguage={setActiveLanguage} counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
+                                locked={securityLock} onSecurityLock={() => setSecurityLock(true)} totalQs={moduleTotalQs} qIdx={activeQIdx}
+                                onResultUpdate={(certId, passed) => {
+                                    if (certId) setCertificateId(certId);
+                                    if (passed !== undefined && passed !== null) setPassedStatus(passed);
+                                }}
                                 onScoreSubmit={(score, isCorrect) => {
                                     if (isCorrect) setCorrectCount(prev => prev + 1); else setWrongCount(prev => prev + 1);
                                     if (view === 'pretest') setPreTestScore(score); else setPostTestScore(score);
@@ -314,6 +332,7 @@
                         return (
                             <Result 
                                 preScore={preTestScore} postScore={postTestScore} counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
+                                certId={certificateId} passed={passedStatus}
                                 onFinish={() => {
                                     setView('dashboard'); setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0); setTotalQuestions(0);
                                     localStorage.clear();
@@ -479,56 +498,88 @@
             );
         };
 
-        const Quiz = ({type, empId, pin, question, options, correctIndex, assignmentDay, translations, activeLanguage, setActiveLanguage, counts, onScoreSubmit}) => {
+        const Quiz = ({type, empId, pin, question, options, moduleId, assignmentDay, translations, activeLanguage, setActiveLanguage, counts, onScoreSubmit, locked, onSecurityLock, onResultUpdate, totalQs, qIdx}) => {
             const [selected, setSelected] = useState(null);
             const [submitted, setSubmitted] = useState(false);
             const [tabSwitchCount, setTabSwitchCount] = useState(0);
-
-            useEffect(() => {
-                const handleVisibility = () => {
-                    if (document.hidden && !submitted) {
-                        setTabSwitchCount(prev => {
-                            const next = prev + 1;
-                            if (next >= 3) {
-                                alert("⛔ PROCTORING SECURITY LOCK: 3 Tab Switch Violations detected! Auto-submitting assessment.");
-                            } else {
-                                alert(`⚠️ ANTI-CHEAT PROCTORING WARNING (${next}/3): Tab switching or browser focus loss detected! Multi-session violations will lock your test.`);
-                            }
-                            return next;
-                        });
-                    }
-                };
-                document.addEventListener('visibilitychange', handleVisibility);
-                return () => document.removeEventListener('visibilitychange', handleVisibility);
-            }, [submitted]);
             const [scoreInfo, setScoreInfo] = useState(null);
             const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
             const [understanding, setUnderstanding] = useState('Fully Clear');
             const [manpowerSaved, setManpowerSaved] = useState('Yes, much faster!');
 
+            // Refs to read fresh state inside socket/visibility listeners that register only once
+            const countsRef = useRef(counts);
+            useEffect(() => { countsRef.current = counts; }, [counts]);
+            const submittedRef = useRef(submitted);
+            useEffect(() => { submittedRef.current = submitted; }, [submitted]);
+            const lockedRef = useRef(locked);
+            useEffect(() => { lockedRef.current = locked; }, [locked]);
+            const onSecurityLockRef = useRef(onSecurityLock);
+            useEffect(() => { onSecurityLockRef.current = onSecurityLock; }, [onSecurityLock]);
+            const tabSwitchRef = useRef(0);
+            const startTimeRef = useRef(Date.now());
+            const submitAnswerRef = useRef(null);
+
+            // Real anti-cheat: 3 tab-switch violations lock the assessment AND auto-submit the current answer
+            useEffect(() => {
+                const handleVisibility = () => {
+                    if (document.hidden || submittedRef.current || lockedRef.current) return;
+                    const next = tabSwitchRef.current + 1;
+                    tabSwitchRef.current = next;
+                    setTabSwitchCount(next);
+                    if (next >= 3) {
+                        alert("⛔ PROCTORING SECURITY LOCK: 3 Tab Switch Violations detected! Auto-submitting assessment.");
+                        if (onSecurityLockRef.current) onSecurityLockRef.current();
+                        if (submitAnswerRef.current) submitAnswerRef.current();
+                    } else {
+                        alert(`⚠️ ANTI-CHEAT PROCTORING WARNING (${next}/3): Tab switching or browser focus loss detected! Multi-session violations will lock your test.`);
+                    }
+                };
+                document.addEventListener('visibilitychange', handleVisibility);
+                return () => document.removeEventListener('visibilitychange', handleVisibility);
+            }, []);
+
             const qText = cleanQuestionText((translations?.[activeLanguage]?.question) || question || (fallbackQuestions[assignmentDay]?.question) || fallbackQuestions['zero day'].question);
             const qOpts = ((translations?.[activeLanguage]?.options) || (options?.length ? options : (fallbackQuestions[assignmentDay]?.options || fallbackQuestions['zero day'].options))).map(cleanOptionText);
-            const qCorrect = correctIndex !== null ? correctIndex : (fallbackQuestions[assignmentDay]?.correctIndex || 1);
 
+            // Authoritative scoring: the server evaluates the answer and confirms via socket.
+            // The DB write runs only inside score_confirmation (no client-side answer-key dependence).
             useEffect(() => {
-                socket.on('score_confirmation', (data) => setScoreInfo(data));
+                socket.on('score_confirmation', (data) => {
+                    setScoreInfo(data);
+                    const isCorrect = !!data.is_correct;
+                    onScoreSubmit(100, isCorrect);
+                    const c = countsRef.current;
+                    const nextCorrect = c.correctCount + (isCorrect ? 1 : 0);
+                    const nextWrong = c.wrongCount + (!isCorrect ? 1 : 0);
+                    const timeTaken = Math.round((Date.now() - startTimeRef.current) / 1000);
+                    fetch('/api/assessments/submit', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            emp_code: empId, module_id: moduleId || 1, assignment_day: assignmentDay,
+                            session_id: pin, test_type: type === 'Pre-Test' ? 'pre' : 'post',
+                            correct_count: nextCorrect, wrong_count: nextWrong,
+                            unattempted_count: c.unattemptedCount, total_questions: c.totalQuestions,
+                            tab_switch_count: tabSwitchRef.current, time_taken_seconds: timeTaken
+                        })
+                    })
+                    .then(res => res.json())
+                    .then(res => {
+                        if (res && res.certificate_id && onResultUpdate) onResultUpdate(res.certificate_id, res.passed_status);
+                    })
+                    .catch(err => console.error("Score persistence error:", err));
+                });
                 return () => socket.off('score_confirmation');
             }, []);
 
             useEffect(() => { setSelected(null); setSubmitted(false); setScoreInfo(null); setFeedbackSubmitted(false); }, [question]);
 
             const submitAnswer = () => {
-                if(selected === null) return;
+                if(selected === null || submitted || locked) return;
                 setSubmitted(true);
-
                 socket.emit('submit_vote', {pin, emp_id: empId, answer_idx: selected});
-                const isCorrect = selected === qCorrect;
-                onScoreSubmit(100, isCorrect);
-                fetch('/api/assessments/submit', {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ emp_code: empId, module_id: 1, assignment_day: assignmentDay, session_id: pin, correct_count: isCorrect ? counts.correctCount + 1 : counts.correctCount, wrong_count: !isCorrect ? counts.wrongCount + 1 : counts.wrongCount, unattempted_count: counts.unattemptedCount, total_questions: counts.totalQuestions, [type === 'Pre-Test' ? 'pre_test_score' : 'post_test_score']: 100 })
-                });
             };
+            submitAnswerRef.current = submitAnswer;
 
             return (
                 <div className="bg-slate-900/40 backdrop-blur-xl flex-1 flex flex-col overflow-hidden relative border border-white/5 shadow-2xl rounded-[2rem] mb-4 animate-fade-in">
@@ -578,10 +629,22 @@
                         ) : (
                             <div className="flex flex-col h-full justify-between gap-10">
                                 <div className="space-y-8">
+                                    {locked && (
+                                        <div className="p-4 rounded-2xl border-2 border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                                            <i className="fas fa-lock"></i> Assessment Locked — anti-cheat violations detected. Contact your trainer.
+                                        </div>
+                                    )}
+                                    {totalQs > 0 && (
+                                        <div className="flex justify-center md:justify-start">
+                                            <span className="px-4 py-1.5 rounded-full bg-white/10 text-amber-300 text-[11px] font-black uppercase tracking-widest">
+                                                Question {Math.max(1, Math.min((qIdx !== undefined ? qIdx : 0) + 1, totalQs))} of {totalQs}
+                                            </span>
+                                        </div>
+                                    )}
                                     <h3 className="text-xl md:text-2xl font-outfit font-black text-white leading-tight text-center md:text-left">{qText}</h3>
                                     <div className="grid grid-cols-1 gap-4">
                                         {qOpts.map((opt, i) => (
-                                            <button key={i} onClick={() => setSelected(i)} className={`w-full text-left p-4 sm:p-5 md:p-6 rounded-2xl sm:rounded-[24px] border-2 transition-all active:scale-[0.98] flex items-center gap-4 sm:gap-5 ${selected === i ? 'border-amber-500 bg-amber-500/10 shadow-2xl shadow-amber-500/5' : 'border-white/5 bg-white/5 hover:border-white/10 hover:bg-white/10'}`}>
+                                            <button key={i} disabled={locked} onClick={() => setSelected(i)} className={`w-full text-left p-4 sm:p-5 md:p-6 rounded-2xl sm:rounded-[24px] border-2 transition-all active:scale-[0.98] flex items-center gap-4 sm:gap-5 ${selected === i ? 'border-amber-500 bg-amber-500/10 shadow-2xl shadow-amber-500/5' : 'border-white/5 bg-white/5 hover:border-white/10 hover:bg-white/10'} ${locked ? 'opacity-50 pointer-events-none' : ''}`}>
                                                 <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl border-2 flex items-center justify-center text-xs sm:text-sm font-black transition-all shrink-0 ${selected === i ? 'border-amber-500 bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/35' : 'border-white/10 text-slate-400 bg-white/5'}`}>{String.fromCharCode(65 + i)}</div>
                                                 <span className={`text-[12px] sm:text-[13px] leading-snug font-bold ${selected === i ? 'text-amber-400 font-extrabold' : 'text-slate-300'}`}>{opt}</span>
                                             </button>
@@ -589,7 +652,7 @@
                                     </div>
                                 </div>
 
-                                <div className="sticky bottom-0 bg-transparent pt-4 pb-[calc(8px+env(safe-area-inset-bottom))]"><button onClick={submitAnswer} disabled={selected === null} className={`w-full h-14 sm:h-16 rounded-2xl sm:rounded-[24px] font-black text-sm sm:text-base tracking-widest transition-all ${selected !== null ? 'btn-primary shadow-xl shadow-amber-500/25' : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed uppercase'}`}>CONFIRM SELECTION <i className="fas fa-bolt ml-2"></i></button></div>
+                                <div className="sticky bottom-0 bg-transparent pt-4 pb-[calc(8px+env(safe-area-inset-bottom))]"><button onClick={submitAnswer} disabled={selected === null || locked} className={`w-full h-14 sm:h-16 rounded-2xl sm:rounded-[24px] font-black text-sm sm:text-base tracking-widest transition-all ${selected !== null && !locked ? 'btn-primary shadow-xl shadow-amber-500/25' : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed uppercase'}`}>CONFIRM SELECTION <i className="fas fa-bolt ml-2"></i></button></div>
                             </div>
                         )}
                     </div>
@@ -612,7 +675,7 @@
             </div>
         );
 
-        const Result = ({preScore, postScore, counts, onFinish}) => (
+        const Result = ({preScore, postScore, counts, certId, passed, onFinish}) => (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-10 animate-fade-in">
                 <div className="w-28 h-28 bg-gradient-to-tr from-amber-500 to-yellow-400 text-[#090D16] rounded-[40px] flex items-center justify-center text-5xl shadow-2xl shadow-amber-500/20 animate-bounce"><i className="fas fa-trophy"></i></div>
                 <div className="space-y-2">
@@ -631,14 +694,20 @@
                         </div>
                     ))}
                 </div>
-                <a 
-                    href={`/api/assessments/certificate/${localStorage.getItem('socrates_empId') || 'CERT'}`} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="w-full h-14 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 rounded-2xl flex items-center justify-center font-extrabold text-sm uppercase tracking-widest shadow-xl shadow-amber-500/20 hover:scale-[1.02] active:scale-95 transition-all mb-2 text-decoration-none"
-                >
-                    <i className="fas fa-award text-lg mr-2"></i> Download Official Certificate
-                </a>
+                {passed === false ? (
+                    <div className="w-full p-4 rounded-2xl border-2 border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2">
+                        <i className="fas fa-times-circle"></i> Certificate Not Awarded — score below passing threshold
+                    </div>
+                ) : (
+                    <a 
+                        href={`/api/assessments/certificate/${certId || localStorage.getItem('socrates_empId') || 'CERT'}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="w-full h-14 bg-gradient-to-r from-amber-500 to-yellow-500 text-slate-950 rounded-2xl flex items-center justify-center font-extrabold text-sm uppercase tracking-widest shadow-xl shadow-amber-500/20 hover:scale-[1.02] active:scale-95 transition-all mb-2 text-decoration-none"
+                    >
+                        <i className="fas fa-award text-lg mr-2"></i> Download Official Certificate
+                    </a>
+                )}
                 <button onClick={onFinish} className="w-full h-14 btn-primary shadow-amber-500/25 text-sm font-black tracking-widest">DASHBOARD EXIT <i className="fas fa-home ml-2"></i></button>
             </div>
         );

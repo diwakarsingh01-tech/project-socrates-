@@ -22,6 +22,7 @@ import os
 import datetime
 from werkzeug.utils import secure_filename
 import csv
+import io
 import re
 import urllib.request
 import json
@@ -78,6 +79,16 @@ def init_db():
         role TEXT DEFAULT 'Trainer',
         last_login TEXT
     )''')
+    
+    # Migration: trainer access scope columns (zone/division/branch/BU visibility)
+    cursor.execute("PRAGMA table_info(trainers)")
+    tr_cols = [row[1] for row in cursor.fetchall()]
+    if 'business_units' not in tr_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN business_units TEXT DEFAULT 'ALL'")
+    if 'divisions' not in tr_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN divisions TEXT DEFAULT 'ALL'")
+    if 'branches' not in tr_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN branches TEXT DEFAULT 'ALL'")
     
     # Add/Ensure default Super Admin account is present and active
     cursor.execute("SELECT * FROM trainers WHERE UPPER(trainer_id)='ADMIN'")
@@ -188,6 +199,51 @@ def init_db():
         FOREIGN KEY(module_id) REFERENCES modules(id)
     )''')
     
+    # Session Feedback (Post-Test survey)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS session_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        emp_code TEXT,
+        session_id TEXT,
+        rating INTEGER DEFAULT 5,
+        understanding TEXT,
+        manpower_saved TEXT,
+        comments TEXT,
+        created_at TEXT
+    )''')
+    
+    # Field Visits / Travel Hub (Planner, GPS check-in, Manager sign-off)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS visits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trainer_id TEXT,
+        trainer_name TEXT,
+        zone TEXT,
+        division TEXT,
+        branch_name TEXT,
+        branch_code TEXT,
+        business_unit TEXT,
+        planned_date TEXT,
+        end_date TEXT,
+        meeting_agenda TEXT,
+        meeting_with TEXT,
+        purpose TEXT,
+        key_contacts TEXT,
+        details TEXT,
+        status TEXT DEFAULT 'PLANNED',
+        checkin_time TEXT,
+        geo_lat REAL,
+        geo_lng REAL,
+        co_presence_count INTEGER DEFAULT 0,
+        mom_notes TEXT,
+        travel_mode TEXT,
+        travel_from TEXT,
+        travel_to TEXT,
+        overnight_stay TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )''')
+    
     conn.commit()
     conn.close()
 
@@ -197,6 +253,71 @@ def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
+
+def _session_user():
+    """Return the logged-in admin/trainer session user dict, or None."""
+    user = session.get('user')
+    return user if user else None
+
+
+def _trainer_scope(trainer_id):
+    """Load a trainer's access scope from the trainers table.
+    Returns dict with keys: role, zones, divisions, branches, business_units.
+    Each list is None when the scope is unrestricted ('ALL')."""
+    if not trainer_id:
+        return None
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT zone, business_units, divisions, branches, role FROM trainers WHERE UPPER(trainer_id)=UPPER(?)",
+        (trainer_id,)
+    ).fetchone()
+    conn.close()
+    if not row:
+        return None
+
+    def parse(v):
+        if not v:
+            return None
+        v = str(v).strip()
+        if not v or v.upper() == 'ALL':
+            return None
+        return [x.strip().upper() for x in re.split(r'[|,;]', v) if x.strip()]
+
+    return {
+        'role': str(row['role'] or 'Trainer'),
+        'zones': parse(row['zone']),
+        'divisions': parse(row['divisions']),
+        'branches': parse(row['branches']),
+        'business_units': parse(row['business_units']),
+    }
+
+
+def _is_global_role(role):
+    """SuperAdmin / Leader see the full dataset; Trainers are scope-restricted."""
+    r = (role or '').lower().replace(' ', '')
+    return r in ('superadmin', 'leader')
+
+
+def _apply_trainer_scope(query_parts, params, scope):
+    """Append scope WHERE clauses for a trainer. Returns (query_string, params)."""
+    if scope:
+        if scope.get('zones'):
+            q = " AND UPPER(TRIM(zone)) IN ({})".format(','.join('?' * len(scope['zones'])))
+            query_parts.append(q)
+            params.extend(scope['zones'])
+        if scope.get('divisions'):
+            q = " AND UPPER(TRIM(division)) IN ({})".format(','.join('?' * len(scope['divisions'])))
+            query_parts.append(q)
+            params.extend(scope['divisions'])
+        if scope.get('branches'):
+            q = " AND UPPER(TRIM(branch_name)) IN ({})".format(','.join('?' * len(scope['branches'])))
+            query_parts.append(q)
+            params.extend(scope['branches'])
+        if scope.get('business_units'):
+            q = " AND UPPER(TRIM(business_unit)) IN ({})".format(','.join('?' * len(scope['business_units'])))
+            query_parts.append(q)
+            params.extend(scope['business_units'])
+    return "".join(query_parts), params
 
 # --- HTML TEMPLATE ROUTES ---
 @app.route('/')
@@ -296,7 +417,7 @@ def gdrive_status():
 def handle_trainers():
     conn = get_db_connection()
     if request.method == 'GET':
-        trainers = conn.execute("SELECT trainer_id as id, name, zone, status, role, last_login, password as plain_password FROM trainers ORDER BY trainer_id ASC").fetchall()
+        trainers = conn.execute("SELECT trainer_id as id, name, zone, status, role, last_login, password as plain_password, business_units, divisions, branches FROM trainers ORDER BY trainer_id ASC").fetchall()
         conn.close()
         return jsonify([dict(t) for t in trainers])
     
@@ -307,14 +428,17 @@ def handle_trainers():
         password = str(data.get('password', 'password123')).strip()
         role = str(data.get('role', 'Trainer')).strip()
         zone = str(data.get('zone', 'ALL')).strip()
+        business_units = str(data.get('business_units', 'ALL')).strip() or 'ALL'
+        divisions = str(data.get('divisions', 'ALL')).strip() or 'ALL'
+        branches = str(data.get('branches', 'ALL')).strip() or 'ALL'
         
         if not t_id or not name:
             conn.close()
             return jsonify({"status": "error", "message": "Trainer ID and Name are required."}), 400
             
         conn.execute(
-            "INSERT INTO trainers (trainer_id, name, zone, password, role, status) VALUES (?, ?, ?, ?, ?, 'Active') ON CONFLICT(trainer_id) DO UPDATE SET name=excluded.name, password=excluded.password, role=excluded.role, status='Active'",
-            (t_id, name, zone, password, role)
+            "INSERT INTO trainers (trainer_id, name, zone, password, role, status, business_units, divisions, branches) VALUES (?, ?, ?, ?, ?, 'Active', ?, ?, ?) ON CONFLICT(trainer_id) DO UPDATE SET name=excluded.name, password=excluded.password, role=excluded.role, status='Active', business_units=excluded.business_units, divisions=excluded.divisions, branches=excluded.branches",
+            (t_id, name, zone, password, role, business_units, divisions, branches)
         )
         conn.commit()
         conn.close()
@@ -349,15 +473,21 @@ def manage_single_trainer(trainer_id):
         password = str(data.get('password', '')).strip()
         role = str(data.get('role', 'Trainer')).strip()
         zone = str(data.get('zone', 'ALL')).strip()
+        business_units = str(data.get('business_units', 'ALL')).strip() or 'ALL'
+        divisions = str(data.get('divisions', 'ALL')).strip() or 'ALL'
+        branches = str(data.get('branches', 'ALL')).strip() or 'ALL'
         
         conn.execute("""
             UPDATE trainers SET
                 name=COALESCE(NULLIF(?, ''), name),
                 password=COALESCE(NULLIF(?, ''), password),
                 role=COALESCE(NULLIF(?, ''), role),
-                zone=COALESCE(NULLIF(?, ''), zone)
+                zone=COALESCE(NULLIF(?, ''), zone),
+                business_units=?,
+                divisions=?,
+                branches=?
             WHERE UPPER(trainer_id)=?
-        """, (name, password, role, zone, trainer_id))
+        """, (name, password, role, zone, business_units, divisions, branches, trainer_id))
         conn.commit()
         conn.close()
         return jsonify({"status": "success", "message": f"Trainer profile '{trainer_id}' updated successfully."})
@@ -394,6 +524,9 @@ def bulk_upload_trainers():
                 pwd_idx = find_idx(['password', 'pass', 'pwd'])
                 role_idx = find_idx(['role', 'designation'])
                 zone_idx = find_idx(['zone', 'region'])
+                bu_idx = find_idx(['business unit', 'bu', 'business_unit'])
+                div_idx = find_idx(['division', 'div'])
+                br_idx = find_idx(['branch', 'branches'])
                 
                 if id_idx == -1:
                     conn.close()
@@ -410,17 +543,23 @@ def bulk_upload_trainers():
                     t_pwd = r[pwd_idx].strip() if pwd_idx != -1 and len(r) > pwd_idx else 'password123'
                     t_role = r[role_idx].strip() if role_idx != -1 and len(r) > role_idx else 'Trainer'
                     t_zone = r[zone_idx].strip() if zone_idx != -1 and len(r) > zone_idx else 'ALL'
+                    t_bu = r[bu_idx].strip() if bu_idx != -1 and len(r) > bu_idx else 'ALL'
+                    t_div = r[div_idx].strip() if div_idx != -1 and len(r) > div_idx else 'ALL'
+                    t_br = r[br_idx].strip() if br_idx != -1 and len(r) > br_idx else 'ALL'
                     
                     conn.execute("""
-                        INSERT INTO trainers (trainer_id, name, zone, password, role, status)
-                        VALUES (?, ?, ?, ?, ?, 'Active')
+                        INSERT INTO trainers (trainer_id, name, zone, password, role, status, business_units, divisions, branches)
+                        VALUES (?, ?, ?, ?, ?, 'Active', ?, ?, ?)
                         ON CONFLICT(trainer_id) DO UPDATE SET
                             name=excluded.name,
                             zone=excluded.zone,
                             password=excluded.password,
                             role=excluded.role,
-                            status='Active'
-                    """, (t_id, t_name, t_zone, t_pwd, t_role))
+                            status='Active',
+                            business_units=excluded.business_units,
+                            divisions=excluded.divisions,
+                            branches=excluded.branches
+                    """, (t_id, t_name, t_zone, t_pwd, t_role, t_bu, t_div, t_br))
                     rows_processed += 1
                     
             conn.commit()
@@ -473,6 +612,14 @@ def get_roster():
     
     query = "SELECT * FROM employees WHERE 1=1"
     params = []
+    
+    # Server-side access control: trainers only see their assigned zone/division/
+    # branch/business-unit scope. SuperAdmin/Leader see everything.
+    user = _session_user()
+    if user and not _is_global_role(user.get('role', '')):
+        scope = _trainer_scope(user.get('trainer_id'))
+        if scope:
+            query, params = _apply_trainer_scope([query], params, scope)
     
     if search:
         query += " AND (UPPER(emp_name) LIKE ? OR UPPER(emp_code) LIKE ? OR UPPER(branch_name) LIKE ? OR UPPER(role) LIKE ? OR UPPER(division) LIKE ? OR UPPER(zone) LIKE ?)"
@@ -534,6 +681,7 @@ def get_roster_filters():
         business_units = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(business_unit) FROM employees WHERE business_unit IS NOT NULL AND TRIM(business_unit) != '' ORDER BY business_unit").fetchall()]
         roles = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(role) FROM employees WHERE role IS NOT NULL AND TRIM(role) != '' ORDER BY role").fetchall()]
         products = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(product_name) FROM employees WHERE product_name IS NOT NULL AND TRIM(product_name) != '' ORDER BY product_name").fetchall()]
+        statuses = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(status) FROM employees WHERE status IS NOT NULL AND TRIM(status) != '' ORDER BY status").fetchall()]
         
         divisions_meta = [
             {"name": row[0].strip(), "zone": (row[1] or '').strip()}
@@ -555,7 +703,8 @@ def get_roster_filters():
             "branches_meta": branches_meta,
             "business_units": business_units,
             "roles": roles,
-            "products": products
+            "products": products,
+            "statuses": statuses
         })
     except Exception as e:
         conn.close()
@@ -618,10 +767,29 @@ def upload_roster():
                 # Check for required headers flexibly
                 def find_hdr_idx(req):
                     req_norm = req.lower().replace('_', ' ').replace('-', ' ').strip()
+                    req_compact = re.sub(r'\s+', '', req_norm)
                     for idx, h in enumerate(raw_headers):
                         h_norm = h.lower().replace('_', ' ').replace('-', ' ').strip()
-                        if req_norm in h_norm or h_norm in req_norm:
+                        h_compact = re.sub(r'\s+', '', h_norm)
+                        if req_norm == h_norm or h_compact == req_compact:
                             return idx
+                    # Small synonym dictionary for common variants
+                    SYNONYMS = {
+                        'employee code': ['emp code', 'empcode', 'code', 'employee id', 'emp id', 'empid'],
+                        'employee name': ['emp name', 'empname', 'name', 'employee'],
+                        'branch name': ['branch', 'branchname'],
+                        'business unit': ['bu', 'businessunit', 'bunit'],
+                        'product name': ['product', 'productname'],
+                        'zone': ['zone name'],
+                        'division': ['division name', 'div'],
+                        'role': ['designation', 'job title', 'position']
+                    }
+                    for syn in SYNONYMS.get(req_norm, []):
+                        syn_compact = re.sub(r'\s+', '', syn.lower())
+                        for idx, h in enumerate(raw_headers):
+                            h_compact = re.sub(r'\s+', '', h.lower())
+                            if h_compact == syn_compact:
+                                return idx
                     return -1
                     
                 missing_headers = [req for req in REQUIRED_HEADERS if find_hdr_idx(req) == -1]
@@ -677,7 +845,7 @@ def upload_roster():
         except Exception as e:
             return jsonify({"status": "error", "message": f"Failed to parse CSV: {str(e)}"}), 400
 
-        # Check for duplication within CSV and database
+        # Check for duplication within CSV (in-file duplicate codes are hard errors)
         seen_codes_in_csv = {}
         duplicates = []
         
@@ -691,26 +859,34 @@ def upload_roster():
                 duplicates.append(f"Row {idx}: Employee Code '{code}' is duplicated in the file.")
             else:
                 seen_codes_in_csv[code] = idx
-                
-            db_match = conn.execute("SELECT emp_name FROM employees WHERE emp_code=?", (code,)).fetchone()
-            if db_match:
-                duplicates.append(f"Row {idx}: Employee Code '{code}' ({row['Employee Name']}) already exists in the database as '{db_match['emp_name']}'.")
         
         if duplicates:
             conn.close()
             return jsonify({
                 "status": "error", 
-                "message": "This is the duplicacy. You remove that.",
+                "message": "Duplicate employee codes found inside the uploaded file. Please remove them and re-upload.",
                 "details": duplicates
             }), 400
             
-        # Insert records if no duplicates found
+        # Upsert: insert new employees, update existing ones (matched by emp_code)
+        added_count = 0
+        updated_count = 0
         for _, row in rows:
+            code = row['Employee Code']
             try:
-                conn.execute(
-                    "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, extra_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (row['Employee Code'], row['Employee Name'], row['Branch Name'], row['Zone'], row['Division'], row['Business Unit'], row['Role'], row['Product Name'], row['Extra Data'])
-                )
+                db_match = conn.execute("SELECT emp_code FROM employees WHERE emp_code=?", (code,)).fetchone()
+                if db_match:
+                    conn.execute(
+                        "UPDATE employees SET emp_name=?, branch_name=?, zone=?, division=?, business_unit=?, role=?, product_name=?, extra_data=?, status='ACTIVE' WHERE emp_code=?",
+                        (row['Employee Name'], row['Branch Name'], row['Zone'], row['Division'], row['Business Unit'], row['Role'], row['Product Name'], row['Extra Data'], code)
+                    )
+                    updated_count += 1
+                else:
+                    conn.execute(
+                        "INSERT INTO employees (emp_code, emp_name, branch_name, zone, division, business_unit, role, product_name, extra_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (row['Employee Code'], row['Employee Name'], row['Branch Name'], row['Zone'], row['Division'], row['Business Unit'], row['Role'], row['Product Name'], row['Extra Data'])
+                    )
+                    added_count += 1
             except Exception as e:
                 conn.rollback()
                 conn.close()
@@ -718,7 +894,7 @@ def upload_roster():
                 
         conn.commit()
         conn.close()
-        return jsonify({"status": "success", "message": "Roster uploaded and processed successfully!"})
+        return jsonify({"status": "success", "message": f"Roster uploaded and processed successfully! Added {added_count} new, updated {updated_count} existing."})
 
 @app.route('/api/roster/manual', methods=['POST'])
 def add_roster_manual():
@@ -1019,6 +1195,935 @@ def delete_module(module_id):
     conn.close()
     return jsonify({"status": "success"})
 
+# --- FIELD VISITS / TRAVEL HUB (Planner, GPS check-in, Manager sign-off) ---
+# Default manager sign-off PIN for visit verification (override via MANAGER_PIN env).
+MANAGER_PIN = os.environ.get('MANAGER_PIN', '2468')
+
+
+def _visit_row_to_dict(row):
+    d = dict(row)
+    return d
+
+
+def _resolve_branch_info(branch_name, branch_code=None):
+    """Resolve zone/division/branch_code/business_unit from the roster for a branch."""
+    conn = get_db_connection()
+    row = None
+    if branch_code:
+        row = conn.execute(
+            "SELECT branch_name, zone, division, business_unit FROM employees WHERE UPPER(TRIM(branch_name))=UPPER(TRIM(?)) LIMIT 1",
+            (branch_code,)
+        ).fetchone()
+    if not row and branch_name:
+        row = conn.execute(
+            "SELECT branch_name, zone, division, business_unit FROM employees WHERE UPPER(TRIM(branch_name))=UPPER(TRIM(?)) LIMIT 1",
+            (branch_name,)
+        ).fetchone()
+    conn.close()
+    if not row:
+        return {
+            "zone": None, "division": None, "branch_name": (branch_name or branch_code or '').upper(),
+            "branch_code": (branch_code or branch_name or '').upper(), "business_unit": None
+        }
+    return {
+        "zone": row['zone'],
+        "division": row['division'],
+        "branch_name": row['branch_name'],
+        "branch_code": row['branch_name'],
+        "business_unit": row['business_unit'],
+    }
+
+
+def _trainer_id_and_name(trainer_id_param=None):
+    """Resolve trainer identity: explicit param wins (admin use), else session."""
+    user = _session_user()
+    if trainer_id_param and trainer_id_param.strip().upper() != 'ADMIN':
+        tid = trainer_id_param.strip().upper()
+    elif user:
+        tid = user.get('trainer_id', 'ADMIN')
+    else:
+        tid = 'ADMIN'
+    conn = get_db_connection()
+    row = conn.execute("SELECT name FROM trainers WHERE UPPER(trainer_id)=UPPER(?)", (tid,)).fetchone()
+    conn.close()
+    return tid, (row['name'] if row else tid)
+
+
+@app.route('/api/visits', methods=['GET'])
+def list_visits():
+    conn = get_db_connection()
+    query = "SELECT * FROM visits WHERE 1=1"
+    params = []
+    user = _session_user()
+
+    # Access control: trainers only see their own planned visits.
+    req_trainer = request.args.get('trainer_id', '').strip()
+    if req_trainer:
+        query += " AND UPPER(TRIM(trainer_id))=UPPER(TRIM(?))"
+        params.append(req_trainer)
+    elif user and not _is_global_role(user.get('role', '')):
+        query += " AND UPPER(TRIM(trainer_id))=UPPER(TRIM(?))"
+        params.append(user.get('trainer_id', ''))
+
+    zone = request.args.get('zone', '').strip()
+    division = request.args.get('division', '').strip()
+    branch = request.args.get('branch', '').strip()
+    status = request.args.get('status', '').strip()
+    month = request.args.get('month', '').strip()
+    if zone:
+        query += " AND UPPER(TRIM(zone))=UPPER(TRIM(?))"
+        params.append(zone)
+    if division:
+        query += " AND UPPER(TRIM(division))=UPPER(TRIM(?))"
+        params.append(division)
+    if branch:
+        query += " AND UPPER(TRIM(branch_name))=UPPER(TRIM(?))"
+        params.append(branch)
+    if status:
+        query += " AND UPPER(TRIM(status))=UPPER(TRIM(?))"
+        params.append(status)
+    if month and re.match(r'^\d{4}-\d{2}$', month):
+        query += " AND (substr(planned_date,1,7)=? OR substr(end_date,1,7)=?)"
+        params.extend([month, month])
+
+    query += " ORDER BY planned_date DESC, id DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return jsonify([_visit_row_to_dict(r) for r in rows])
+
+
+@app.route('/api/visits/plan', methods=['POST'])
+def plan_visit():
+    data = request.json or {}
+    branch_name = str(data.get('branch_name', '')).strip()
+    planned_date = str(data.get('planned_date', '')).strip()
+    if not branch_name or not planned_date:
+        return jsonify({"status": "error", "message": "Branch and planned date are required."}), 400
+
+    trainer_id, trainer_name = _trainer_id_and_name(str(data.get('trainer_id', '')).strip())
+    info = _resolve_branch_info(branch_name)
+    purpose = str(data.get('purpose', '')).strip()
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    conn = get_db_connection()
+    cur = conn.execute("""
+        INSERT INTO visits (trainer_id, trainer_name, zone, division, branch_name, branch_code, business_unit,
+                            planned_date, end_date, meeting_agenda, meeting_with, purpose, key_contacts, details,
+                            status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PLANNED', ?, ?)
+    """, (
+        trainer_id, trainer_name, info['zone'], info['division'], info['branch_name'], info['branch_code'],
+        info['business_unit'], planned_date, str(data.get('end_date', '')).strip() or planned_date,
+        purpose, '', purpose, str(data.get('key_contacts', '')).strip(), str(data.get('details', '')).strip(),
+        now, now
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Visit planned successfully!", "visit_id": cur.lastrowid})
+
+
+@app.route('/api/visits/upload', methods=['POST'])
+def upload_visits():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No selected file"}), 400
+
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+
+    errors = []
+    added = 0
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    conn = get_db_connection()
+    try:
+        with open(filepath, 'r', encoding='utf-8-sig') as csvfile:
+            reader = csv.reader(csvfile)
+            raw_headers = [h.strip().lower() for h in next(reader)]
+
+            def hdr_idx(keywords):
+                for idx, h in enumerate(raw_headers):
+                    if any(k in h for k in keywords):
+                        return idx
+                return -1
+
+            tname_idx = hdr_idx(['trainer name', 'trainer_name', 'name'])
+            tid_idx = hdr_idx(['trainer id', 'trainer_id', 'emp code', 'code'])
+            bu_idx = hdr_idx(['business unit', 'bu'])
+            date_from_idx = hdr_idx(['date of visit from', 'visit from', 'from date', 'planned date'])
+            date_to_idx = hdr_idx(['date of visit to', 'visit to', 'to date', 'end date'])
+            br_idx = hdr_idx(['branch code', 'branch'])
+            agenda_idx = hdr_idx(['meeting agenda', 'agenda'])
+            meet_idx = hdr_idx(['meeting with', 'meeting with role'])
+            overnight_idx = hdr_idx(['overnight stay'])
+            travel_from_idx = hdr_idx(['travel from'])
+            travel_to_idx = hdr_idx(['travel to'])
+            travel_mode_idx = hdr_idx(['travel mode'])
+
+            if date_from_idx == -1 or (tname_idx == -1 and tid_idx == -1):
+                conn.close()
+                os.remove(filepath)
+                return jsonify({
+                    "status": "error",
+                    "message": "Invalid CSV. Required columns: 'Trainer Name' (or 'Trainer ID') and 'Date of Visit From'."
+                }), 400
+
+            for row_idx, r in enumerate(reader, start=2):
+                if not r or len(r) < 1:
+                    continue
+                # Resolve trainer
+                if tid_idx != -1 and len(r) > tid_idx and r[tid_idx].strip():
+                    tid = r[tid_idx].strip().upper()
+                    tname = ''
+                else:
+                    tname = r[tname_idx].strip().upper() if tname_idx != -1 and len(r) > tname_idx else ''
+                    tid = ''
+                if not tid and not tname:
+                    errors.append(f"Row {row_idx}: missing trainer name/id — skipped.")
+                    continue
+
+                # Resolve trainer id by name if needed
+                if not tid:
+                    trow = conn.execute("SELECT trainer_id, name FROM trainers WHERE UPPER(TRIM(name))=UPPER(TRIM(?)) LIMIT 1", (tname,)).fetchone()
+                    if trow:
+                        tid, tname = trow['trainer_id'], trow['name']
+                    else:
+                        tid = f"CSV:{tname[:20]}" if tname else "CSV"
+
+                planned_date = r[date_from_idx].strip() if date_from_idx != -1 and len(r) > date_from_idx else ''
+                if not planned_date:
+                    errors.append(f"Row {row_idx}: missing visit date — skipped.")
+                    continue
+                # Normalise date to YYYY-MM-DD
+                if re.match(r'^\d{2}/\d{2}/\d{4}$', planned_date):
+                    try:
+                        planned_date = datetime.datetime.strptime(planned_date, "%d/%m/%Y").strftime("%Y-%m-%d")
+                    except ValueError:
+                        pass
+                elif re.match(r'^\d{4}-\d{2}-\d{2}$', planned_date):
+                    pass
+                elif re.match(r'^\d{4}-\d{2}$', planned_date):
+                    planned_date = planned_date + "-01"
+                else:
+                    errors.append(f"Row {row_idx}: unparseable date '{planned_date}' — skipped.")
+                    continue
+
+                end_date = ''
+                if date_to_idx != -1 and len(r) > date_to_idx:
+                    end_date = r[date_to_idx].strip()
+                    if re.match(r'^\d{2}/\d{2}/\d{4}$', end_date):
+                        try:
+                            end_date = datetime.datetime.strptime(end_date, "%d/%m/%Y").strftime("%Y-%m-%d")
+                        except ValueError:
+                            end_date = planned_date
+                if not end_date:
+                    end_date = planned_date
+
+                branch_code = r[br_idx].strip() if br_idx != -1 and len(r) > br_idx else ''
+                agenda = r[agenda_idx].strip() if agenda_idx != -1 and len(r) > agenda_idx else ''
+                meeting_with = r[meet_idx].strip() if meet_idx != -1 and len(r) > meet_idx else ''
+                bu = r[bu_idx].strip() if bu_idx != -1 and len(r) > bu_idx else ''
+                overnight = r[overnight_idx].strip() if overnight_idx != -1 and len(r) > overnight_idx else ''
+                travel_from = r[travel_from_idx].strip() if travel_from_idx != -1 and len(r) > travel_from_idx else ''
+                travel_to = r[travel_to_idx].strip() if travel_to_idx != -1 and len(r) > travel_to_idx else ''
+                travel_mode = r[travel_mode_idx].strip() if travel_mode_idx != -1 and len(r) > travel_mode_idx else ''
+
+                info = _resolve_branch_info(branch_code or '')
+                if not info['zone'] and branch_code:
+                    errors.append(f"Row {row_idx}: branch '{branch_code}' not found in roster — mapped as raw branch (no zone/division).")
+
+                conn.execute("""
+                    INSERT INTO visits (trainer_id, trainer_name, zone, division, branch_name, branch_code, business_unit,
+                                        planned_date, end_date, meeting_agenda, meeting_with, purpose, status,
+                                        travel_mode, travel_from, travel_to, overnight_stay, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PLANNED', ?, ?, ?, ?, ?, ?)
+                """, (
+                    tid, tname or tid, info['zone'], info['division'], info['branch_name'] or branch_code,
+                    info['branch_code'] or branch_code, bu or info['business_unit'], planned_date, end_date,
+                    agenda or 'Field Visit', meeting_with, agenda or 'Field Visit',
+                    travel_mode, travel_from, travel_to, overnight, now, now
+                ))
+                added += 1
+
+        conn.commit()
+        conn.close()
+        os.remove(filepath)
+        msg = f"Bulk upload complete: {added} visit(s) added."
+        if errors:
+            msg += f" {len(errors)} row(s) skipped."
+        return jsonify({"status": "success", "message": msg, "details": errors})
+    except Exception as e:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
+        return jsonify({"status": "error", "message": f"Failed to parse CSV: {str(e)}"}), 400
+
+
+@app.route('/api/visits/checkin', methods=['POST'])
+def visit_checkin():
+    data = request.json or {}
+    visit_id = data.get('visit_id')
+    if not visit_id:
+        return jsonify({"status": "error", "message": "Missing visit id."}), 400
+    try:
+        lat = float(data.get('latitude'))
+        lng = float(data.get('longitude'))
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Invalid GPS coordinates."}), 400
+
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit not found."}), 404
+    if visit['status'] not in ('PLANNED', 'GEOFENCED'):
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit already verified."}), 400
+
+    # Count co-present training sessions at the same branch on the visit date.
+    co_presence = conn.execute(
+        "SELECT COUNT(*) AS c FROM training_sessions WHERE UPPER(TRIM(branch_name))=UPPER(TRIM(?)) AND date=?",
+        (visit['branch_name'], visit['planned_date'])
+    ).fetchone()['c']
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    conn.execute(
+        "UPDATE visits SET status='GEOFENCED', geo_lat=?, geo_lng=?, checkin_time=?, co_presence_count=?, updated_at=? WHERE id=?",
+        (lat, lng, now, co_presence, now, visit_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({
+        "status": "success",
+        "message": f"GPS check-in recorded for {visit['branch_name']}.",
+        "co_presence": co_presence
+    })
+
+
+@app.route('/api/visits/verify', methods=['POST'])
+def visit_verify():
+    data = request.json or {}
+    visit_id = data.get('visit_id')
+    manager_pin = str(data.get('manager_pin', '')).strip()
+    if not visit_id:
+        return jsonify({"status": "error", "message": "Missing visit id."}), 400
+
+    user = _session_user()
+    is_admin_force = user and _is_global_role(user.get('role', ''))
+
+    if not is_admin_force and manager_pin != MANAGER_PIN:
+        return jsonify({"status": "error", "message": "Invalid Manager PIN. Please verify with the Branch Manager."}), 401
+
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit not found."}), 404
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    conn.execute("UPDATE visits SET status='VERIFIED', updated_at=? WHERE id=?", (now, visit_id))
+    conn.commit()
+    conn.close()
+    actor = "Admin force sign-off" if is_admin_force else "Branch Manager sign-off"
+    return jsonify({"status": "success", "message": f"Visit {visit['branch_name']} verified via {actor}."})
+
+
+@app.route('/api/visits/<int:visit_id>/mom', methods=['POST'])
+def save_visit_mom(visit_id):
+    data = request.json or {}
+    mom_notes = str(data.get('mom_notes', '')).strip()
+    if not mom_notes:
+        return jsonify({"status": "error", "message": "MoM notes are required."}), 400
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit not found."}), 404
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    conn.execute("UPDATE visits SET mom_notes=?, updated_at=? WHERE id=?", (mom_notes, now, visit_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Minutes of Meeting saved & formatted for management mail!"})
+
+
+@app.route('/api/visits/compliance-stats', methods=['GET'])
+def visits_compliance_stats():
+    month = request.args.get('month', datetime.datetime.now().strftime("%Y-%m"))
+    if not re.match(r'^\d{4}-\d{2}$', month):
+        return jsonify({"status": "error", "message": "Invalid month format (use YYYY-MM)."}), 400
+    conn = get_db_connection()
+    total_active = conn.execute("SELECT COUNT(*) AS c FROM trainers WHERE status='Active'").fetchone()['c']
+    updated = conn.execute(
+        "SELECT COUNT(DISTINCT trainer_id) AS c FROM visits WHERE substr(planned_date,1,7)=?",
+        (month,)
+    ).fetchone()['c']
+    conn.close()
+    return jsonify({
+        "status": "success",
+        "month": month,
+        "total_active_trainers": total_active,
+        "updated_count": updated,
+        "not_updated_count": max(0, total_active - updated)
+    })
+
+
+@app.route('/api/visits/export', methods=['GET'])
+def export_visits():
+    conn = get_db_connection()
+    query = "SELECT * FROM visits WHERE 1=1"
+    params = []
+    period = request.args.get('period', 'ALL').strip().upper()
+    today = datetime.date.today()
+    month = request.args.get('month', today.strftime("%Y-%m")).strip()
+    year = request.args.get('year', str(today.year)).strip()
+    zone = request.args.get('zone', '').strip()
+    division = request.args.get('division', '').strip()
+    branch = request.args.get('branch', '').strip()
+    trainer = request.args.get('trainer', '').strip()
+    status = request.args.get('status', '').strip()
+
+    if period == 'MTD':
+        query += " AND substr(planned_date,1,7)=?"
+        params.append(today.strftime("%Y-%m"))
+    elif period == 'YTD':
+        query += " AND substr(planned_date,1,4)=?"
+        params.append(str(today.year))
+    elif period == 'MONTH':
+        query += " AND (substr(planned_date,1,7)=? OR substr(end_date,1,7)=?)"
+        params.extend([month, month])
+    elif period == 'YEAR':
+        query += " AND substr(planned_date,1,4)=?"
+        params.append(year)
+    if zone:
+        query += " AND UPPER(TRIM(zone))=UPPER(TRIM(?))"
+        params.append(zone)
+    if division:
+        query += " AND UPPER(TRIM(division))=UPPER(TRIM(?))"
+        params.append(division)
+    if branch:
+        query += " AND UPPER(TRIM(branch_name))=UPPER(TRIM(?))"
+        params.append(branch)
+    if trainer:
+        query += " AND UPPER(TRIM(trainer_name))=UPPER(TRIM(?))"
+        params.append(trainer)
+    if status:
+        query += " AND UPPER(TRIM(status))=UPPER(TRIM(?))"
+        params.append(status)
+
+    query += " ORDER BY planned_date DESC, id DESC"
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Visit ID', 'Trainer ID', 'Trainer Name', 'Zone', 'Division', 'Branch', 'Branch Code',
+                     'Business Unit', 'Planned Date', 'End Date', 'Agenda', 'Meeting With', 'Status',
+                     'Check-in Time', 'Co-Presence', 'Travel Mode', 'Travel From', 'Travel To', 'Overnight Stay'])
+    for v in rows:
+        writer.writerow([v['id'], v['trainer_id'], v['trainer_name'], v['zone'], v['division'], v['branch_name'],
+                         v['branch_code'], v['business_unit'], v['planned_date'], v['end_date'],
+                         v['meeting_agenda'], v['meeting_with'], v['status'], v['checkin_time'],
+                         v['co_presence_count'], v['travel_mode'], v['travel_from'], v['travel_to'], v['overnight_stay']])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=Socrates_Field_Visits_Report.csv"}
+    )
+
+
+@app.route('/api/visits/<int:visit_id>', methods=['DELETE'])
+def delete_visit(visit_id):
+    user = _session_user()
+    if not user or not _is_global_role(user.get('role', '')):
+        return jsonify({"status": "error", "message": "Only Super Admin or Leader can cancel itineraries."}), 403
+    conn = get_db_connection()
+    conn.execute("DELETE FROM visits WHERE id=?", (visit_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Itinerary visit deleted successfully!"})
+
+
+# --- ADMIN DASHBOARD STATS (live data from the actual database) ---
+@app.route('/api/dashboard/stats', methods=['GET'])
+def dashboard_stats():
+    conn = get_db_connection()
+    trainer_id = request.args.get('trainer_id', '').strip()
+    today = datetime.date.today()
+    month_start = today.replace(day=1).strftime("%Y-%m-%d")
+    today_str = today.strftime("%Y-%m-%d")
+
+    sess_q = "SELECT * FROM training_sessions WHERE date >= ?"
+    sess_p = [month_start]
+    if trainer_id and trainer_id.upper() != 'ADMIN':
+        sess_q += " AND UPPER(TRIM(trainer_id))=UPPER(TRIM(?))"
+        sess_p.append(trainer_id)
+    sessions = conn.execute(sess_q, sess_p).fetchall()
+
+    branches_visited = conn.execute(
+        "SELECT COUNT(DISTINCT branch_name) AS c FROM training_sessions WHERE branch_name IS NOT NULL AND TRIM(branch_name)!=''"
+    ).fetchone()['c']
+
+    execs_trained = conn.execute("SELECT COUNT(DISTINCT emp_code) AS c FROM assessment_results").fetchone()['c']
+    growth = conn.execute(
+        "SELECT AVG(post_test_score - pre_test_score) AS g FROM assessment_results WHERE post_test_score IS NOT NULL AND pre_test_score IS NOT NULL"
+    ).fetchone()['g']
+    modules_count = conn.execute("SELECT COUNT(*) AS c FROM modules").fetchone()['c']
+
+    # Recent sessions with attendee counts
+    recent = conn.execute(
+        "SELECT * FROM training_sessions ORDER BY date DESC, session_id DESC LIMIT 8"
+    ).fetchall()
+    recent_sessions = []
+    for s in recent:
+        title = ''
+        trow = conn.execute("SELECT title FROM modules WHERE id=?", (s['module_id'],)).fetchone()
+        if trow:
+            title = trow['title']
+        tr_name = ''
+        trow2 = conn.execute("SELECT name FROM trainers WHERE trainer_id=?", (s['trainer_id'],)).fetchone()
+        if trow2:
+            tr_name = trow2['name']
+        attendee = conn.execute(
+            "SELECT COUNT(DISTINCT emp_code) AS c FROM assessment_results WHERE module_id=? AND assignment_day=?",
+            (s['module_id'], s['date'])
+        ).fetchone()['c']
+        recent_sessions.append({
+            "date": s['date'],
+            "module_title": title,
+            "branch_name": s['branch_name'],
+            "trainer_name": tr_name or s['trainer_id'],
+            "attendee_count": attendee
+        })
+
+    # Branch leaderboard from real assessment results
+    top_branches = []
+    br_rows = conn.execute("""
+        SELECT e.branch_name, COUNT(DISTINCT ar.emp_code) AS cnt,
+               AVG(ar.post_test_score - ar.pre_test_score) AS delta
+        FROM assessment_results ar
+        LEFT JOIN employees e ON e.emp_code = ar.emp_code
+        WHERE e.branch_name IS NOT NULL AND TRIM(e.branch_name)!=''
+        GROUP BY e.branch_name
+        ORDER BY cnt DESC LIMIT 5
+    """).fetchall()
+    for b in br_rows:
+        top_branches.append({
+            "branch_name": b['branch_name'],
+            "count": b['cnt'],
+            "growth_delta": round((b['delta'] or 0), 1)
+        })
+
+    # Maker-Checker pending audits
+    pending_audits = []
+    pend = conn.execute("SELECT * FROM modules WHERE status='Pending Audit' ORDER BY id DESC").fetchall()
+    for m in pend:
+        approved = conn.execute("SELECT COUNT(*) AS c FROM questions WHERE module_id=? AND approved=1", (m['id'],)).fetchone()['c']
+        total = conn.execute("SELECT COUNT(*) AS c FROM questions WHERE module_id=?", (m['id'],)).fetchone()['c']
+        pending_audits.append({
+            "id": m['id'],
+            "title": m['title'],
+            "creator_name": m['audited_by'],
+            "created_by": m['created_by'],
+            "difficulty": m['difficulty'],
+            "approved_count": approved,
+            "questions_count": total or (m['questions_count'] or 0)
+        })
+
+    # Today's field visits (travel hub live movement)
+    todays_visits = []
+    vis = conn.execute("""
+        SELECT * FROM visits WHERE planned_date <= ? AND (end_date IS NULL OR end_date >= ?) AND status != 'CANCELLED'
+        ORDER BY planned_date ASC
+    """, (today_str, today_str)).fetchall()
+    for v in vis:
+        todays_visits.append({
+            "id": v['id'],
+            "branch_name": v['branch_name'],
+            "trainer_name": v['trainer_name'] or v['trainer_id'],
+            "status": v['status'],
+            "checkin_time": v['checkin_time']
+        })
+
+    conn.close()
+    return jsonify({
+        "status": "success",
+        "sessions_count": len(sessions),
+        "branches_visited": branches_visited,
+        "execs_trained": execs_trained,
+        "avg_growth_delta": round(growth or 0, 1),
+        "modules_count": modules_count,
+        "recent_sessions": recent_sessions,
+        "top_branches": top_branches,
+        "pending_audits": pending_audits,
+        "todays_visits": todays_visits
+    })
+
+
+# --- Document-grounded question synthesis helpers (no external AI required) ---
+
+def _balanced_sample(text, limit=6000):
+    """Sample text from the start, middle, and end so multi-section documents are all represented."""
+    if len(text) <= limit:
+        return text
+    third = limit // 3
+    mid = len(text) // 2
+    return f"{text[:third]}\n[...]\n{text[mid:mid+third]}\n[...]\n{text[-third:]}"
+
+
+def _normalize_key(text):
+    return re.sub(r'[^a-z0-9]', '', (text or '').lower())
+
+
+_MONTH_NAMES = frozenset({'january','february','march','april','may','june','july','august','september','october','november','december'})
+# Month names are intentionally NOT in _NUM_WORDS: 'may'/'march' as verbs appear far
+# more often in training text than standalone month mentions, and matching them produced
+# nonsense cloze questions like 'employees __________ work overtime'.
+_NUM_WORDS = r'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand'
+_NUM_UNITS = r'%|percent|hours?|days?|months?|years?|minutes?|seconds?|meters?|metres?|rupees?|lakhs?|crores?|times?|working days?'
+_NUM_FREQ = r'annually|monthly|weekly|daily|quarterly|yearly|semi-annually|bi-monthly|once|twice|thrice'
+# Compound word-numbers are supported: 'twenty-four', 'five hundred', 'five thousand'
+_NUM_TOKEN_RE = re.compile(rf'\b((?:\d+(?:\.\d+)?|\d{{1,2}}(?:st|nd|rd|th))|(?:{_NUM_WORDS})(?:[ -](?:{_NUM_WORDS})){{0,2}})\s*({_NUM_UNITS})?\b|\b({_NUM_FREQ})\b', re.IGNORECASE)
+
+
+def _find_numeric_token(chunk):
+    """Extract a numeric/unit/frequency/date token from a clause
+    (e.g. 'six months', '50%', '1 April 2026')."""
+    m = _NUM_TOKEN_RE.search(chunk)
+    if not m:
+        return None
+    end = m.end()
+    if m.group(3):
+        token = m.group(3)
+    elif m.group(2) == '%':
+        token = m.group(1) + '%'
+    elif m.group(2):
+        token = f"{m.group(1)} {m.group(2)}"
+    else:
+        token = m.group(1)
+        # The trailing \b in the regex pushes the percent sign out of the match
+        # ('50%' matches as '50'); reattach it so the cloze reads '__________ %'.
+        if end < len(chunk) and chunk[end] == '%':
+            token += '%'
+            end += 1
+    # Absorb a following month name so dates like '1 April 2026' become '1 April'
+    # and the cloze reads 'Effective from __________ 2026'.
+    if m.group(3) is None:
+        mm = re.match(r"^\s*(\d{1,2}(?:st|nd|rd|th)?)?\s*([A-Za-z]+)", chunk[end:])
+        if mm and mm.group(2).lower() in _MONTH_NAMES:
+            token = ' '.join(p for p in (token, mm.group(1), mm.group(2)) if p)
+    return token if len(token) >= 2 else None
+
+
+_STOP_WORDS = {'the','a','an','and','or','but','of','in','on','at','to','for','with','by','from','as','is','are','was','were','must','be','been','any','all','every','each','that','which','who','whose','when','where','why','how','into','during','after','before','under','over','within','without','following','among','including','per','their','its','his','her','our','your','if','not','no','never','only','also','then','so','whenever','unless','than','may','can','will','shall'}
+
+
+def _topic_of(chunk):
+    """Short distinctive subject phrase of a clause (e.g. 'gold loan disbursement').
+    Pure numbers, month names and date fragments are skipped so topics stay meaningful."""
+    picked = []
+    for w in re.split(r'\s+', chunk):
+        wc = w.strip('.,;:()')
+        if not wc:
+            continue
+        wl = wc.lower()
+        if wl in _STOP_WORDS or wl in _MONTH_NAMES or _NUM_TOKEN_RE.match(wc):
+            continue
+        picked.append(wc)
+        if len(picked) >= 3:
+            break
+    if len(picked) < 2:
+        picked = re.split(r'\s+', chunk.strip(' .'))[:4]
+    return ' '.join(picked)
+
+
+_FRAGMENT_STOPS = frozenset("""
+a i
+am an as at be by do go he hi id if in is it me my no of ok on or so to up us we
+ad ex mr dr st sr jr vs eg ie co inc ltd kg km cm mm mg ml hr min sec rs quo hoc
+the and for are but not you all can had her was one our out day has him his how
+its may new off old own per she two use who why yet any ago did few get got let
+put say see set try way yes etc via now end key top low run red due net too lot
+""".split())
+
+
+def _is_fragment(token):
+    """True when `token` looks like the broken head/tail of a word split by a PDF
+    soft line-wrap (e.g. 'er' in 'custom'+'er', 't' in 'withou'+'t'). Short real
+    words, abbreviations and numbers are never fragments, so genuine line
+    boundaries are preserved."""
+    t = token.strip(' .,;:()"\'')
+    if not t:
+        return False
+    tl = t.lower()
+    if any(ch.isdigit() for ch in tl) or '%' in tl or '.' in t or ',' in t:
+        return False
+    return len(tl) <= 3 and tl not in _FRAGMENT_STOPS
+
+
+def _load_wordlist():
+    """Load a system English word list for mid-word break repair (falls back to an
+    empty set on systems without one, where the shorter fragment heuristic applies)."""
+    for p in ('/usr/share/dict/words', '/usr/local/share/dict/words', '/opt/homebrew/share/dict/words'):
+        try:
+            with open(p, 'r', encoding='utf-8', errors='ignore') as f:
+                words = {w.strip().lower() for w in f if w.strip().isalpha()}
+            if len(words) > 50000:
+                return words
+        except OSError:
+            continue
+    return set()
+
+
+_EN_WORDS = _load_wordlist()
+
+
+def _wrap_breaks(prev, nxt):
+    """True when the boundary between two wrapped lines is a mid-word break that
+    word-list verification confirms (e.g. 'verific'+'ation' -> 'verification',
+    'the a'+'pplication' -> 'application'). Word boundaries like 'book'+'ends'
+    are left untouched because both halves are real words."""
+    if not _EN_WORDS:
+        return False
+    w1 = prev.rsplit(' ', 1)[-1].strip(' .,;:()"\'')
+    w2 = nxt.split(' ', 1)[0].strip(' .,;:()"\'')
+    if not w1.isalpha() or not w2.isalpha():
+        return False
+    w1l, w2l = w1.lower(), w2.lower()
+    if w1l + w2l not in _EN_WORDS:
+        return False
+    return w1l not in _EN_WORDS or w2l not in _EN_WORDS
+
+
+def _merge_wrapped_lines(text_content):
+    """Merge PDF soft line-wraps into real paragraphs (lines that do not end in
+    sentence punctuation continue onto the next line). Mid-word wrap breaks
+    ('custom' + 'er', 'withou' + 't') are repaired so text never renders as
+    'custom er' / 'withou t'. All-caps heading lines (e.g. 'FIRE SAFETY TRAINING
+    MANUAL') are dropped — they are document titles, not content, and must never
+    be used as question/option text."""
+    paragraphs = []
+    cur = []
+    for line in re.split(r'\r?\n', text_content):
+        line = line.strip()
+        if not line:
+            if cur:
+                paragraphs.append(' '.join(cur))
+                cur = []
+            continue
+        if len(line) < 50 and line.isupper():
+            if cur:
+                paragraphs.append(' '.join(cur))
+                cur = []
+            continue
+        if cur and cur[-1].endswith('-'):
+            # hyphenated line-wrap: 'twenty-' + 'four hours' -> 'twenty-four hours'
+            cur[-1] = cur[-1][:-1] + '-' + line
+        elif cur and (_is_fragment(line.split(' ', 1)[0]) or _is_fragment(cur[-1].rsplit(' ', 1)[-1]) or _wrap_breaks(cur[-1], line)):
+            # mid-word wrap: 'custom' + 'er must' -> 'customer must'
+            cur[-1] = cur[-1] + line
+        else:
+            cur.append(line)
+        if re.search(r'[.!?]["\')\]]?\s*$', line):
+            paragraphs.append(' '.join(cur))
+            cur = []
+    if cur:
+        paragraphs.append(' '.join(cur))
+    return paragraphs
+
+
+def _split_doc_chunks(text_content):
+    """Split document text into unique, meaningful clause-level chunks (all real document text)."""
+    chunks = []
+    for para in _merge_wrapped_lines(text_content):
+        for sent in re.split(r'(?<=[.!?])\s+', para):
+            sent = sent.strip()
+            if not sent:
+                continue
+            # Split on commas/semicolons/colons ONLY — never inside parentheses,
+            # which produced broken fragments like 'KYC) verification' before.
+            parts = [p.strip() for p in re.split(r'[,;:]\s*', sent)]
+            merged = []
+            for p in parts:
+                if len(p) < 14 and merged:
+                    merged[-1] = f"{merged[-1]} {p}"
+                else:
+                    merged.append(p)
+            for m in merged:
+                m = sanitize_llm_text(m).strip(' .()')
+                m = re.sub(r'\s{2,}', ' ', m)
+                # Drop document titles / heading lines (e.g. "FIRE SAFETY TRAINING MANUAL")
+                if len(m) >= 20 and not (len(m) < 40 and m.isupper()):
+                    chunks.append(m)
+    seen, uniq = set(), []
+    for c in chunks:
+        key = _normalize_key(c)
+        if key and key not in seen:
+            seen.add(key)
+            uniq.append(c)
+    return uniq
+
+
+def _clean_option(o):
+    """Trim/normalise one option string so options never render as raw fragments."""
+    o = sanitize_llm_text(str(o)).strip()
+    o = re.sub(r'\s{2,}', ' ', o)
+    o = o.strip(' \t.,;:()[]')
+    return o
+
+
+def _mcq_from_chunk(chunk, all_chunks, idx):
+    """Build one MCQ grounded in `chunk`; every option is real text from the document."""
+    # Pattern 1 — numeric/unit cloze: blank the number/unit; distractors are other
+    # real numbers/units found elsewhere in the same document.
+    token = _find_numeric_token(chunk)
+    if token:
+        stem = chunk.replace(token, '__________', 1)
+        distractors = []
+        for c in all_chunks:
+            if c == chunk:
+                continue
+            d = _find_numeric_token(c)
+            if d and d.lower() != token.lower() and all(d.lower() != x.lower() for x in distractors):
+                distractors.append(d)
+            if len(distractors) >= 3:
+                break
+        if len(distractors) >= 3:
+            pos = idx % 4
+            opts = (distractors[:pos] + [token] + distractors[pos:])[:4]
+            return {
+                "question": f"Select the option that correctly completes the statement: '{stem}'",
+                "options": [_clean_option(o) for o in opts],
+                "correctIndex": pos,
+            }
+
+    # Pattern 2 — statement selection: correct clause + 3 other real clauses with a
+    # topic-specific stem (e.g. "...about 'gold loan disbursement' is correct?") so
+    # every question is unique instead of repeating one generic stem.
+    topic = _topic_of(chunk)
+    n = len(all_chunks)
+    others = []
+    seen_topics = set()
+    offset = 1
+    while len(others) < 3 and offset < n:
+        cand = all_chunks[(idx + offset) % n]
+        offset += 1
+        if cand == chunk:
+            continue
+        t = _topic_of(cand)
+        if t and t.lower() in seen_topics:
+            continue
+        seen_topics.add(t.lower())
+        others.append(cand)
+    if len(others) >= 3:
+        pos = idx % 4
+        opts = (others[:pos] + [chunk] + others[pos:])[:4]
+        # Clean every option; drop the question if any option is a fragment (< 15 chars)
+        # or if options are not 4 unique statements.
+        clean_opts = [_clean_option(o) for o in opts]
+        clean_opts = [o for o in clean_opts if o]
+        if len(clean_opts) < 4 or len(set(_normalize_key(o) for o in clean_opts)) < 4:
+            return None
+        if any(len(o) < 15 for o in clean_opts):
+            return None
+        stems = [
+            f"Which of the following statements about '{topic}' is correct?",
+            f"Identify the statement that is true regarding '{topic}':",
+            f"Which statement about '{topic}' is accurate?",
+            f"Select the correct statement related to '{topic}':",
+        ]
+        return {
+            "question": stems[idx % len(stems)],
+            "options": clean_opts,
+            "correctIndex": pos,
+        }
+    return None
+
+
+def _finalize_questions(questions):
+    """Post-process a question set: trim options, enforce 4 unique options,
+    drop empty/duplicate stems, and never emit a question whose correct option
+    is not one of its own options."""
+    out = []
+    seen_stems = set()
+    for q in questions:
+        stem = _clean_option(q.get('question', ''))
+        if len(stem) < 10:
+            continue
+        key = _normalize_key(stem)
+        if key in seen_stems:
+            continue
+        opts = []
+        for o in (q.get('options') or [])[:4]:
+            oc = _clean_option(o)
+            if oc and all(oc.lower() != x.lower() for x in opts):
+                opts.append(oc)
+        if len(opts) < 4:
+            continue
+        seen_stems.add(key)
+        out.append({
+            "question": stem,
+            "options": opts,
+            "correctIndex": min(max(0, int(q.get('correctIndex', 0))), 3),
+            "approved": 0,
+            "explanation": q.get('explanation', ''),
+        })
+    return out
+
+
+def _synthesize_doc_questions(text_content, count, title):
+    """Generate up to `count` document-grounded MCQs from the actual uploaded text content."""
+    chunks = _split_doc_chunks(text_content)
+    if len(chunks) < 4:
+        sentences = []
+        for para in _merge_wrapped_lines(text_content):
+            sentences.extend(s.strip() for s in re.split(r'(?<=[.!?])\s+', para) if len(s.strip()) >= 15)
+        seen, chunks = set(), []
+        for s in sentences:
+            key = _normalize_key(s)
+            if key and key not in seen:
+                seen.add(key)
+                chunks.append(s)
+    questions = []
+    seen_keys = set()
+    for i in range(len(chunks)):
+        if len(questions) >= count:
+            break
+        q = _mcq_from_chunk(chunks[i], chunks, i)
+        if not q:
+            continue
+        # Dedupe on the question STEM only — two questions that ask the same thing
+        # are duplicates even if their option lists differ.
+        key = _normalize_key(q['question'])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        q['approved'] = 0
+        questions.append(q)
+    return _finalize_questions(questions)
+
+
+def _pad_to_count(questions, count, text_content, title):
+    """Pad a short question list with unique document-grounded questions."""
+    result = list(questions)
+    seen = {_normalize_key(q['question']) for q in result}
+    for eq in _synthesize_doc_questions(text_content, count, title):
+        if len(result) >= count:
+            break
+        key = _normalize_key(eq['question'])
+        if key not in seen:
+            seen.add(key)
+            result.append(eq)
+    return result
+
+
 @app.route('/api/modules/generate', methods=['POST'])
 def generate_module():
     try:
@@ -1058,12 +2163,29 @@ def generate_module():
                             text_content = f_txt.read().strip()
                     except Exception as e_txt:
                         print(f"Fallback text read warning: {e_txt}")
+                finally:
+                    # Never leave uploaded files on disk (privacy + prevents stale-file reuse)
+                    try:
+                        os.remove(filepath)
+                    except Exception:
+                        pass
                     
-        if not text_content:
-            text_content = request.form.get('text', '').strip()
+        file_provided = 'file' in request.files and request.files['file'].filename != ''
+        text_from_form = request.form.get('text', '').strip()
+        
+        # The uploaded file is the single source of truth when one is provided.
+        # Pasted text from an earlier session must NEVER leak into a new file-based
+        # generation (stale-state fix).
+        if file_provided:
+            if len(text_content) < 100:
+                return jsonify({"status": "error", "message": "Could not extract readable text from the PDF (it may be scanned or image-based). Please paste the training text instead."}), 400
+        else:
+            if text_from_form:
+                text_content = text_from_form
+            else:
+                return jsonify({"status": "error", "message": "Please upload a PDF or paste training text."}), 400
             
-        if not text_content:
-            text_content = f"Standard {title} Operational Guidelines and Policy Document."
+        extracted_chars = len(text_content)
             
         # 2. Try Gemini REST API (Standard Library urllib - Zero extra packages needed)
         api_key = os.environ.get("GEMINI_API_KEY", "")
@@ -1073,18 +2195,19 @@ def generate_module():
         if api_key:
             try:
                 import urllib.request
-                clean_text = sanitize_llm_text(text_content[:6000])
+                clean_text = sanitize_llm_text(_balanced_sample(text_content, 6000))
                 prompt = f"""
-                You are an expert assessment engine and senior Socratic Trainer.
-                Analyze the provided training text and generate exactly {count} high-quality Multiple Choice Questions (MCQs) in {gen_language} language at {difficulty} difficulty following strict formatting rules.
+                You are an expert assessment engine and senior Socratic Trainer building formal, exam-grade certification questions.
+                Analyze the provided training document and generate exactly {count} high-quality Multiple Choice Questions (MCQs) in {gen_language} language at {difficulty} difficulty.
 
-                RULES:
-                1. Strictly generate clean plain text without unescaped special characters, raw LaTeX formulas, or garbage HTML entities.
-                2. Do not invent facts outside the provided document text.
-                3. Provide exactly 4 distinct, non-overlapping options per question.
-                4. Ensure only one option is unequivocally correct and marked clearly via correct_answer_index (0 to 3).
-                5. Validate that distractors (wrong choices) are plausible but clearly incorrect.
-                6. Include a brief 1-sentence rationale/explanation per question.
+                QUALITY RULES (mandatory):
+                1. Every question must test a specific fact, procedure, requirement, or number from the provided text. Never invent facts, figures, dates, or names that are not in the document.
+                2. Write professional, realistic stems that a manager or assessor would set in a real exam. Avoid trivial, childish, or "first-class student" phrasing. Do not start stems with "According to the document..." — vary the wording naturally.
+                3. Options must be plausible and concise (under 20 words). Distractors must be realistic but clearly incorrect. No option may repeat or paraphrase another option.
+                4. Exactly 4 distinct options per question, and exactly one correct answer marked via correct_answer_index (0 to 3).
+                5. Mix question types: definitions, procedures, numeric requirements, do's/don'ts, consequences, and scenario-based judgment.
+                6. Include a 1-sentence explanation per question that cites the fact from the document.
+                7. Respond with clean plain text: no markdown fences, no LaTeX, no HTML entities, no unescaped special characters.
 
                 Format your response STRICTLY as a JSON object matching this schema:
                 {{
@@ -1093,7 +2216,7 @@ def generate_module():
                     {{
                       "id": 1,
                       "question_text": "What is the primary compliance requirement before approval?",
-                      "options": ["Mandatory Document Verification & KYC", "Oral confirmation from customer", "Post-disbursement review only", "Waived for repeat customers"],
+                      "options": ["Mandatory Document Verification and KYC", "Oral confirmation from the customer", "Post-disbursement review only", "Waived for repeat customers"],
                       "correct_answer_index": 0,
                       "explanation": "Document verification and KYC is required prior to credit approval."
                     }}
@@ -1115,8 +2238,7 @@ def generate_module():
                     res_json = json.loads(response.read().decode('utf-8'))
                     res_text = res_json['candidates'][0]['content']['parts'][0]['text'].strip()
                     
-                    if res_text.startswith("```"):
-                        res_text = res_text.split("json")[-1].split("```")[0].strip()
+                    res_text = re.sub(r'^```(?:json)?\s*|\s*```$', '', res_text.strip())
                         
                     parsed_obj = json.loads(res_text)
                     raw_qs = parsed_obj.get('questions', []) if isinstance(parsed_obj, dict) else (parsed_obj if isinstance(parsed_obj, list) else [])
@@ -1124,10 +2246,15 @@ def generate_module():
                     if raw_qs and len(raw_qs) > 0:
                         cleaned_qs = []
                         for idx, q in enumerate(raw_qs):
+                            if not isinstance(q, dict):
+                                continue
                             q_txt = sanitize_llm_text(str(q.get('question_text') or q.get('question', '')).strip())
                             raw_opts = q.get('options', [])
                             opts = [sanitize_llm_text(str(opt)).strip() for opt in raw_opts] if isinstance(raw_opts, list) and len(raw_opts) >= 4 else ['Option A', 'Option B', 'Option C', 'Option D']
-                            corr_idx = int(q.get('correct_answer_index') if q.get('correct_answer_index') is not None else q.get('correctIndex', 0))
+                            try:
+                                corr_idx = int(q.get('correct_answer_index') if q.get('correct_answer_index') is not None else q.get('correctIndex', 0))
+                            except (ValueError, TypeError):
+                                corr_idx = 0
                             expl = sanitize_llm_text(str(q.get('explanation', '')).strip())
                             
                             cleaned_qs.append({
@@ -1138,84 +2265,40 @@ def generate_module():
                                 "explanation": expl,
                                 "approved": 0
                             })
+                        # Enforce the full requested count: short AI output is padded
+                        # with additional document-grounded questions instead of
+                        # silently returning 3-4 questions.
+                        if len(cleaned_qs) < count:
+                            cleaned_qs = _pad_to_count(cleaned_qs, count, text_content, title)
                         generated_questions = cleaned_qs
                         gemini_success = True
             except Exception as e_gemini:
                 print(f"Gemini REST API notice: {e_gemini}")
                 
-        # 3. Dynamic NLP Socratic Question Synthesizer (Bulletproof fallback from uploaded text)
+        # 3. Document-grounded Socratic Question Synthesizer (no external AI needed)
+        # Every question and every option is derived from the actual uploaded text
+        # content — never from a static pool, the file name, or metadata.
         if not gemini_success:
-            # Extract sentences or key policy clauses
-            raw_sentences = [s.strip() for s in re.split(r'[\.\n;]', text_content) if len(s.strip()) > 15]
-            
-            # Built-in pool of Socratic questions tailored to financial and operational policies
-            base_pool = [
-                {
-                    "q": "Under the standard operational policy for {title}, what is the primary compliance requirement before approval?",
-                    "opts": ["Mandatory Document Verification & KYC", "Oral confirmation from customer", "Post-disbursement review only", "Waived for repeat customers"],
-                    "ans": 0
-                },
-                {
-                    "q": "What is the maximum permitted Loan-to-Value (LTV) ratio under the revised {title} guidelines?",
-                    "opts": ["75%", "85%", "90%", "95%"],
-                    "ans": 1
-                },
-                {
-                    "q": "Which minimum credit rating / CIBIL threshold is required for expedited processing under {title}?",
-                    "opts": ["600", "650", "700", "750"],
-                    "ans": 3
-                },
-                {
-                    "q": "In case of income discrepancies during applicant audit for {title}, what is the mandatory escalation matrix?",
-                    "opts": ["Escalate to Branch Credit Manager", "Proceed with draft approval", "Request informal self-declaration", "Reject application automatically"],
-                    "ans": 0
-                },
-                {
-                    "q": "What is the maximum loan tenure permitted for high-risk customer profiles under {title}?",
-                    "opts": ["12 Months", "24 Months", "36 Months", "48 Months"],
-                    "ans": 1
-                },
-                {
-                    "q": "Which mandatory proof of identity is required for disbursements exceeding ₹2 Lakhs in {title}?",
-                    "opts": ["Electricity Bill", "PAN Card & Bank Statement", "Rent Agreement", "Letter of Introduction"],
-                    "ans": 1
-                },
-                {
-                    "q": "How frequently must physical address verification reports be updated under {title}?",
-                    "opts": ["Every 30 Days", "Every 60 Days", "Every 90 Days", "Once per loan lifecycle"],
-                    "ans": 3
-                },
-                {
-                    "q": "Under what condition can an exception be granted for LTV cap under {title}?",
-                    "opts": ["Written approval by Zone Business Head & Risk Officer", "Verbal request by Sales Executive", "Customer self-guarantee", "No exception permitted"],
-                    "ans": 0
-                }
-            ]
-            
-            generated_questions = []
-            for i in range(count):
-                pool_item = base_pool[i % len(base_pool)]
-                
-                # Contextualize question with actual uploaded sentence if available
-                q_text = pool_item['q'].format(title=title)
-                if raw_sentences and i < len(raw_sentences):
-                    snippet = raw_sentences[i][:100]
-                    if len(snippet) > 20:
-                        q_text += f" (Reference Clause: '{snippet}')"
-                        
-                generated_questions.append({
-                    "question": q_text,
-                    "options": pool_item['opts'],
-                    "correctIndex": pool_item['ans'],
-                    "approved": 0
-                })
-                
+            generated_questions = _synthesize_doc_questions(text_content, count, title)
+            if not generated_questions:
+                return jsonify({"status": "error", "message": "Could not generate questions from the provided content. The text may be too short or contain no usable facts — please upload a document with at least 3-4 distinct statements."}), 400
+
+        # Final QA pass (both paths): trim/normalise options, enforce 4 unique
+        # options per question, drop duplicate or empty stems.
+        generated_questions = _finalize_questions(generated_questions)
+        if len(generated_questions) < count:
+            generated_questions = _pad_to_count(generated_questions, count, text_content, title)
+            generated_questions = _finalize_questions(generated_questions)
+        if not generated_questions:
+            return jsonify({"status": "error", "message": "Could not generate usable questions from the provided content. Please upload a document with more factual detail."}), 400
+
         return jsonify({
             "status": "success",
             "title": title,
             "difficulty": difficulty,
             "language": gen_language,
             "count": len(generated_questions),
+            "extracted_chars": extracted_chars,
             "questions": generated_questions
         })
     except Exception as err_main:
@@ -1240,6 +2323,32 @@ def save_module():
     
     if not questions:
         return jsonify({"status": "error", "message": "No questions provided to save."}), 400
+        
+    # Pre-validation: every question must have a stem, 4 non-empty and 4 DISTINCT
+    # options, and the module must not contain duplicate question stems.
+    for qi, q in enumerate(questions):
+        if not isinstance(q, dict):
+            return jsonify({"status": "error", "message": f"Question {qi + 1} is not a valid question object."}), 400
+        q_txt = str(q.get('question_text') or q.get('question', '')).strip()
+        if not q_txt:
+            return jsonify({"status": "error", "message": f"Question {qi + 1} has an empty question text."}), 400
+        opts_arr = q.get('options') if isinstance(q.get('options'), list) and len(q.get('options')) >= 4 else None
+        opts = [
+            str(q.get('option_a') or (opts_arr[0] if opts_arr else '')).strip(),
+            str(q.get('option_b') or (opts_arr[1] if opts_arr else '')).strip(),
+            str(q.get('option_c') or (opts_arr[2] if opts_arr else '')).strip(),
+            str(q.get('option_d') or (opts_arr[3] if opts_arr else '')).strip(),
+        ]
+        if any(not o for o in opts):
+            return jsonify({"status": "error", "message": f"Question {qi + 1} has an empty option — all 4 options are required."}), 400
+        if len(set(o.lower() for o in opts)) < 4:
+            return jsonify({"status": "error", "message": f"Question {qi + 1} has duplicate options — all 4 options must be distinct."}), 400
+    stems_seen = set()
+    for qi, q in enumerate(questions):
+        stem_key = _normalize_key(str(q.get('question_text') or q.get('question', '')).strip())
+        if stem_key in stems_seen:
+            return jsonify({"status": "error", "message": f"Duplicate question detected (Question {qi + 1}) — every question must be unique."}), 400
+        stems_seen.add(stem_key)
         
     all_approved = all([int(q.get('approved', 0)) == 1 for q in questions])
     status = 'Ready' if all_approved else 'Pending Audit'
@@ -1301,70 +2410,270 @@ def save_module():
 # 5. ASSESSMENT SUBMISSION & DYNAMIC ANALYTICS
 @app.route('/api/assessments/submit', methods=['POST'])
 def submit_assessment():
-    data = request.json
-    emp_code = data.get('emp_code', '').upper()
+    data = request.json or {}
+    emp_code = str(data.get('emp_code', '')).upper()
     module_id = data.get('module_id')
-    assignment_day = data.get('assignment_day', 'zero day').upper()
-    pre_test_score = data.get('pre_test_score')
-    post_test_score = data.get('post_test_score')
+    assignment_day = str(data.get('assignment_day', 'zero day')).upper()
     
     conn = get_db_connection()
     try:
+        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+        
+        # Authoritative per-answer counts sent by the examinee client
+        correct_count = data.get('correct_count')
+        wrong_count = data.get('wrong_count')
+        test_type = str(data.get('test_type', '')).lower()
+        tab_switch_count = int(data.get('tab_switch_count', 0) or 0)
+        time_taken_seconds = int(data.get('time_taken_seconds', 0) or 0)
+        
+        # Compute score from correct/wrong counts when provided
+        computed_score = None
+        if correct_count is not None or wrong_count is not None:
+            answered = int(correct_count or 0) + int(wrong_count or 0)
+            computed_score = round((int(correct_count or 0) / answered) * 100, 1) if answered > 0 else 0.0
+        
+        # Backward-compat: accept direct pre_test_score / post_test_score values when present
+        pre_test_score = data.get('pre_test_score')
+        post_test_score = data.get('post_test_score')
+        if test_type == 'pre':
+            if pre_test_score is None:
+                pre_test_score = computed_score if computed_score is not None else 0.0
+        elif test_type == 'post':
+            if post_test_score is None:
+                post_test_score = computed_score if computed_score is not None else 0.0
+        elif pre_test_score is None and post_test_score is None:
+            pre_test_score = computed_score if computed_score is not None else 0.0
+        
+        # Passing threshold from module config (default 70)
+        pass_pct = 70
+        if module_id is not None:
+            mod_row = conn.execute("SELECT pass_percentage FROM modules WHERE id=?", (module_id,)).fetchone()
+            if mod_row and mod_row['pass_percentage'] is not None:
+                pass_pct = int(mod_row['pass_percentage'])
+        
+        score_ref = post_test_score if post_test_score is not None else (pre_test_score if pre_test_score is not None else 0.0)
+        passed_status = 1 if (score_ref is not None and float(score_ref) >= pass_pct) else 0
+        
         row = conn.execute("SELECT * FROM assessment_results WHERE emp_code=? AND module_id=? AND assignment_day=?", 
                            (emp_code, module_id, assignment_day)).fetchone()
-        now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         if row:
+            updates = ["completed_at=?"]
+            params = [now_str]
             if pre_test_score is not None:
-                conn.execute("UPDATE assessment_results SET pre_test_score=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
-                             (pre_test_score, now_str, emp_code, module_id, assignment_day))
+                updates.append("pre_test_score=?")
+                params.append(pre_test_score)
             if post_test_score is not None:
-                conn.execute("UPDATE assessment_results SET post_test_score=?, completed_at=? WHERE emp_code=? AND module_id=? AND assignment_day=?",
-                             (post_test_score, now_str, emp_code, module_id, assignment_day))
+                updates.append("post_test_score=?")
+                params.append(post_test_score)
+            updates.append("tab_switch_count=?")
+            params.append(tab_switch_count)
+            updates.append("time_taken_seconds=?")
+            params.append(time_taken_seconds)
+            if post_test_score is not None:
+                updates.append("passed_status=?")
+                params.append(passed_status)
+                cert_id = data.get('certificate_id') or row['certificate_id']
+                if cert_id:
+                    updates.append("certificate_id=?")
+                    params.append(cert_id)
+            params.extend([emp_code, module_id, assignment_day])
+            conn.execute(f"UPDATE assessment_results SET {', '.join(updates)} WHERE emp_code=? AND module_id=? AND assignment_day=?", params)
         else:
             p_val = pre_test_score if pre_test_score is not None else 0.0
             post_val = post_test_score if post_test_score is not None else 0.0
-            conn.execute("INSERT INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at) VALUES (?, ?, ?, ?, ?, ?)",
-                         (emp_code, module_id, assignment_day, p_val, post_val, now_str))
+            cert_id = data.get('certificate_id')
+            conn.execute("INSERT INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at, tab_switch_count, time_taken_seconds, passed_status, certificate_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         (emp_code, module_id, assignment_day, p_val, post_val, now_str, tab_switch_count, time_taken_seconds, passed_status, cert_id))
         conn.commit()
+        
+        # Generate a certificate id for passed post-tests that don't have one yet
+        final_cert = data.get('certificate_id')
+        if final_cert is None and test_type == 'post' and passed_status == 1:
+            r2 = conn.execute("SELECT certificate_id FROM assessment_results WHERE emp_code=? AND module_id=? AND assignment_day=?", (emp_code, module_id, assignment_day)).fetchone()
+            if r2 and r2['certificate_id']:
+                final_cert = r2['certificate_id']
+            else:
+                from uuid import uuid4
+                final_cert = f"SRC-{emp_code}-{module_id}-{assignment_day}-{uuid4().hex[:8]}"
+                conn.execute("UPDATE assessment_results SET certificate_id=? WHERE emp_code=? AND module_id=? AND assignment_day=?", (final_cert, emp_code, module_id, assignment_day))
+                conn.commit()
+        
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "message": "Assessment score saved successfully!",
+            "score": score_ref,
+            "passed_status": passed_status,
+            "certificate_id": final_cert
+        })
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": f"Failed to save score: {str(e)}"}), 500
-    conn.close()
-    return jsonify({"status": "success", "message": "Assessment score saved successfully!"})
 
 @app.route('/api/analytics', methods=['GET'])
 def get_analytics():
     conn = get_db_connection()
-    # Query average scores grouped by assignment_day
     try:
-        results = conn.execute("""
-            SELECT assignment_day, 
-                   AVG(pre_test_score) as avg_pre, 
-                   AVG(post_test_score) as avg_post,
-                   COUNT(emp_code) as participants
-            FROM assessment_results 
-            GROUP BY assignment_day
-        """).fetchall()
+        where_sql, params = _analytics_where(request.args)
+        
+        results = conn.execute(f"""
+            SELECT a.assignment_day, 
+                   AVG(a.pre_test_score) as avg_pre, 
+                   AVG(a.post_test_score) as avg_post,
+                   COUNT(DISTINCT a.emp_code) as participants
+            FROM assessment_results a
+            LEFT JOIN employees e ON a.emp_code = e.emp_code
+            {where_sql}
+            GROUP BY a.assignment_day
+        """, params).fetchall()
+        
+        # Filter options for cascading dropdowns (from full roster, independent of active filters)
+        zones = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(zone) FROM employees WHERE zone IS NOT NULL AND TRIM(zone) != '' ORDER BY zone").fetchall()]
+        divisions = [
+            {"name": row[0].strip(), "zone": (row[1] or '').strip()}
+            for row in conn.execute("SELECT DISTINCT TRIM(division), TRIM(zone) FROM employees WHERE division IS NOT NULL AND TRIM(division) != '' ORDER BY division").fetchall()
+        ]
+        branches = [
+            {"name": row[0].strip(), "division": (row[1] or '').strip(), "zone": (row[2] or '').strip()}
+            for row in conn.execute("SELECT DISTINCT TRIM(branch_name), TRIM(division), TRIM(zone) FROM employees WHERE branch_name IS NOT NULL AND TRIM(branch_name) != '' ORDER BY branch_name").fetchall()
+        ]
+        executives = [
+            {"code": row[0], "name": row[1], "branch": (row[2] or ''), "division": (row[3] or ''), "zone": (row[4] or '')}
+            for row in conn.execute("SELECT emp_code, emp_name, branch_name, division, zone FROM employees ORDER BY emp_name").fetchall()
+        ]
+        business_units = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(business_unit) FROM employees WHERE business_unit IS NOT NULL AND TRIM(business_unit) != '' ORDER BY business_unit").fetchall()]
+        products = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(product_name) FROM employees WHERE product_name IS NOT NULL AND TRIM(product_name) != '' ORDER BY product_name").fetchall()]
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 500
     conn.close()
     
-    # Prepare dynamic payload
+    defaults = {'pre': 0.0, 'post': 0.0, 'count': 0, 'correct': 0, 'wrong': 0, 'left': 0}
     payload = {
-        'ZERO DAY': {'pre': 40.0, 'post': 65.0, 'count': 0},
-        'SIX DAYS': {'pre': 50.0, 'post': 80.0, 'count': 0},
-        'TWENTY DAYS': {'pre': 60.0, 'post': 90.0, 'count': 0}
+        'ZERO DAY': dict(defaults),
+        'SIX DAYS': dict(defaults),
+        'TWENTY DAYS': dict(defaults)
     }
     
     for r in results:
         day = r['assignment_day'].upper()
-        if day in payload:
-            payload[day]['pre'] = round(r['avg_pre'], 1)
-            payload[day]['post'] = round(r['avg_post'], 1)
-            payload[day]['count'] = r['participants']
-            
-    return jsonify(payload)
+        entry = payload.setdefault(day, dict(defaults))
+        entry['pre'] = round(r['avg_pre'] or 0.0, 1)
+        entry['post'] = round(r['avg_post'] or 0.0, 1)
+        entry['count'] = r['participants']
+    
+    has_live_data = len(results) > 0
+    
+    return jsonify({
+        "status": "success",
+        "temporal": payload,
+        "filter_options": {
+            "zones": zones,
+            "divisions": divisions,
+            "branches": branches,
+            "executives": executives,
+            "business_units": business_units,
+            "products": products
+        },
+        "has_live_data": has_live_data
+    })
+
+def _analytics_where(args):
+    conditions = []
+    params = []
+    zone = args.get('zone', '').strip()
+    division = args.get('division', '').strip()
+    branch = args.get('branch', '').strip()
+    emp_code = args.get('emp_code', '').strip()
+    business_unit = args.get('business_unit', '').strip()
+    product_name = args.get('product_name', '').strip()
+    start_date = args.get('start_date', '').strip()
+    end_date = args.get('end_date', '').strip()
+    
+    if zone:
+        conditions.append("UPPER(TRIM(e.zone)) = UPPER(TRIM(?))")
+        params.append(zone)
+    if division:
+        conditions.append("UPPER(TRIM(e.division)) = UPPER(TRIM(?))")
+        params.append(division)
+    if branch:
+        conditions.append("UPPER(TRIM(e.branch_name)) = UPPER(TRIM(?))")
+        params.append(branch)
+    if emp_code:
+        conditions.append("UPPER(TRIM(a.emp_code)) = UPPER(TRIM(?))")
+        params.append(emp_code)
+    if business_unit:
+        conditions.append("UPPER(TRIM(e.business_unit)) = UPPER(TRIM(?))")
+        params.append(business_unit)
+    if product_name:
+        conditions.append("UPPER(TRIM(e.product_name)) = UPPER(TRIM(?))")
+        params.append(product_name)
+    if start_date:
+        conditions.append("a.completed_at >= ?")
+        params.append(start_date)
+    if end_date:
+        conditions.append("a.completed_at <= ?")
+        params.append(end_date + " 23:59")
+    
+    where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+    return where_sql, params
+
+@app.route('/api/analytics/export', methods=['GET'])
+def export_analytics():
+    conn = get_db_connection()
+    try:
+        where_sql, params = _analytics_where(request.args)
+        rows = conn.execute(f"""
+            SELECT e.emp_code, e.emp_name, e.branch_name, e.zone, e.division, e.business_unit, e.product_name,
+                   a.assignment_day, a.pre_test_score, a.post_test_score, a.tab_switch_count, a.time_taken_seconds,
+                   a.passed_status, a.certificate_id, a.completed_at
+            FROM assessment_results a
+            LEFT JOIN employees e ON a.emp_code = e.emp_code
+            {where_sql}
+            ORDER BY a.completed_at DESC
+        """, params).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    conn.close()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Employee Code', 'Employee Name', 'Branch', 'Zone', 'Division', 'Business Unit', 'Product', 'Assignment Day', 'Pre Score', 'Post Score', 'Tab Switches', 'Time Taken (s)', 'Passed', 'Certificate ID', 'Completed At'])
+    for r in rows:
+        writer.writerow([r[k] if r[k] is not None else '' for k in (
+            'emp_code', 'emp_name', 'branch_name', 'zone', 'division', 'business_unit', 'product_name',
+            'assignment_day', 'pre_test_score', 'post_test_score', 'tab_switch_count', 'time_taken_seconds',
+            'passed_status', 'certificate_id', 'completed_at'
+        )])
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-disposition": "attachment; filename=Socrates_Analytics_Report.csv"}
+    )
+
+@app.route('/api/feedback/submit', methods=['POST'])
+def submit_feedback():
+    data = request.json or {}
+    emp_code = str(data.get('emp_code', '')).upper()
+    session_id = str(data.get('session_id', ''))
+    rating = int(data.get('rating', 5) or 0)
+    understanding = str(data.get('understanding', ''))
+    manpower_saved = str(data.get('manpower_saved', ''))
+    comments = str(data.get('comments', ''))
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO session_feedback (emp_code, session_id, rating, understanding, manpower_saved, comments, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (emp_code, session_id, rating, understanding, manpower_saved, comments, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+        )
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": f"Failed to save feedback: {str(e)}"}), 500
+    conn.close()
+    return jsonify({"status": "success", "message": "Feedback submitted successfully!"})
 
 # --- WEBSOCKET EVENT LISTENERS (Flask-SocketIO) & GAMIFICATION STATE ---
 import time
@@ -1421,8 +2730,12 @@ def on_trainer_broadcast(data):
         SESSION_REGISTRY[pin]["push_time"] = time.time()
         SESSION_REGISTRY[pin]["correct_index"] = int(data.get('correctIndex', -1))
         
-    # Broadcast entire dynamic payload (includes questions/options) to trainee screen
-    emit('change_view', data, room=pin)
+    # Broadcast payload to trainee screens, but strip the answer key (correctIndex)
+    # and the full module object (contains correct answers) from the client-visible payload.
+    relay = dict(data)
+    relay.pop('correctIndex', None)
+    relay.pop('activeModule', None)
+    emit('change_view', relay, room=pin)
 
 @socketio.on('submit_vote')
 def on_submit_vote(data):
@@ -1511,9 +2824,6 @@ def on_trainer_command(data):
     # Forward general custom commands (e.g. final confetti podium) to all clients
     emit('client_command', data, room=pin)
 
-if __name__ == '__main__':
-    socketio.run(app, debug=False, use_reloader=False, port=5050, host='0.0.0.0', allow_unsafe_werkzeug=True)
-
 # 6. DYNAMIC PDF CERTIFICATE GENERATOR & VERIFIER
 @app.route('/api/assessments/certificate/<cert_id>', methods=['GET'])
 def get_certificate(cert_id):
@@ -1529,17 +2839,26 @@ def get_certificate(cert_id):
     
     if row:
         res = dict(row)
+        if res.get('passed_status') == 0:
+            candidate_name = res.get('emp_name') or res.get('emp_code') or 'Trainee Candidate'
+            return f'''<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Certificate Not Awarded</title>
+            <style>body{{background:#090D16;color:#F8FAFC;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}}
+            .box{{text-align:center;max-width:480px;padding:40px;border:2px solid rgba(225,29,72,0.4);border-radius:24px;background:#0F172A;}}
+            .big{{font-size:56px;}} h1{{font-size:22px;margin:16px 0 8px;}} p{{color:#94A3B8;font-size:14px;line-height:1.6;}}</style></head>
+            <body><div class="box"><div class="big">🚫</div><h1>Certificate Not Awarded</h1>
+            <p>{candidate_name}, your post-test score did not reach the passing threshold required for certification. Please contact your trainer for a re-assessment.</p></div></body></html>'''
         candidate_name = res.get('emp_name') or res.get('emp_code') or 'Trainee Candidate'
         module_title = res.get('module_title') or 'Socrates AI Enterprise Knowledge Assessment'
-        score = res.get('post_test_score', 85)
+        score = res.get('post_test_score') if res.get('post_test_score') is not None else (res.get('pre_test_score') or 85)
         date_str = res.get('completed_at') or datetime.datetime.now().strftime("%B %d, %Y")
         verification_code = res.get('certificate_id') or cert_id
     else:
-        candidate_name = f"Executive Trainee ({cert_id})"
-        module_title = "Socrates AI Enterprise Knowledge Assessment"
-        score = 85.0
-        date_str = datetime.datetime.now().strftime("%B %d, %Y")
-        verification_code = cert_id
+        return f'''<!DOCTYPE html><html><head><meta charset="utf-8"/><title>Certificate Not Found</title>
+        <style>body{{background:#090D16;color:#F8FAFC;font-family:'Outfit',sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;}}
+        .box{{text-align:center;max-width:480px;padding:40px;border:2px solid rgba(148,163,184,0.3);border-radius:24px;background:#0F172A;}}
+        .big{{font-size:56px;}} h1{{font-size:22px;margin:16px 0 8px;}} p{{color:#94A3B8;font-size:14px;line-height:1.6;}}</style></head>
+        <body><div class="box"><div class="big">🔍</div><h1>Certificate Not Found</h1>
+        <p>No assessment record was found for verification ID <strong>{cert_id}</strong>. Complete the assessment first, then download your certificate.</p></div></body></html>'''
     
     html = f'''<!DOCTYPE html>
 <html>
@@ -1598,3 +2917,6 @@ def get_certificate(cert_id):
 </body>
 </html>'''
     return html
+
+if __name__ == '__main__':
+    socketio.run(app, debug=False, use_reloader=False, port=5050, host='0.0.0.0', allow_unsafe_werkzeug=True)
