@@ -40,6 +40,7 @@ DB_FILE = "socrates.db"
 # --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
     def _table_exists(name):
@@ -92,14 +93,23 @@ def init_db():
         cursor.execute("ALTER TABLE trainers ADD COLUMN divisions TEXT DEFAULT 'ALL'")
     if 'branches' not in tr_cols:
         cursor.execute("ALTER TABLE trainers ADD COLUMN branches TEXT DEFAULT 'ALL'")
-    
-    # Add/Ensure default Super Admin account is present and active
+    if 'must_change' not in tr_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN must_change INTEGER DEFAULT 0")
+    if 'updated_at' not in tr_cols:
+        cursor.execute("ALTER TABLE trainers ADD COLUMN updated_at TEXT")
+
+    # Add/Ensure default Super Admin account is present and active.
+    # NOTE: password is only seeded when missing — never overwritten on restart,
+    # otherwise every user-password change would be reverted back to the default.
     cursor.execute("SELECT * FROM trainers WHERE UPPER(trainer_id)='ADMIN'")
     admin_user = cursor.fetchone()
     if not admin_user:
-        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, status) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin', 'Active')")
+        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, status, must_change) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin', 'Active', 1)")
     else:
-        cursor.execute("UPDATE trainers SET password='admin123', status='Active', role='SuperAdmin' WHERE UPPER(trainer_id)='ADMIN'")
+        if not admin_user['password']:
+            cursor.execute("UPDATE trainers SET password='admin123', status='Active', role='SuperAdmin' WHERE UPPER(trainer_id)='ADMIN'")
+        else:
+            cursor.execute("UPDATE trainers SET status='Active', role='SuperAdmin' WHERE UPPER(trainer_id)='ADMIN'")
     
     # Modules
     cursor.execute('''
@@ -466,11 +476,111 @@ def admin():
 @app.route('/api/admin/me', methods=['GET'])
 def admin_me():
     if 'user' in session:
+        # Fresh must_change state on session restore (admin may have reset since).
+        s_user = session['user']
+        conn = get_db_connection()
+        row = conn.execute("SELECT must_change, password FROM trainers WHERE UPPER(trainer_id)=UPPER(?)", (s_user.get('trainer_id', ''),)).fetchone()
+        conn.close()
+        must_change = 0
+        if row:
+            DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
+            must_change = int(row['must_change'] or 0) or (1 if str(row['password'] or '') in DEFAULT_PASSWORDS else 0)
+        s_user['must_change'] = must_change
         return jsonify({
             "status": "success",
-            "user": session['user']
+            "user": s_user
         })
     return jsonify({"status": "error", "message": "No active session"}), 401
+
+
+@app.route('/api/admin/change-password', methods=['POST'])
+def admin_change_password():
+    """Self-service password change. Verifies the current password before updating."""
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Not logged in."}), 401
+
+    data = request.json or {}
+    old_pwd = str(data.get('old_password', ''))
+    new_pwd = str(data.get('new_password', ''))
+    if len(new_pwd) < 6:
+        return jsonify({"status": "error", "message": "New password must be at least 6 characters long."}), 400
+    if new_pwd == old_pwd:
+        return jsonify({"status": "error", "message": "New password must be different from the current password."}), 400
+
+    conn = get_db_connection()
+    row = conn.execute("SELECT * FROM trainers WHERE UPPER(trainer_id)=UPPER(?)", (user.get('trainer_id', ''),)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"status": "error", "message": "Account not found."}), 404
+    if str(row['password'] or '') != old_pwd:
+        conn.close()
+        return jsonify({"status": "error", "message": "Current password is incorrect."}), 401
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    conn.execute("UPDATE trainers SET password=?, must_change=0, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (new_pwd, now, user.get('trainer_id', '')))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Password changed successfully!"})
+
+
+@app.route('/api/admin/forgot-password', methods=['POST'])
+def admin_forgot_password():
+    """Self-service password reset without email: identity is verified by matching
+    the Trainer ID against the registered full name. An admin-created reset code
+    is not required because the portal is internal; the reset is only allowed when
+    the ID + full name pair matches exactly."""
+    data = request.json or {}
+    tid = str(data.get('trainer_id', '')).strip()
+    name = str(data.get('name', '')).strip()
+    new_pwd = str(data.get('new_password', ''))
+    if not tid or not name:
+        return jsonify({"status": "error", "message": "Please enter your Trainer ID and full name."}), 400
+    if len(new_pwd) < 6:
+        return jsonify({"status": "error", "message": "New password must be at least 6 characters long."}), 400
+
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT * FROM trainers WHERE UPPER(trainer_id)=UPPER(?) AND UPPER(TRIM(name))=UPPER(TRIM(?))",
+        (tid, name)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"status": "error", "message": "Identity could not be verified. Trainer ID and full name must match exactly. Contact your Super Admin for help."}), 404
+    if row['status'] and str(row['status']).lower() == 'inactive':
+        conn.close()
+        return jsonify({"status": "error", "message": "Account is inactive. Contact your Super Admin."}), 403
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    conn.execute("UPDATE trainers SET password=?, must_change=0, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (new_pwd, now, tid))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Password reset successfully! Please log in with your new password."})
+
+
+@app.route('/api/trainers/<trainer_id>/reset-password', methods=['POST'])
+def reset_trainer_password(trainer_id):
+    """Admin-triggered reset: sets a default password and forces the user to change
+    it on next login. Super Admin / Leader only. 'ADMIN' itself cannot be reset."""
+    user = _session_user()
+    if not user or not _is_global_role(user.get('role', '')):
+        return jsonify({"status": "error", "message": "Only Super Admin or Leader can reset passwords."}), 403
+    trainer_id = trainer_id.upper().strip()
+    if trainer_id == 'ADMIN':
+        return jsonify({"status": "error", "message": "The primary Super Admin account cannot be reset through this tool."}), 403
+
+    conn = get_db_connection()
+    row = conn.execute("SELECT * FROM trainers WHERE UPPER(trainer_id)=UPPER(?)", (trainer_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"status": "error", "message": "Trainer not found."}), 404
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    default_pwd = 'pass123'
+    conn.execute("UPDATE trainers SET password=?, must_change=1, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (default_pwd, now, trainer_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": f"Password for {trainer_id} reset to '{default_pwd}'. They must change it on next login."})
 
 @app.route('/api/admin/login', methods=['POST'])
 def admin_login():
@@ -495,11 +605,20 @@ def admin_login():
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         conn.execute("UPDATE trainers SET last_login=? WHERE trainer_id=?", (now, user['trainer_id']))
         conn.commit()
-        
+
+        # Password hygiene: users provisioned with a default/known password must
+        # set their own on first login. must_change is set by the admin (reset /
+        # create / CSV import) or when the password still matches a known default.
+        DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
+        current_pwd = str(user['password'] or '')
+        is_default_pwd = current_pwd in DEFAULT_PASSWORDS
+        must_change = int(user['must_change'] or 0) or (1 if is_default_pwd else 0)
+
         user_data = {
             "trainer_id": user['trainer_id'],
             "name": user['name'],
-            "role": user['role']
+            "role": user['role'],
+            "must_change": must_change
         }
         session['user'] = user_data
         conn.close()
@@ -508,11 +627,8 @@ def admin_login():
             "status": "success",
             "role": user['role'],
             "name": user['name'],
-            "user": {
-                "trainer_id": user['trainer_id'],
-                "name": user['name'],
-                "role": user['role']
-            }
+            "must_change": must_change,
+            "user": user_data
         })
         
     conn.close()
@@ -567,10 +683,12 @@ def handle_trainers():
         if not t_id or not name:
             conn.close()
             return jsonify({"status": "error", "message": "Trainer ID and Name are required."}), 400
-            
+
+        DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
+        must_change = 1 if password in DEFAULT_PASSWORDS else 0
         conn.execute(
-            "INSERT INTO trainers (trainer_id, name, zone, password, role, status, business_units, divisions, branches) VALUES (?, ?, ?, ?, ?, 'Active', ?, ?, ?) ON CONFLICT(trainer_id) DO UPDATE SET name=excluded.name, password=excluded.password, role=excluded.role, status='Active', business_units=excluded.business_units, divisions=excluded.divisions, branches=excluded.branches",
-            (t_id, name, zone, password, role, business_units, divisions, branches)
+            "INSERT INTO trainers (trainer_id, name, zone, password, role, status, business_units, divisions, branches, must_change) VALUES (?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?) ON CONFLICT(trainer_id) DO UPDATE SET name=excluded.name, password=excluded.password, role=excluded.role, status='Active', business_units=excluded.business_units, divisions=excluded.divisions, branches=excluded.branches, must_change=excluded.must_change",
+            (t_id, name, zone, password, role, business_units, divisions, branches, must_change)
         )
         conn.commit()
         conn.close()
@@ -608,7 +726,11 @@ def manage_single_trainer(trainer_id):
         business_units = str(data.get('business_units', 'ALL')).strip() or 'ALL'
         divisions = str(data.get('divisions', 'ALL')).strip() or 'ALL'
         branches = str(data.get('branches', 'ALL')).strip() or 'ALL'
-        
+
+        # If the admin is setting the password to a known default, force the user
+        # to change it on next login (default-password hygiene).
+        DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
+        must_change = 1 if password and password in DEFAULT_PASSWORDS else 0
         conn.execute("""
             UPDATE trainers SET
                 name=COALESCE(NULLIF(?, ''), name),
@@ -617,9 +739,10 @@ def manage_single_trainer(trainer_id):
                 zone=COALESCE(NULLIF(?, ''), zone),
                 business_units=?,
                 divisions=?,
-                branches=?
+                branches=?,
+                must_change=?
             WHERE UPPER(trainer_id)=?
-        """, (name, password, role, zone, business_units, divisions, branches, trainer_id))
+        """, (name, password, role, zone, business_units, divisions, branches, must_change, trainer_id))
         conn.commit()
         conn.close()
         return jsonify({"status": "success", "message": f"Trainer profile '{trainer_id}' updated successfully."})
@@ -680,8 +803,8 @@ def bulk_upload_trainers():
                     t_br = r[br_idx].strip() if br_idx != -1 and len(r) > br_idx else 'ALL'
                     
                     conn.execute("""
-                        INSERT INTO trainers (trainer_id, name, zone, password, role, status, business_units, divisions, branches)
-                        VALUES (?, ?, ?, ?, ?, 'Active', ?, ?, ?)
+                        INSERT INTO trainers (trainer_id, name, zone, password, role, status, business_units, divisions, branches, must_change)
+                        VALUES (?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?)
                         ON CONFLICT(trainer_id) DO UPDATE SET
                             name=excluded.name,
                             zone=excluded.zone,
@@ -690,8 +813,9 @@ def bulk_upload_trainers():
                             status='Active',
                             business_units=excluded.business_units,
                             divisions=excluded.divisions,
-                            branches=excluded.branches
-                    """, (t_id, t_name, t_zone, t_pwd, t_role, t_bu, t_div, t_br))
+                            branches=excluded.branches,
+                            must_change=excluded.must_change
+                    """, (t_id, t_name, t_zone, t_pwd, t_role, t_bu, t_div, t_br, 1 if t_pwd in ('admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123') else 0))
                     rows_processed += 1
                     
             conn.commit()

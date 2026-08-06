@@ -351,6 +351,9 @@ background: rgba(217,119,6,0.1);
         const App = () => {
             const [view, setView] = useState('login'); 
             const [user, setUser] = useState(null); 
+            const [mustChange, setMustChange] = useState(false);
+            const [showForgotModal, setShowForgotModal] = useState(false);
+            const [showChangePwdModal, setShowChangePwdModal] = useState(false);
             const [trainersList, setTrainersList] = useState([]);
             const [impersonatedTrainer, setImpersonatedTrainer] = useState(null);
             const [dbDiag, setDbDiag] = useState({ database_type: 'Checking...', connection_status: 'Checking...', connection_error: null, database_url: '' });
@@ -366,6 +369,8 @@ background: rgba(217,119,6,0.1);
                         localStorage.removeItem('socrates_active_module');
                         setUser(null);
                         setImpersonatedTrainer(null);
+                        setMustChange(false);
+                        setShowChangePwdModal(false);
                         setView('login');
                     });
             };
@@ -379,6 +384,7 @@ background: rgba(217,119,6,0.1);
                     .then(data => {
                         if (data.status === 'success') {
                             setUser({ id: data.user.trainer_id, name: data.user.name, role: data.user.role });
+                            setMustChange(!!data.user.must_change);
                             setView('dashboard');
                         }
                     })
@@ -457,12 +463,62 @@ background: rgba(217,119,6,0.1);
                 })
                 .then(data => {
                     setUser({ id: id.toUpperCase().trim(), name: data.name, role: data.role });
+                    setMustChange(!!data.must_change);
                     setView('dashboard');
                 })
                 .catch(err => {
                     console.error("Login failure:", err);
                     alert("❌ Login Failed: " + err.message);
                 });
+            };
+
+            // SELF-SERVICE PASSWORD CHANGE — used both for the forced first-login
+            // screen and the voluntary "Change Password" action from the header.
+            const handleChangePassword = (oldPwd, newPwd, confirmPwd) => {
+                if (!oldPwd || !newPwd) return alert("Please fill in all password fields.");
+                if (newPwd !== confirmPwd) return alert("New password and confirm password do not match.");
+                if (newPwd.length < 6) return alert("New password must be at least 6 characters long.");
+                fetch('/api/admin/change-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ old_password: oldPwd, new_password: newPwd })
+                })
+                .then(res => res.json().then(d => ({ ok: res.ok, d })))
+                .then(({ ok, d }) => {
+                    if (ok) {
+                        alert("✅ " + d.message);
+                        setMustChange(false);
+                        setShowChangePwdModal(false);
+                        // clear the inputs
+                        ['fpOld','fpNew','fpConfirm'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+                    } else {
+                        alert("❌ " + (d.message || "Password change failed."));
+                    }
+                })
+                .catch(() => alert("❌ Network error while changing password."));
+            };
+
+            // FORGOT PASSWORD — identity = Trainer ID + full registered name.
+            const handleForgotPassword = (tid, name, newPwd, confirmPwd) => {
+                if (!tid || !name) return alert("Please enter your Trainer ID and full name.");
+                if (newPwd !== confirmPwd) return alert("New password and confirm password do not match.");
+                if (newPwd.length < 6) return alert("New password must be at least 6 characters long.");
+                fetch('/api/admin/forgot-password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trainer_id: tid, name, new_password: newPwd })
+                })
+                .then(res => res.json().then(d => ({ ok: res.ok, d })))
+                .then(({ ok, d }) => {
+                    if (ok) {
+                        alert("✅ " + d.message);
+                        setShowForgotModal(false);
+                        ['fgId','fgName','fgNew','fgConfirm'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+                    } else {
+                        alert("❌ " + (d.message || "Reset failed."));
+                    }
+                })
+                .catch(() => alert("❌ Network error while resetting password."));
             };            if (view === 'login') {
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-[#090D16] p-4 relative overflow-hidden">
@@ -484,12 +540,16 @@ background: rgba(217,119,6,0.1);
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Password</label>
-                                    <input type="password" id="loginPwd" placeholder="••••••••" className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all focus:ring-4 focus:ring-amber-500/10 font-medium" />
+                                    <input type="password" id="loginPwd" placeholder="••••••••" onKeyDown={e => { if (e.key === 'Enter') handleLogin(document.getElementById('loginId').value, document.getElementById('loginPwd').value); }} className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all focus:ring-4 focus:ring-amber-500/10 font-medium" />
+                                </div>
+                                <div className="flex justify-end -mt-2">
+                                    <span onClick={() => setShowForgotModal(true)} className="text-[10px] font-bold text-amber-500/80 hover:text-amber-400 cursor-pointer uppercase tracking-wider transition-colors">Forgot Password?</span>
                                 </div>
                                 <button onClick={() => handleLogin(document.getElementById('loginId').value, document.getElementById('loginPwd').value)} className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-slate-950 rounded-xl py-3.5 font-extrabold text-sm transition-all active:scale-[0.98] shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2 mt-6 uppercase tracking-wider">
                                     <span>Secure Access</span>
                                     <i className="fas fa-shield-halved text-xs"></i>
                                 </button>
+                                <p className="text-[9px] text-slate-500 text-center mt-4 leading-relaxed font-medium">New accounts are created with a default password.<br/>You will be asked to set your own password on first login.</p>
                             </div>
 
                             {/* Database Diagnostics Badge */}
@@ -518,6 +578,81 @@ background: rgba(217,119,6,0.1);
                                         Error: {dbDiag.connection_error}
                                     </div>
                                 )}
+                            </div>
+                        </div>
+                        {showForgotModal && (
+                            <div className="fixed inset-0 bg-slate-900/80 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden transform transition-all">
+                                    <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                        <div>
+                                            <h3 className="font-bold text-lg text-socrates-dark">Forgot Password</h3>
+                                            <p className="text-xs text-slate-500 mt-0.5">Verify your identity with your Trainer ID and full registered name</p>
+                                        </div>
+                                        <button onClick={() => setShowForgotModal(false)} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
+                                    </div>
+                                    <div className="p-6 space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Trainer ID</label>
+                                            <input type="text" id="fgId" placeholder="e.g. TR-1002" className="input-field" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Full Registered Name</label>
+                                            <input type="text" id="fgName" placeholder="Exact name as registered" className="input-field" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">New Password</label>
+                                            <input type="password" id="fgNew" placeholder="Minimum 6 characters" className="input-field font-mono" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Confirm New Password</label>
+                                            <input type="password" id="fgConfirm" placeholder="Re-enter new password" onKeyDown={e => { if (e.key === 'Enter') handleForgotPassword(document.getElementById('fgId').value, document.getElementById('fgName').value, document.getElementById('fgNew').value, document.getElementById('fgConfirm').value); }} className="input-field font-mono" />
+                                        </div>
+                                    </div>
+                                    <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 font-semibold">
+                                        <button type="button" onClick={() => setShowForgotModal(false)} className="btn-outline">Cancel</button>
+                                        <button onClick={() => handleForgotPassword(document.getElementById('fgId').value, document.getElementById('fgName').value, document.getElementById('fgNew').value, document.getElementById('fgConfirm').value)} className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold shadow-md">Reset Password</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            if (mustChange) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-[#090D16] p-4 relative overflow-hidden">
+                        <div className="absolute top-1/4 left-1/4 w-[35rem] h-[35rem] bg-amber-500/5 rounded-full blur-[140px] pointer-events-none"></div>
+                        <div className="absolute bottom-1/4 right-1/4 w-[35rem] h-[35rem] bg-yellow-500/3 rounded-full blur-[140px] pointer-events-none"></div>
+                        <div className="w-full max-w-md p-8 bg-slate-950/70 border border-amber-500/20 backdrop-blur-2xl rounded-[2.5rem] shadow-3xl shadow-amber-500/10 relative z-10">
+                            <div className="flex justify-center mb-6">
+                                <div className="w-16 h-16 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-2xl flex items-center justify-center text-[#090D16] text-3xl shadow-lg shadow-amber-500/10 border border-white/10 overflow-hidden"><img src="/static/socrates_mind_logo.jpg" className="w-full h-full object-cover rounded-2xl" alt="Socrates Mind Logo" /></div>
+                            </div>
+                            <div className="flex items-center justify-center gap-2 mb-3">
+                                <i className="fas fa-key text-amber-400 text-sm"></i>
+                                <h1 className="text-lg font-black text-center text-white font-outfit tracking-tight">Set Your Own Password</h1>
+                            </div>
+                            <p className="text-[11px] text-center text-slate-400 mb-8 font-medium leading-relaxed">For security, accounts are provisioned with a default password. Please set a personal password before continuing.</p>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Current (Default) Password</label>
+                                    <input type="password" id="fpOld" placeholder="••••••••" className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all focus:ring-4 focus:ring-amber-500/10 font-medium" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">New Password</label>
+                                    <input type="password" id="fpNew" placeholder="Minimum 6 characters" className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all focus:ring-4 focus:ring-amber-500/10 font-medium" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Confirm New Password</label>
+                                    <input type="password" id="fpConfirm" placeholder="Re-enter new password" onKeyDown={e => { if (e.key === 'Enter') handleChangePassword(document.getElementById('fpOld').value, document.getElementById('fpNew').value, document.getElementById('fpConfirm').value); }} className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all focus:ring-4 focus:ring-amber-500/10 font-medium" />
+                                </div>
+                                <button onClick={() => handleChangePassword(document.getElementById('fpOld').value, document.getElementById('fpNew').value, document.getElementById('fpConfirm').value)} className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-slate-950 rounded-xl py-3.5 font-extrabold text-sm transition-all active:scale-[0.98] shadow-lg shadow-amber-500/10 flex items-center justify-center gap-2 mt-2 uppercase tracking-wider">
+                                    <span>Update Password</span>
+                                    <i className="fas fa-check-double text-xs"></i>
+                                </button>
+                                <div className="text-center mt-4">
+                                    <span onClick={handleLogout} className="text-[10px] font-bold text-slate-500 hover:text-amber-400 cursor-pointer uppercase tracking-wider transition-colors"><i className="fas fa-sign-out-alt mr-1"></i> Sign Out & Try Later</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -551,7 +686,8 @@ background: rgba(217,119,6,0.1);
                                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-600 flex items-center justify-center text-sm font-black text-[#090D16] shadow-md uppercase">{user?.name?.substring(0,2)}</div>
                                 <div className="min-w-0 flex-1">
                                     <div className="font-bold text-xs text-slate-200 truncate">{user?.name}</div>
-                                    <div className="text-[10px] text-slate-400 font-bold cursor-pointer hover:text-amber-400 transition-colors uppercase tracking-wider" onClick={handleLogout}>Sign Out</div>
+                                    <div className="text-[10px] text-slate-400 font-bold cursor-pointer hover:text-amber-400 transition-colors uppercase tracking-wider" onClick={() => { setShowChangePwdModal(true); }}>Change Password</div>
+                                    <div className="text-[10px] text-slate-400 font-bold cursor-pointer hover:text-amber-400 transition-colors uppercase tracking-wider" onClick={handleLogout}><i className="fas fa-sign-out-alt mr-1 text-[9px]"></i>Sign Out</div>
                                 </div>
                             </div>
                         </div>
@@ -713,6 +849,7 @@ background: rgba(217,119,6,0.1);
                                         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-600 flex items-center justify-center text-xs font-bold text-[#090D16] shadow-md uppercase">{user?.name?.substring(0,2)}</div>
                                         <div className="min-w-0 flex-1">
                                             <div className="font-semibold text-xs text-slate-200 truncate">{user?.name}</div>
+                                            <div className="text-[10px] text-slate-400 font-medium cursor-pointer hover:text-amber-400 transition-colors" onClick={() => { setShowChangePwdModal(true); setIsMobileMenuOpen(false); }}>Change Password</div>
                                             <div className="text-[10px] text-slate-400 font-medium cursor-pointer hover:text-amber-400 transition-colors" onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}>Log Out</div>
                                         </div>
                                     </div>
@@ -720,6 +857,37 @@ background: rgba(217,119,6,0.1);
                             </div>
                         </div>
                     )}
+                {showChangePwdModal && (
+                    <div className="fixed inset-0 bg-slate-900/60 z-[70] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden transform transition-all">
+                            <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                                <div>
+                                    <h3 className="font-bold text-lg text-socrates-dark">Change Password</h3>
+                                    <p className="text-xs text-slate-500 mt-0.5">Update your login password. You will need your current password.</p>
+                                </div>
+                                <button onClick={() => setShowChangePwdModal(false)} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Current Password</label>
+                                    <input type="password" id="fpOld" placeholder="Your current password" className="input-field font-mono" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">New Password</label>
+                                    <input type="password" id="fpNew" placeholder="Minimum 6 characters" className="input-field font-mono" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Confirm New Password</label>
+                                    <input type="password" id="fpConfirm" placeholder="Re-enter new password" onKeyDown={e => { if (e.key === 'Enter') handleChangePassword(document.getElementById('fpOld').value, document.getElementById('fpNew').value, document.getElementById('fpConfirm').value); }} className="input-field font-mono" />
+                                </div>
+                            </div>
+                            <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 font-semibold">
+                                <button type="button" onClick={() => setShowChangePwdModal(false)} className="btn-outline">Cancel</button>
+                                <button onClick={() => handleChangePassword(document.getElementById('fpOld').value, document.getElementById('fpNew').value, document.getElementById('fpConfirm').value)} className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold shadow-md">Update Password</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 </div>
             );
         };
@@ -3443,6 +3611,27 @@ alert("Failed to update trainer status: " + data.message);
                 });
             };
 
+            const handleResetPassword = (id) => {
+                if (id === 'ADMIN') { alert("Super Admin password cannot be reset from here. Use Change Password / Forgot Password instead."); return; }
+                if (!confirm(`Reset password for Trainer '${id}' to 'pass123'? They will be asked to set their own password on next login.`)) return;
+                fetch(`/api/trainers/${id}/reset-password`, {
+                    method: 'POST'
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        alert(data.message || 'Password reset successfully!');
+                        loadTrainers();
+                    } else {
+                        alert("Failed to reset password: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error("Reset password failed:", err);
+                    alert("System error while resetting password.");
+                });
+            };
+
             const handleCreate = () => {
                 if(!tid || !name || !password) return alert("Please enter Trainer ID, Name, and Password");
 
@@ -3712,6 +3901,11 @@ loadTrainers();
                                         </div>
 
                                         <div className="flex items-center gap-2">
+                                            {tr.id !== 'ADMIN' && (
+                                                <button onClick={() => handleResetPassword(tr.id)} className="text-xs border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1 shadow-sm">
+                                                    <i className="fas fa-key text-[10px]"></i> Reset Pwd
+                                                </button>
+                                            )}
                                             <button onClick={() => handleStartEdit(tr)} className="text-xs border border-blue-100 text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-xl font-bold flex items-center gap-1 shadow-sm">
                                                 <i className="fas fa-edit text-[10px]"></i> Scope
                                             </button>
@@ -3795,6 +3989,11 @@ loadTrainers();
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
                                                     <div className="inline-flex items-center gap-1.5">
+                                                        {tr.id !== 'ADMIN' && (
+                                                            <button onClick={() => handleResetPassword(tr.id)} className="text-xs border border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-100 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-all active:scale-[0.96] shadow-sm">
+                                                                <i className="fas fa-key text-[10px]"></i> Reset Pwd
+                                                            </button>
+                                                        )}
                                                         <button onClick={() => handleStartEdit(tr)} className="text-xs border border-blue-100 text-blue-650 bg-blue-50/50 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg font-bold flex items-center gap-1 transition-all active:scale-[0.96] shadow-sm">
                                                             <i className="fas fa-edit text-[10px]"></i> Scope Rights
                                                         </button>
