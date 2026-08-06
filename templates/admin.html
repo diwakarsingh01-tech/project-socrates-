@@ -2419,6 +2419,8 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
             const [manualQuestions, setManualQuestions] = useState([
                 { question_text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_index: 0, approved: 1 }
             ]);
+            // Editing an existing module (loaded into the manual builder for update)
+            const [editingModuleId, setEditingModuleId] = useState(null);
 
             const addManualQuestion = () => {
                 setManualQuestions(prev => [
@@ -2438,6 +2440,32 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                     copy[idx] = { ...copy[idx], [field]: val };
                     return copy;
                 });
+            };
+
+            // Load an existing module into the manual builder for editing
+            const handleEditModule = (mod) => {
+                setStatus('idle');
+                setActiveEditIdx(null);
+                setEditingModuleId(mod.id);
+                setManualTitle(mod.title || '');
+                setAssignedAuditor(mod.audited_by || '');
+                setTimeLimit(mod.time_limit_minutes !== undefined && mod.time_limit_minutes !== null ? mod.time_limit_minutes : 15);
+                setPassPct(mod.pass_percentage !== undefined && mod.pass_percentage !== null ? mod.pass_percentage : 70);
+                setAntiCheat(mod.enable_anti_cheat !== undefined && mod.enable_anti_cheat !== null ? mod.enable_anti_cheat : 1);
+                setShuffleQ(mod.shuffle_questions !== undefined && mod.shuffle_questions !== null ? mod.shuffle_questions : 1);
+                setShuffleOpt(mod.shuffle_options !== undefined && mod.shuffle_options !== null ? mod.shuffle_options : 1);
+                setManualQuestions((Array.isArray(mod.questions) ? mod.questions : []).map(q => ({
+                    question_text: q.question_text || q.question || '',
+                    option_a: q.option_a || (q.options && q.options[0]) || '',
+                    option_b: q.option_b || (q.options && q.options[1]) || '',
+                    option_c: q.option_c || (q.options && q.options[2]) || '',
+                    option_d: q.option_d || (q.options && q.options[3]) || '',
+                    correct_index: (q.correct_index !== undefined && q.correct_index !== null) ? q.correct_index : (q.correctIndex !== undefined && q.correctIndex !== null ? q.correctIndex : 0),
+                    approved: q.approved !== undefined && q.approved !== null ? q.approved : 1
+                })));
+                // Scroll the builder card into view so the user sees the loaded paper
+                const builderEl = document.getElementById('manual-builder-card');
+                if (builderEl) builderEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
             };
 
             const handleSaveManualPaper = (isFinalize) => {
@@ -2464,6 +2492,7 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                     enable_anti_cheat: antiCheat,
                     shuffle_questions: shuffleQ,
                     shuffle_options: shuffleOpt,
+                    module_id: editingModuleId || undefined,
                     questions: manualQuestions.map(q => ({
                         question_text: q.question_text.trim(),
                         question_type: q.question_type || 'mcq_single',
@@ -2483,8 +2512,9 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                 .then(res => res.json())
                 .then(data => {
                     if (data.status === 'success') {
-                        alert('✅ Manual Question Paper saved successfully!');
+                        alert(editingModuleId ? '✅ Manual Question Paper updated successfully!' : '✅ Manual Question Paper saved successfully!');
                         setManualTitle('');
+                        setEditingModuleId(null);
                         setManualQuestions([{ question_text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_index: 0, approved: 1 }]);
                         loadModules();
                     } else {
@@ -2862,7 +2892,7 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                     )}
 
                     {/* MANUAL QUESTION PAPER BUILDER */}
-                    <div className="card p-4 sm:p-8">
+                    <div className="card p-4 sm:p-8" id="manual-builder-card">
                             /* MANUAL QUESTION PAPER BUILDER */
                             <div className="space-y-6 animate-fade-in">
                                 <div className="flex items-center gap-3 mb-2">
@@ -2870,6 +2900,20 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                     <div>
                                         <h3 className="font-bold text-xl text-socrates-dark tracking-tight">Manual Question Paper Builder</h3>
                                         <p className="text-xs text-slate-500 font-medium">Create customized Socratic question papers line by line with full control over options and answer keys.</p>
+                                        {editingModuleId && (
+                                            <span className="inline-flex items-center gap-1.5 mt-1 px-3 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold">
+                                                <i className="fas fa-pen text-[10px]"></i> Editing Module #{editingModuleId}
+                                                <button 
+                                                    onClick={() => {
+                                                        setEditingModuleId(null);
+                                                        setManualTitle('');
+                                                        setManualQuestions([{ question_text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_index: 0, approved: 1 }]);
+                                                    }}
+                                                    className="ml-0.5 text-amber-700 hover:text-red-600 font-black px-1"
+                                                    title="Cancel Editing"
+                                                >✕</button>
+                                            </span>
+                                        )}
                                     </div>
                                 </div>
 
@@ -3035,7 +3079,7 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                         onClick={() => handleSaveManualPaper(true)}
                                         className="w-full sm:w-auto btn-primary py-2.5 px-6 text-xs font-black flex items-center justify-center gap-2 shadow-lg"
                                     >
-                                        <i className="fas fa-check-double"></i> Save Manual Paper to Library
+                                        <i className="fas fa-check-double"></i> {editingModuleId ? 'Update Module in Library' : 'Save Manual Paper to Library'}
                                     </button>
                                 </div>
                             </div>
@@ -3108,6 +3152,7 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                                         <i className="fas fa-clipboard-check"></i> Resume Audit
                                                     </button>
                                                 )}
+                                                <button onClick={() => handleEditModule(mod)} className="text-slate-400 hover:text-amber-600 transition-colors p-1" title="Edit Module in Manual Builder"><i className="fas fa-pen"></i></button>
                                                 <button onClick={() => handleExport(mod)} className="text-slate-400 hover:text-blue-500 transition-colors p-1" title="Export Module JSON"><i className="fas fa-file-export"></i></button>
 
 <button onClick={() => handleDelete(mod.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1" title="Delete Module"><i className="fas fa-trash-alt"></i></button>
