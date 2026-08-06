@@ -41,6 +41,9 @@ DB_FILE = "socrates.db"
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
+    def _table_exists(name):
+        return cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
     
     # Employees (Roster)
     cursor.execute('''
@@ -133,31 +136,80 @@ def init_db():
     if 'shuffle_options' not in mod_cols:
         cursor.execute("ALTER TABLE modules ADD COLUMN shuffle_options INTEGER DEFAULT 1")
 
-    # Migration for questions table
-    cursor.execute("PRAGMA table_info(questions)")
-    q_cols = [row[1] for row in cursor.fetchall()]
-    if 'question_type' not in q_cols:
-        cursor.execute("ALTER TABLE questions ADD COLUMN question_type TEXT DEFAULT 'mcq_single'")
-    if 'points_weight' not in q_cols:
-        cursor.execute("ALTER TABLE questions ADD COLUMN points_weight REAL DEFAULT 1.0")
-    if 'negative_points' not in q_cols:
-        cursor.execute("ALTER TABLE questions ADD COLUMN negative_points REAL DEFAULT 0.0")
-    if 'media_url' not in q_cols:
-        cursor.execute("ALTER TABLE questions ADD COLUMN media_url TEXT")
-    if 'matching_pairs' not in q_cols:
-        cursor.execute("ALTER TABLE questions ADD COLUMN matching_pairs TEXT")
+    # Migration for questions table (fresh installs create the full schema below)
+    if _table_exists('questions'):
+        cursor.execute("PRAGMA table_info(questions)")
+        q_cols = [row[1] for row in cursor.fetchall()]
+        if 'question_type' not in q_cols:
+            cursor.execute("ALTER TABLE questions ADD COLUMN question_type TEXT DEFAULT 'mcq_single'")
+        if 'points_weight' not in q_cols:
+            cursor.execute("ALTER TABLE questions ADD COLUMN points_weight REAL DEFAULT 1.0")
+        if 'negative_points' not in q_cols:
+            cursor.execute("ALTER TABLE questions ADD COLUMN negative_points REAL DEFAULT 0.0")
+        if 'media_url' not in q_cols:
+            cursor.execute("ALTER TABLE questions ADD COLUMN media_url TEXT")
+        if 'matching_pairs' not in q_cols:
+            cursor.execute("ALTER TABLE questions ADD COLUMN matching_pairs TEXT")
 
-    # Migration for assessment_results table
-    cursor.execute("PRAGMA table_info(assessment_results)")
-    res_cols = [row[1] for row in cursor.fetchall()]
-    if 'tab_switch_count' not in res_cols:
-        cursor.execute("ALTER TABLE assessment_results ADD COLUMN tab_switch_count INTEGER DEFAULT 0")
-    if 'time_taken_seconds' not in res_cols:
-        cursor.execute("ALTER TABLE assessment_results ADD COLUMN time_taken_seconds INTEGER DEFAULT 0")
-    if 'passed_status' not in res_cols:
-        cursor.execute("ALTER TABLE assessment_results ADD COLUMN passed_status INTEGER DEFAULT 1")
-    if 'certificate_id' not in res_cols:
-        cursor.execute("ALTER TABLE assessment_results ADD COLUMN certificate_id TEXT")
+    # Migration for assessment_results table (append-only training history).
+    # Legacy schema keyed on (emp_code, module_id, assignment_day) OVERWRITES a trainee's
+    # history whenever they attend the same module again (e.g. January vs April training).
+    # Rebuild as append-only: autoincrement PK + UNIQUE key that includes session_id (the
+    # training occurrence), preserving every existing row with a synthesized 'LEGACY' session.
+    if _table_exists('assessment_results'):
+        cursor.execute("PRAGMA table_info(assessment_results)")
+        res_cols = [row[1] for row in cursor.fetchall()]
+        if 'id' not in res_cols:
+            legacy_cols = [c for c in ('emp_code', 'module_id', 'assignment_day', 'pre_test_score',
+                                       'post_test_score', 'completed_at', 'tab_switch_count',
+                                       'time_taken_seconds', 'passed_status', 'certificate_id') if c in res_cols]
+            cursor.execute("ALTER TABLE assessment_results RENAME TO assessment_results_legacy")
+            cursor.execute('''
+            CREATE TABLE assessment_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                emp_code TEXT,
+                module_id INTEGER,
+                assignment_day TEXT,
+                session_id TEXT,
+                training_date TEXT,
+                trainer_id TEXT,
+                zone TEXT,
+                division TEXT,
+                business_unit TEXT,
+                branch_name TEXT,
+                pre_test_score REAL,
+                post_test_score REAL,
+                completed_at TEXT,
+                tab_switch_count INTEGER DEFAULT 0,
+                time_taken_seconds INTEGER DEFAULT 0,
+                passed_status INTEGER DEFAULT 1,
+                certificate_id TEXT,
+                UNIQUE(emp_code, module_id, session_id, assignment_day),
+                FOREIGN KEY(emp_code) REFERENCES employees(emp_code),
+                FOREIGN KEY(module_id) REFERENCES modules(id)
+            )''')
+            legacy_sel = ', '.join(legacy_cols)
+            legacy_cols_wc = ", ".join("a." + c for c in legacy_cols)
+            cursor.execute(f"""
+                INSERT INTO assessment_results ({legacy_sel}, session_id, training_date, zone, division, business_unit, branch_name)
+                SELECT {legacy_cols_wc}, 'LEGACY', substr(a.completed_at, 1, 10), e.zone, e.division, e.business_unit, e.branch_name
+                FROM assessment_results_legacy a
+                LEFT JOIN employees e ON a.emp_code = e.emp_code
+            """)
+            cursor.execute("DROP TABLE assessment_results_legacy")
+            res_cols = [r[1] for r in cursor.execute("PRAGMA table_info(assessment_results)").fetchall()]
+        for col, ddl in (('session_id', 'TEXT'), ('training_date', 'TEXT'), ('trainer_id', 'TEXT'),
+                         ('zone', 'TEXT'), ('division', 'TEXT'), ('business_unit', 'TEXT'), ('branch_name', 'TEXT')):
+            if col not in res_cols:
+                cursor.execute(f"ALTER TABLE assessment_results ADD COLUMN {col} {ddl}")
+        if 'tab_switch_count' not in res_cols:
+            cursor.execute("ALTER TABLE assessment_results ADD COLUMN tab_switch_count INTEGER DEFAULT 0")
+        if 'time_taken_seconds' not in res_cols:
+            cursor.execute("ALTER TABLE assessment_results ADD COLUMN time_taken_seconds INTEGER DEFAULT 0")
+        if 'passed_status' not in res_cols:
+            cursor.execute("ALTER TABLE assessment_results ADD COLUMN passed_status INTEGER DEFAULT 1")
+        if 'certificate_id' not in res_cols:
+            cursor.execute("ALTER TABLE assessment_results ADD COLUMN certificate_id TEXT")
         
     # Questions (Maker-Checker details)
     cursor.execute('''
@@ -185,16 +237,31 @@ def init_db():
         FOREIGN KEY(trainer_id) REFERENCES trainers(trainer_id)
     )''')
     
-    # Assessment Results (For learning curves)
+    # Assessment Results (For learning curves) — append-only training history.
+    # A new training occurrence (session_id) always INSERTs a new row; the UNIQUE key
+    # (emp_code, module_id, session_id, assignment_day) only de-dupes retries of the
+    # SAME session, so January vs April trainings are both preserved.
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS assessment_results (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         emp_code TEXT,
         module_id INTEGER,
         assignment_day TEXT,
+        session_id TEXT,
+        training_date TEXT,
+        trainer_id TEXT,
+        zone TEXT,
+        division TEXT,
+        business_unit TEXT,
+        branch_name TEXT,
         pre_test_score REAL,
         post_test_score REAL,
         completed_at TEXT,
-        PRIMARY KEY (emp_code, module_id, assignment_day),
+        tab_switch_count INTEGER DEFAULT 0,
+        time_taken_seconds INTEGER DEFAULT 0,
+        passed_status INTEGER DEFAULT 1,
+        certificate_id TEXT,
+        UNIQUE(emp_code, module_id, session_id, assignment_day),
         FOREIGN KEY(emp_code) REFERENCES employees(emp_code),
         FOREIGN KEY(module_id) REFERENCES modules(id)
     )''')
@@ -1037,15 +1104,19 @@ def upload_historical_assessments():
                         if pre_val is not None or post_val is not None:
                             p_score = pre_val if pre_val is not None else 0.0
                             post_score = post_val if post_val is not None else 0.0
-                            
+
+                            # History-safe key: one session per training DATE, so the same
+                            # trainee/module attending again on a later date (Jan vs Apr)
+                            # creates a NEW row instead of overwriting the earlier visit.
+                            session_key = f"CSV-{session_date}"
                             conn.execute("""
-                                INSERT INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                                ON CONFLICT(emp_code, module_id, assignment_day) DO UPDATE SET
+                                INSERT INTO assessment_results (emp_code, module_id, assignment_day, session_id, training_date, zone, division, business_unit, branch_name, pre_test_score, post_test_score, completed_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ON CONFLICT(emp_code, module_id, session_id, assignment_day) DO UPDATE SET
                                     pre_test_score=excluded.pre_test_score,
                                     post_test_score=excluded.post_test_score,
                                     completed_at=excluded.completed_at
-                            """, (emp_code, module_id, day_key, p_score, post_score, session_date))
+                            """, (emp_code, module_id, day_key, session_key, session_date, zone, division, bu, branch, p_score, post_score, session_date))
                             
                     rows_processed += 1
                     
@@ -2566,8 +2637,34 @@ def submit_assessment():
         score_ref = post_test_score if post_test_score is not None else (pre_test_score if pre_test_score is not None else 0.0)
         passed_status = 1 if (score_ref is not None and float(score_ref) >= pass_pct) else 0
         
-        row = conn.execute("SELECT * FROM assessment_results WHERE emp_code=? AND module_id=? AND assignment_day=?", 
-                           (emp_code, module_id, assignment_day)).fetchone()
+        # --- History-safe persistence -----------------------------------------
+        # Key results on the training OCCURRENCE (session_id), not a bare
+        # (emp, module, day) triple, so a January training and an April training
+        # for the same trainee/module each get their own append-only row.
+        session_id = str(data.get('session_id') or '').strip() or None
+        today_str = datetime.datetime.now().strftime("%Y-%m-%d")
+        if not session_id:
+            session_id = f"WEB-{today_str}"
+        training_date = today_str
+        trainer_id = None
+        ts_row = conn.execute("SELECT trainer_id, date FROM training_sessions WHERE session_id=?", (session_id,)).fetchone()
+        if ts_row:
+            trainer_id = ts_row['trainer_id']
+            if ts_row['date']:
+                training_date = ts_row['date']
+        # Snapshot the employee's org context at save time so historical reports
+        # keep the branch/zone/division the trainee belonged to for that training.
+        emp_ctx = conn.execute("SELECT zone, division, business_unit, branch_name FROM employees WHERE emp_code=?", (emp_code,)).fetchone()
+        snap = {
+            'zone': emp_ctx['zone'] if emp_ctx else None,
+            'division': emp_ctx['division'] if emp_ctx else None,
+            'business_unit': emp_ctx['business_unit'] if emp_ctx else None,
+            'branch_name': emp_ctx['branch_name'] if emp_ctx else None,
+        }
+
+        result_id = None
+        row = conn.execute("SELECT * FROM assessment_results WHERE emp_code=? AND module_id=? AND session_id=? AND assignment_day=?", 
+                           (emp_code, module_id, session_id, assignment_day)).fetchone()
         if row:
             updates = ["completed_at=?"]
             params = [now_str]
@@ -2588,26 +2685,34 @@ def submit_assessment():
                 if cert_id:
                     updates.append("certificate_id=?")
                     params.append(cert_id)
-            params.extend([emp_code, module_id, assignment_day])
-            conn.execute(f"UPDATE assessment_results SET {', '.join(updates)} WHERE emp_code=? AND module_id=? AND assignment_day=?", params)
+            params.append(row['id'])
+            conn.execute(f"UPDATE assessment_results SET {', '.join(updates)} WHERE id=?", params)
+            result_id = row['id']
         else:
             p_val = pre_test_score if pre_test_score is not None else 0.0
             post_val = post_test_score if post_test_score is not None else 0.0
             cert_id = data.get('certificate_id')
-            conn.execute("INSERT INTO assessment_results (emp_code, module_id, assignment_day, pre_test_score, post_test_score, completed_at, tab_switch_count, time_taken_seconds, passed_status, certificate_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                         (emp_code, module_id, assignment_day, p_val, post_val, now_str, tab_switch_count, time_taken_seconds, passed_status, cert_id))
+            cur = conn.execute("""INSERT INTO assessment_results
+                (emp_code, module_id, assignment_day, session_id, training_date, trainer_id,
+                 zone, division, business_unit, branch_name,
+                 pre_test_score, post_test_score, completed_at, tab_switch_count, time_taken_seconds, passed_status, certificate_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                               (emp_code, module_id, assignment_day, session_id, training_date, trainer_id,
+                                snap['zone'], snap['division'], snap['business_unit'], snap['branch_name'],
+                                p_val, post_val, now_str, tab_switch_count, time_taken_seconds, passed_status, cert_id))
+            result_id = cur.lastrowid
         conn.commit()
         
         # Generate a certificate id for passed post-tests that don't have one yet
         final_cert = data.get('certificate_id')
-        if final_cert is None and test_type == 'post' and passed_status == 1:
-            r2 = conn.execute("SELECT certificate_id FROM assessment_results WHERE emp_code=? AND module_id=? AND assignment_day=?", (emp_code, module_id, assignment_day)).fetchone()
+        if final_cert is None and test_type == 'post' and passed_status == 1 and result_id:
+            r2 = conn.execute("SELECT certificate_id FROM assessment_results WHERE id=?", (result_id,)).fetchone()
             if r2 and r2['certificate_id']:
                 final_cert = r2['certificate_id']
             else:
                 from uuid import uuid4
                 final_cert = f"SRC-{emp_code}-{module_id}-{assignment_day}-{uuid4().hex[:8]}"
-                conn.execute("UPDATE assessment_results SET certificate_id=? WHERE emp_code=? AND module_id=? AND assignment_day=?", (final_cert, emp_code, module_id, assignment_day))
+                conn.execute("UPDATE assessment_results SET certificate_id=? WHERE id=?", (final_cert, result_id))
                 conn.commit()
         
         conn.close()
@@ -2700,7 +2805,7 @@ def get_analytics():
             GROUP BY e.role ORDER BY cnt DESC
         """, params).fetchall()
 
-        # 3) Score distribution buckets (latest milestone post-test per employee)
+        # 3) Score distribution buckets (latest assessment per employee by completion time)
         dist_where = where_sql + ((" AND " if where_sql else " WHERE ") + "a.post_test_score IS NOT NULL")
         dist_rows = conn.execute(f"""
             SELECT emp_code, emp_name, branch_name, division, zone, business_unit, post_test_score
@@ -2709,9 +2814,7 @@ def get_analytics():
                        a.post_test_score,
                        ROW_NUMBER() OVER (
                            PARTITION BY a.emp_code
-                           ORDER BY CASE UPPER(TRIM(a.assignment_day))
-                                        WHEN 'TWENTY DAYS' THEN 2 WHEN 'SIX DAYS' THEN 1 ELSE 0 END DESC,
-                                    a.completed_at DESC
+                           ORDER BY a.completed_at DESC, a.id DESC
                        ) rn
                 {base}
                 {dist_where}
@@ -2938,6 +3041,211 @@ def _analytics_where(args):
     
     where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
     return where_sql, params
+
+@app.route('/api/analytics/history', methods=['GET'])
+def analytics_history():
+    """Historical training + test tracking (append-only).
+
+    Every training occurrence is its own row in assessment_results (keyed by
+    session_id), so a trainee's January and April trainings are both preserved.
+    This endpoint exposes:
+      - agent_history:  full chronological history for one trainee
+      - agent_growth:   first vs latest post-test per trainee (growth delta)
+      - period_aggregates: avg pre/post/growth by period (month/quarter) x dimension
+      - module_trends:  avg post-test across repeated exposures to the same module
+    Filters: emp_code, module_id, trainer_id, zone, division, branch,
+             business_unit, product_name, start_date, end_date,
+             group_by (zone|division|business_unit|branch_name|module), period (month|quarter).
+    """
+    conn = get_db_connection()
+    try:
+        args = request.args
+        group_by = (args.get('group_by') or 'branch_name').strip()
+        period = (args.get('period') or 'month').strip()
+        if group_by not in ('zone', 'division', 'business_unit', 'branch_name', 'module'):
+            group_by = 'branch_name'
+        if period not in ('month', 'quarter'):
+            period = 'month'
+
+        where_sql, base_params = _analytics_where(args)
+        if not where_sql:
+            where_sql = " WHERE 1=1"
+
+        # Access control: non-global roles only see their assigned scope.
+        scope_conds, scope_params = [], []
+        _user = _session_user()
+        if _user and not _is_global_role(_user.get('role', '')):
+            _scope = _trainer_scope(_user.get('trainer_id'))
+            if _scope:
+                if _scope.get('zones'):
+                    scope_conds.append("UPPER(TRIM(e.zone)) IN ({})".format(','.join('?' * len(_scope['zones']))))
+                    scope_params.extend(_scope['zones'])
+                if _scope.get('divisions'):
+                    scope_conds.append("UPPER(TRIM(e.division)) IN ({})".format(','.join('?' * len(_scope['divisions']))))
+                    scope_params.extend(_scope['divisions'])
+                if _scope.get('branches'):
+                    scope_conds.append("UPPER(TRIM(e.branch_name)) IN ({})".format(','.join('?' * len(_scope['branches']))))
+                    scope_params.extend(_scope['branches'])
+                if _scope.get('business_units'):
+                    scope_conds.append("UPPER(TRIM(e.business_unit)) IN ({})".format(','.join('?' * len(_scope['business_units']))))
+                    scope_params.extend(_scope['business_units'])
+
+        # Extra dimension filters (bound AFTER scope params, matching SQL order).
+        extra_conds, extra_params = [], []
+        emp_code = args.get('emp_code', '').strip()
+        module_id = args.get('module_id', '').strip()
+        trainer_id = args.get('trainer_id', '').strip()
+        if emp_code:
+            extra_conds.append("UPPER(TRIM(a.emp_code)) = UPPER(TRIM(?))")
+            extra_params.append(emp_code)
+        if module_id:
+            extra_conds.append("a.module_id = ?")
+            extra_params.append(module_id)
+        if trainer_id:
+            extra_conds.append("UPPER(TRIM(a.trainer_id)) = UPPER(TRIM(?))")
+            extra_params.append(trainer_id)
+
+        conds = scope_conds + extra_conds
+        if conds:
+            where_sql += " AND " + " AND ".join(conds)
+        params = base_params + scope_params + extra_params
+
+        base = ("FROM assessment_results a "
+                "LEFT JOIN employees e ON a.emp_code = e.emp_code "
+                "LEFT JOIN modules m ON a.module_id = m.id "
+                "LEFT JOIN trainers t ON a.trainer_id = t.trainer_id")
+
+        # 1) Full chronological history for the selected trainee.
+        agent_history = []
+        if emp_code:
+            rows = conn.execute(f"""
+                SELECT a.id, a.emp_code, e.emp_name, a.module_id, m.title AS module_title,
+                       a.training_date, a.session_id, a.assignment_day,
+                       a.pre_test_score, a.post_test_score,
+                       (a.post_test_score - a.pre_test_score) AS score_delta,
+                       a.trainer_id, t.name AS trainer_name, a.completed_at,
+                       a.passed_status, a.certificate_id
+                {base}
+                WHERE UPPER(TRIM(a.emp_code)) = UPPER(TRIM(?))
+                ORDER BY a.training_date, a.id
+            """, (emp_code,)).fetchall()
+            agent_history = [dict(r) for r in rows]
+
+        # 2) Per-trainee growth: first vs latest post-test.
+        agent_growth = conn.execute(f"""
+            SELECT x.emp_code, x.emp_name, x.first_date, x.latest_date,
+                   (SELECT ar.post_test_score FROM assessment_results ar
+                    WHERE ar.emp_code = x.emp_code AND ar.post_test_score IS NOT NULL
+                    ORDER BY ar.training_date ASC, ar.id ASC LIMIT 1) AS first_post,
+                   (SELECT ar.post_test_score FROM assessment_results ar
+                    WHERE ar.emp_code = x.emp_code AND ar.post_test_score IS NOT NULL
+                    ORDER BY ar.training_date DESC, ar.id DESC LIMIT 1) AS latest_post
+            FROM (
+                SELECT a.emp_code, e.emp_name, MIN(a.training_date) AS first_date, MAX(a.training_date) AS latest_date
+                FROM assessment_results a
+                LEFT JOIN employees e ON a.emp_code = e.emp_code
+                {where_sql}
+                AND a.post_test_score IS NOT NULL
+                GROUP BY a.emp_code, e.emp_name
+            ) x
+            ORDER BY (x.emp_code) ASC
+        """, params).fetchall()
+        growth_out = []
+        for g in agent_growth:
+            fp = g['first_post']
+            lp = g['latest_post']
+            growth_out.append({
+                "emp_code": g['emp_code'],
+                "emp_name": g['emp_name'] or g['emp_code'],
+                "first_date": g['first_date'],
+                "latest_date": g['latest_date'],
+                "first_post": round(fp, 1) if fp is not None else None,
+                "latest_post": round(lp, 1) if lp is not None else None,
+                "delta": round(lp - fp, 1) if (fp is not None and lp is not None) else None,
+            })
+
+        # 3) Period aggregation: avg pre/post/growth by month/quarter x dimension.
+        if period == 'quarter':
+            period_expr = ("printf('%04d-Q%01d', CAST(substr(a.training_date,1,4) AS INTEGER), "
+                           "(CAST(substr(a.training_date,6,2) AS INTEGER)+2)/3)")
+        else:
+            period_expr = "substr(a.training_date,1,7)"
+        dim_expr = {
+            'zone': "COALESCE(NULLIF(TRIM(a.zone), ''), e.zone)",
+            'division': "COALESCE(NULLIF(TRIM(a.division), ''), e.division)",
+            'business_unit': "COALESCE(NULLIF(TRIM(a.business_unit), ''), e.business_unit)",
+            'branch_name': "COALESCE(NULLIF(TRIM(a.branch_name), ''), e.branch_name)",
+            'module': "COALESCE(m.title, CAST(a.module_id AS TEXT))",
+        }[group_by]
+        period_aggregates = conn.execute(f"""
+            SELECT {dim_expr} AS dimension,
+                   {period_expr} AS period,
+                   COUNT(*) AS records,
+                   COUNT(DISTINCT a.emp_code) AS employees,
+                   AVG(a.pre_test_score) AS avg_pre,
+                   AVG(a.post_test_score) AS avg_post,
+                   AVG(CASE WHEN a.pre_test_score IS NOT NULL AND a.post_test_score IS NOT NULL
+                            THEN a.post_test_score - a.pre_test_score END) AS avg_growth
+            {base}
+            {where_sql}
+            AND a.training_date IS NOT NULL AND TRIM(a.training_date) != ''
+            GROUP BY dimension, period
+            ORDER BY period, dimension
+        """, params).fetchall()
+        period_out = [{
+            "dimension": r['dimension'],
+            "period": r['period'],
+            "records": r['records'],
+            "employees": r['employees'],
+            "avg_pre": round(r['avg_pre'], 1) if r['avg_pre'] is not None else None,
+            "avg_post": round(r['avg_post'], 1) if r['avg_post'] is not None else None,
+            "avg_growth": round(r['avg_growth'], 1) if r['avg_growth'] is not None else None,
+        } for r in period_aggregates]
+
+        # 4) Module-wise trends across repeated exposures (attempt 1, 2, ...).
+        module_trends = conn.execute(f"""
+            SELECT module_id, title, exposure, ROUND(AVG(post_test_score), 1) AS avg_post, COUNT(*) AS attempts
+            FROM (
+                SELECT a.emp_code, a.module_id, m.title, a.post_test_score,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY a.emp_code, a.module_id
+                           ORDER BY a.training_date ASC, a.id ASC
+                       ) AS exposure
+                FROM assessment_results a
+                LEFT JOIN employees e ON a.emp_code = e.emp_code
+                LEFT JOIN modules m ON a.module_id = m.id
+                {where_sql}
+                AND a.post_test_score IS NOT NULL
+            )
+            WHERE exposure IS NOT NULL
+            GROUP BY module_id, title, exposure
+            ORDER BY module_id, exposure
+        """, params).fetchall()
+
+        # Filter dropdowns (scope-aware agent + module lists).
+        agents = conn.execute(f"""
+            SELECT e.emp_code, e.emp_name
+            FROM employees e
+            {("WHERE " + " AND ".join(scope_conds)) if scope_conds else ""}
+            ORDER BY e.emp_name ASC LIMIT 2000
+        """, scope_params).fetchall()
+        modules = conn.execute("SELECT id, title FROM modules ORDER BY title ASC").fetchall()
+
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "group_by": group_by,
+            "period": period,
+            "agent_history": agent_history,
+            "agent_growth": growth_out,
+            "period_aggregates": period_out,
+            "module_trends": [dict(r) for r in module_trends],
+            "agents": [{"emp_code": r['emp_code'], "emp_name": r['emp_name'] or r['emp_code']} for r in agents],
+            "modules": [{"id": r['id'], "title": r['title']} for r in modules],
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/analytics/export', methods=['GET'])
 def export_analytics():

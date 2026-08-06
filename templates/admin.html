@@ -4861,6 +4861,13 @@ const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trai
             const [trainersPerf, setTrainersPerf] = useState([]);
             const [loadingTrainers, setLoadingTrainers] = useState(false);
 
+            // Phase 10: Historical training & test tracking
+            const [historyData, setHistoryData] = useState(null);
+            const [histAgent, setHistAgent] = useState('');
+            const [histModule, setHistModule] = useState('');
+            const [histGroupBy, setHistGroupBy] = useState('branch_name');
+            const [histPeriod, setHistPeriod] = useState('month');
+
             const loadAnalytics = () => {
                 setLoading(true);
                 let url = '/api/analytics?';
@@ -4912,6 +4919,34 @@ if (selectedBranch) url += `branch=${encodeURIComponent(selectedBranch)}&`;
                     loadTrainerPerformance();
                 }
             }, [tab]);
+
+            // Historical training & test tracking (append-only records per training occurrence)
+            const loadHistory = () => {
+                let url = '/api/analytics/history?';
+                if (selectedZone) url += `zone=${encodeURIComponent(selectedZone)}&`;
+                if (selectedDiv) url += `division=${encodeURIComponent(selectedDiv)}&`;
+                if (selectedBranch) url += `branch=${encodeURIComponent(selectedBranch)}&`;
+                if (selectedBU) url += `business_unit=${encodeURIComponent(selectedBU)}&`;
+                if (selectedProduct) url += `product_name=${encodeURIComponent(selectedProduct)}&`;
+                if (startDate) url += `start_date=${encodeURIComponent(startDate)}&`;
+                if (endDate) url += `end_date=${encodeURIComponent(endDate)}&`;
+                if (histAgent) url += `emp_code=${encodeURIComponent(histAgent)}&`;
+                if (histModule) url += `module_id=${encodeURIComponent(histModule)}&`;
+                url += `group_by=${histGroupBy}&period=${histPeriod}`;
+                fetch(url)
+                    .then(res => res.json())
+                    .then(data => {
+                        setHistoryData(data);
+                    })
+                    .catch(err => {
+                        console.error("Failed to load training history:", err);
+                        setHistoryData(null);
+                    });
+            };
+
+            useEffect(() => {
+                loadHistory();
+            }, [selectedZone, selectedDiv, selectedBranch, selectedBU, selectedProduct, startDate, endDate, histAgent, histModule, histGroupBy, histPeriod]);
 
             const handlePushRefresherCampaign = (empCodes) => {
                 if (!empCodes || empCodes.length === 0) return;
@@ -5162,6 +5197,13 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
                                 Trainer Comparison Matrix
 
 </button>
+                            <button 
+                                onClick={() => setTab('history')} 
+                                className={`px-4 md:px-6 py-3 md:py-4 font-bold text-xs md:text-sm transition-all rounded-t-xl whitespace-nowrap ${tab==='history' ? 'text-socrates-primary bg-white border border-b-0 border-slate-200 shadow-sm' : 'text-slate-500 border border-transparent'}`}
+                            >
+                                <i className="fas fa-history text-emerald-500 mr-1.5 md:mr-2"></i> 
+                                History & Growth
+                            </button>
                         </div>
                         {(tab === 'executive' || tab === 'painpoints') && (
                             <div className="flex flex-wrap gap-2 mb-2">
@@ -6135,6 +6177,232 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                                                     {trainer.nps}% Saved Time
 
 </span>
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {tab === 'history' && (
+                            <div className="animate-fade-in space-y-6">
+                                <div className="flex flex-wrap justify-between items-end mb-2 gap-4">
+                                    <div>
+                                        <h3 className="font-extrabold text-base text-socrates-dark tracking-tight">Historical Training & Test Tracking</h3>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Append-only record of every training occurrence — a trainee's January and April trainings are both preserved, compared, and trended over time.</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-50 p-4 md:p-5 rounded-2xl border border-slate-200/80 space-y-3 shadow-sm">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                                        <select value={histAgent} onChange={e => setHistAgent(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                                            <option value="">All Agents</option>
+                                            {(historyData?.agents || []).map(a => (
+                                                <option key={a.emp_code} value={a.emp_code}>{a.emp_name} ({a.emp_code})</option>
+                                            ))}
+                                        </select>
+                                        <select value={histModule} onChange={e => setHistModule(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                                            <option value="">All Modules</option>
+                                            {(historyData?.modules || []).map(m => (
+                                                <option key={m.id} value={m.id}>{m.title}</option>
+                                            ))}
+                                        </select>
+                                        <select value={histGroupBy} onChange={e => setHistGroupBy(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                                            <option value="zone">Group by Zone</option>
+                                            <option value="division">Group by Division</option>
+                                            <option value="business_unit">Group by Business Unit</option>
+                                            <option value="branch_name">Group by Branch</option>
+                                            <option value="module">Group by Module</option>
+                                        </select>
+                                        <select value={histPeriod} onChange={e => setHistPeriod(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                                            <option value="month">Monthly Periods</option>
+                                            <option value="quarter">Quarterly Periods</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {/* Per-agent growth: first vs latest training */}
+                                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                                    <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                                        <div>
+                                            <h4 className="font-extrabold text-sm text-socrates-dark">Agent Growth (First vs Latest Training)</h4>
+                                            <p className="text-[10px] text-slate-400 mt-0.5">Latest post-test minus first post-test per trainee — shows improvement across repeated trainings.</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto w-full no-scrollbar">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                                                <tr>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Agent</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">First Training</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Latest Training</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">First Post-Test</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Latest Post-Test</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Growth (Δ)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {!historyData ? (
+                                                    <tr><td colSpan="6" className="px-5 py-10 text-center text-slate-400 font-medium"><i className="fas fa-spinner fa-spin text-xl text-slate-200 mr-2"></i>Loading historical records...</td></tr>
+                                                ) : (historyData.agent_growth || []).length === 0 ? (
+                                                    <tr><td colSpan="6" className="px-5 py-10 text-center text-slate-400 font-medium">No post-test records found for the selected filters.</td></tr>
+                                                ) : (
+                                                    historyData.agent_growth.map(g => (
+                                                        <tr key={g.emp_code} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="px-5 py-3.5 font-extrabold text-socrates-dark">{g.emp_name}</td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-600">{g.first_date || '—'}</td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-600">{g.latest_date || '—'}</td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-700">{g.first_post ?? '—'}</td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-700">{g.latest_post ?? '—'}</td>
+                                                            <td className="px-5 py-3.5 text-center">
+                                                                {g.delta == null ? <span className="text-slate-400">—</span> : (
+                                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black ${g.delta >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'}`}>
+                                                                        {g.delta >= 0 ? <i className="fas fa-arrow-up"></i> : <i className="fas fa-arrow-down"></i>} {g.delta > 0 ? '+' : ''}{g.delta}
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Agent full history timeline (when a specific agent is selected) */}
+                                {histAgent && (
+                                    <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                                        <div className="px-5 py-4 border-b border-slate-100">
+                                            <h4 className="font-extrabold text-sm text-socrates-dark">Training Timeline — {(historyData?.agents || []).find(a => a.emp_code === histAgent)?.emp_name || histAgent}</h4>
+                                            <p className="text-[10px] text-slate-400 mt-0.5">Every training occurrence is its own row; nothing is overwritten.</p>
+                                        </div>
+                                        <div className="overflow-x-auto w-full no-scrollbar">
+                                            <table className="w-full text-left text-xs border-collapse">
+                                                <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                                                    <tr>
+                                                        <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Date</th>
+                                                        <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Module</th>
+                                                        <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Session</th>
+                                                        <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Milestone</th>
+                                                        <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Pre</th>
+                                                        <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Post</th>
+                                                        <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Δ</th>
+                                                        <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Trainer</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {(historyData?.agent_history || []).length === 0 ? (
+                                                        <tr><td colSpan="8" className="px-5 py-10 text-center text-slate-400 font-medium">No records for this agent yet.</td></tr>
+                                                    ) : (
+                                                        historyData.agent_history.map(h => (
+                                                            <tr key={h.id} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="px-5 py-3.5 font-bold text-slate-700 whitespace-nowrap">{h.training_date || (h.completed_at ? h.completed_at.slice(0, 10) : '—')}</td>
+                                                                <td className="px-5 py-3.5 font-extrabold text-socrates-dark">{h.module_title || h.module_id}</td>
+                                                                <td className="px-5 py-3.5 font-mono text-[10px] text-slate-500">{h.session_id}</td>
+                                                                <td className="px-5 py-3.5">
+                                                                    <span className="inline-block px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[9px] font-black uppercase tracking-wider">{h.assignment_day}</span>
+                                                                </td>
+                                                                <td className="px-5 py-3.5 text-center font-bold text-slate-600">{h.pre_test_score ?? '—'}</td>
+                                                                <td className="px-5 py-3.5 text-center font-bold text-slate-600">{h.post_test_score ?? '—'}</td>
+                                                                <td className="px-5 py-3.5 text-center">
+                                                                    {h.score_delta == null ? <span className="text-slate-300">—</span> : (
+                                                                        <span className={`font-black ${h.score_delta >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>{h.score_delta >= 0 ? '+' : ''}{h.score_delta}</span>
+                                                                    )}
+                                                                </td>
+                                                                <td className="px-5 py-3.5 text-slate-500">{h.trainer_name || h.trainer_id || '—'}</td>
+                                                            </tr>
+                                                        ))
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Period aggregation */}
+                                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                                    <div className="px-5 py-4 border-b border-slate-100">
+                                        <h4 className="font-extrabold text-sm text-socrates-dark">Period Aggregates ({histPeriod === 'quarter' ? 'Quarterly' : 'Monthly'})</h4>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Average pre/post scores and growth per period, grouped by {histGroupBy.replace('_', ' ')}.</p>
+                                    </div>
+                                    <div className="overflow-x-auto w-full no-scrollbar">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                                                <tr>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Period</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Dimension</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Records</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Employees</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg Pre</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg Post</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg Growth</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {(historyData?.period_aggregates || []).length === 0 ? (
+                                                    <tr><td colSpan="7" className="px-5 py-10 text-center text-slate-400 font-medium">No period records found. Data appears once trainings are recorded with dates.</td></tr>
+                                                ) : (
+                                                    historyData.period_aggregates.map((p, i) => (
+                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="px-5 py-3.5 font-extrabold text-socrates-dark whitespace-nowrap">{p.period}</td>
+                                                            <td className="px-5 py-3.5 font-bold text-slate-700">{p.dimension || '—'}</td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-500">{p.records}</td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-500">{p.employees}</td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-600">{p.avg_pre ?? '—'}</td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-600">{p.avg_post ?? '—'}</td>
+                                                            <td className="px-5 py-3.5 text-center">
+                                                                {p.avg_growth == null ? <span className="text-slate-300">—</span> : (
+                                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black ${p.avg_growth >= 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-500'}`}>
+                                                                        {p.avg_growth >= 0 ? '+' : ''}{p.avg_growth}
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Module-wise trends across repeated exposures */}
+                                <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">
+                                    <div className="px-5 py-4 border-b border-slate-100">
+                                        <h4 className="font-extrabold text-sm text-socrates-dark">Module-Wise Improvement Across Repeat Trainings</h4>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Average post-test score by exposure number — proves whether agents improve when a module is revisited.</p>
+                                    </div>
+                                    <div className="overflow-x-auto w-full no-scrollbar">
+                                        <table className="w-full text-left text-xs border-collapse">
+                                            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                                                <tr>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px]">Module</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Exposure</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Attempts</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Avg Post-Test</th>
+                                                    <th className="px-5 py-3.5 font-bold uppercase tracking-wider text-[9px] text-center">Trend</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {(historyData?.module_trends || []).length === 0 ? (
+                                                    <tr><td colSpan="5" className="px-5 py-10 text-center text-slate-400 font-medium">No repeat-training data yet — appears once trainees take the same module more than once.</td></tr>
+                                                ) : (
+                                                    historyData.module_trends.map((mt, i) => (
+                                                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="px-5 py-3.5 font-extrabold text-socrates-dark">{mt.title || mt.module_id}</td>
+                                                            <td className="px-5 py-3.5 text-center">
+                                                                <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-[10px] font-black ${mt.exposure === 1 ? 'bg-slate-100 text-slate-500' : 'bg-amber-50 text-amber-600'}`}>{mt.exposure}</span>
+                                                            </td>
+                                                            <td className="px-5 py-3.5 text-center font-bold text-slate-500">{mt.attempts}</td>
+                                                            <td className="px-5 py-3.5 text-center font-extrabold text-slate-700">{mt.avg_post ?? '—'}</td>
+                                                            <td className="px-5 py-3.5 text-center">
+                                                                <div className="flex items-end justify-center gap-1 h-8">
+                                                                    {(historyData.module_trends || []).filter(t => t.module_id === mt.module_id).map((t, j) => (
+                                                                        <div key={j} title={`Exposure ${t.exposure}: ${t.avg_post}%`} className="w-3 rounded-t bg-blue-400" style={{height: `${Math.max(6, (t.avg_post || 0) * 0.3)}px`}}></div>
+                                                                    ))}
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     ))
