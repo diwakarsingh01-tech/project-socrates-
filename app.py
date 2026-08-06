@@ -4099,7 +4099,7 @@ def analytics_session(pin):
         reg_title = reg_mod_obj.get('title')
 
         qrows = conn.execute("""
-            SELECT qa.question_idx, qa.question_id,
+            SELECT qa.question_idx, qa.question_id, qa.module_id,
                    COALESCE(SUM(CASE WHEN qa.status='answered' AND qa.is_correct=1 THEN 1 ELSE 0 END),0) AS correct,
                    COALESCE(SUM(CASE WHEN qa.status='answered' AND qa.is_correct=0 THEN 1 ELSE 0 END),0) AS wrong,
                    COALESCE(SUM(CASE WHEN qa.status='skipped' THEN 1 ELSE 0 END),0) AS skipped,
@@ -4121,6 +4121,37 @@ def analytics_session(pin):
             ).fetchall()
             qmap = {r['id']: r for r in qtexts}
 
+        # Positional fallback: attempts often record question_id=None (live module
+        # broadcasts may not carry DB ids). Map module_id -> ordered questions so
+        # question_idx resolves to the exact row even after a server restart wiped
+        # the in-memory registry. Best-effort (position order = save order).
+        mod_ids = sorted({r['module_id'] for r in qrows if r['module_id'] is not None})
+        mod_qmap = {}
+        for mid in mod_ids:
+            try:
+                mod_qmap[mid] = conn.execute(
+                    "SELECT id, question_text, option_a, option_b, option_c, option_d, correct_index "
+                    "FROM questions WHERE module_id=? ORDER BY id", (mid,)
+                ).fetchall()
+            except Exception:
+                mod_qmap[mid] = []
+
+        def _registry_question(reg_q):
+            """Extract (text, options, correct_index) from EITHER live-module shape
+            ({question_text, option_a..d}) or normalized shape ({question, options[]})."""
+            if not isinstance(reg_q, dict):
+                return None
+            text = reg_q.get('question_text') or reg_q.get('question') or ''
+            opts = reg_q.get('options') if isinstance(reg_q.get('options'), list) and len(reg_q.get('options')) >= 2 else None
+            if not opts:
+                opts = [reg_q.get('option_a'), reg_q.get('option_b'), reg_q.get('option_c'), reg_q.get('option_d')]
+                if not any(opts):
+                    opts = None
+            ci = reg_q.get('correct_index')
+            if ci is None:
+                ci = reg_q.get('correctIndex')
+            return (text, opts, ci)
+
         wrong_rows = conn.execute("""
             SELECT question_idx, given_answer, COUNT(*) AS cnt
             FROM question_attempts
@@ -4136,18 +4167,30 @@ def analytics_session(pin):
         reg_qs = reg_mod_obj.get('questions') or []
         for r in qrows:
             qtext = qmap.get(r['question_id'])
+            # Positional module lookup when the attempt has no question_id.
+            if qtext is None:
+                mqs = mod_qmap.get(r['module_id']) or []
+                if r['question_idx'] < len(mqs):
+                    qtext = mqs[r['question_idx']]
             reg_q = None
             if isinstance(reg_qs, list) and r['question_idx'] < len(reg_qs):
                 reg_q = reg_qs[r['question_idx']] or {}
-            # Prefer the questions-table text, then the live registry (which holds
-            # the full module object the trainer broadcast), then a label.
-            q_text = (qtext['question_text'] if qtext else None) or (reg_q.get('question_text') if isinstance(reg_q, dict) else None) or f"Question {r['question_idx'] + 1}"
-            q_opts = ([qtext[k] for k in ('option_a', 'option_b', 'option_c', 'option_d')] if qtext else None) or \
-                     ([reg_q.get('option_a'), reg_q.get('option_b'), reg_q.get('option_c'), reg_q.get('option_d')] if isinstance(reg_q, dict) else []) or []
+            rq = _registry_question(reg_q)
+            # Resolution order: exact id -> positional module row -> live registry.
+            q_text = (qtext['question_text'] if qtext else None)
+            if not q_text and rq:
+                q_text = rq[0]
+            if not q_text:
+                q_text = f"Question {r['question_idx'] + 1}"
+            q_opts = ([qtext[k] for k in ('option_a', 'option_b', 'option_c', 'option_d')] if qtext else None)
+            if not q_opts and rq and rq[1]:
+                q_opts = rq[1]
+            if not q_opts:
+                q_opts = []
             if qtext is not None:
                 q_correct = qtext['correct_index']
-            elif isinstance(reg_q, dict):
-                q_correct = reg_q.get('correct_index')
+            elif rq:
+                q_correct = rq[2]
             else:
                 q_correct = None
             total = r['correct'] + r['wrong'] + r['skipped'] + r['late']
@@ -4161,7 +4204,7 @@ def analytics_session(pin):
                 'correct': r['correct'], 'wrong': r['wrong'],
                 'skipped': r['skipped'], 'late': r['late'],
                 'attempted': attempted, 'total_attempts': total,
-                'percent_correct': round(attempted / total * 100, 1) if total else 0,
+                'percent_correct': round(r['correct'] / total * 100, 1) if total else 0,
                 'top_wrong_options': [{'index': o, 'count': c} for o, c in wrong_opts],
             })
 
@@ -4765,9 +4808,13 @@ def on_trainer_broadcast(data):
             if mod_id and trainer_id:
                 conn = sqlite3.connect(DB_FILE)
                 conn.execute(
-                    "INSERT INTO training_sessions (session_id, date, trainer_id, module_id) VALUES (?, ?, ?, ?) "
-                    "ON CONFLICT(session_id) DO UPDATE SET module_id=excluded.module_id",
-                    (pin, datetime.datetime.now().strftime("%Y-%m-%d"), trainer_id, mod_id)
+                    "INSERT INTO training_sessions (session_id, date, trainer_id, module_id, started_at) "
+                    "VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(session_id) DO UPDATE SET "
+                    "module_id=excluded.module_id, "
+                    "started_at=COALESCE(training_sessions.started_at, excluded.started_at)",
+                    (pin, datetime.datetime.now().strftime("%Y-%m-%d"), trainer_id, mod_id,
+                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
                 )
                 conn.commit()
                 conn.close()
@@ -4871,6 +4918,20 @@ def on_submit_vote(data):
         qs = mod.get('questions') if isinstance(mod, dict) else None
         if isinstance(qs, list) and q_idx < len(qs):
             question_id = (qs[q_idx] or {}).get('id')
+        # Fallback: live module broadcasts may carry question dicts without DB ids
+        # (imported/AI modules). Resolve positionally from the questions table so
+        # the analytics drill-down can always join back to text/options/answer.
+        if question_id is None:
+            try:
+                rconn = sqlite3.connect(DB_FILE)
+                mrow = rconn.execute(
+                    "SELECT id FROM questions WHERE module_id=? ORDER BY id LIMIT 1 OFFSET ?",
+                    (reg.get('module_id'), q_idx)
+                ).fetchone()
+                question_id = mrow['id'] if mrow else None
+                rconn.close()
+            except Exception:
+                question_id = None
 
     _record_attempt(pin, emp_id, reg, q_idx, answer_idx, is_correct, marks_obtained, status, question_id)
 
