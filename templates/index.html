@@ -307,7 +307,18 @@
                 // drop, slow device, page refresh) snaps back instead of staying
                 // stuck on an old question index.
                 socket.on('session_sync', (data) => {
-                    if (data.view) setView(data.view);
+                    if (data.view) {
+                        setView(data.view);
+                    } else if (viewRef.current === 'pretest' || viewRef.current === 'posttest') {
+                        // Server reports no active phase (session was reset or
+                        // the service restarted): never leave a student on a
+                        // stale quiz. Park them on the dashboard.
+                        setView('dashboard');
+                        setActiveQuestion(''); setActiveQIdx(-1); setActiveOptions([]);
+                        setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0);
+                        setTotalQuestions(0); setHasSubmittedCurrent(false);
+                        setModuleTotalQs(0); setSecurityLock(false);
+                    }
                     if (data.question_idx !== undefined && data.question_idx !== qIdxRef.current) {
                         setActiveQIdx(data.question_idx);
                         setHasSubmittedCurrent(false);
@@ -328,7 +339,22 @@
                 });
 
                 socket.on('session_info', (data) => {
-                    if (data.view) setView(data.view);
+                    if (data.view) {
+                        setView(data.view);
+                    } else if (viewRef.current === 'pretest' || viewRef.current === 'posttest') {
+                        // Server reports NO active phase (fresh session — trainer
+                        // has not clicked Pre-Test/Post-Test yet). Park the
+                        // student on the dashboard instead of a stale quiz, so a
+                        // QR scan can never show questions before the trainer
+                        // actually starts the test.
+                        setView('dashboard');
+                        setActiveQuestion(''); setActiveQIdx(-1); setActiveOptions([]);
+                        setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0);
+                        setTotalQuestions(0); setHasSubmittedCurrent(false);
+                        setModuleTotalQs(0); setSecurityLock(false);
+                        localStorage.removeItem('socrates_activeQuestion');
+                        localStorage.removeItem('socrates_activeQIdx');
+                    }
                     if (data.module_id) setActiveModuleId(data.module_id);
                     if (data.module_title) setActiveModuleTitle(data.module_title);
                     if (data.assignment_day) setActiveAssignmentDay(data.assignment_day);

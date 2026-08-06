@@ -4074,6 +4074,139 @@ def analytics_live_scoring():
         "students": students
     })
 
+@app.route('/api/analytics/session/<pin>', methods=['GET'])
+def analytics_session(pin):
+    """Post-exam / live session drill-down for the trainer: per-question
+    correctness, most-common wrong option, and per-student rows. Built from
+    question_attempts (1-mark per question), so the trainer can see exactly
+    where the batch is struggling — the pre/post test analysis the trainer
+    needs at a glance."""
+    conn = get_db_connection()
+    try:
+        ts = conn.execute("""
+            SELECT ts.session_id, ts.trainer_id, ts.started_at,
+                   m.id AS module_id, m.title AS module_title, m.pass_percentage,
+                   m.questions_count
+            FROM training_sessions ts LEFT JOIN modules m ON ts.module_id = m.id
+            WHERE ts.session_id=?
+        """, (pin,)).fetchone()
+
+        # Live registry fallback: a session that has run but never persisted a
+        # training_sessions row (e.g. trainer session cookie missing on a raw
+        # socket) must still produce a useful analysis.
+        reg_mod = SESSION_REGISTRY.get(pin, {}).get('active_module') or {}
+        reg_mod_obj = reg_mod if isinstance(reg_mod, dict) else {}
+        reg_title = reg_mod_obj.get('title')
+
+        qrows = conn.execute("""
+            SELECT qa.question_idx, qa.question_id,
+                   COALESCE(SUM(CASE WHEN qa.status='answered' AND qa.is_correct=1 THEN 1 ELSE 0 END),0) AS correct,
+                   COALESCE(SUM(CASE WHEN qa.status='answered' AND qa.is_correct=0 THEN 1 ELSE 0 END),0) AS wrong,
+                   COALESCE(SUM(CASE WHEN qa.status='skipped' THEN 1 ELSE 0 END),0) AS skipped,
+                   COALESCE(SUM(CASE WHEN qa.status='late' THEN 1 ELSE 0 END),0) AS late,
+                   COUNT(DISTINCT qa.emp_code) AS students
+            FROM question_attempts qa
+            WHERE qa.session_id=?
+            GROUP BY qa.question_idx, qa.question_id
+            ORDER BY qa.question_idx
+        """, (pin,)).fetchall()
+
+        qids = [r['question_id'] for r in qrows if r['question_id']]
+        qmap = {}
+        if qids:
+            placeholders = ','.join('?' * len(qids))
+            qtexts = conn.execute(
+                f"SELECT id, question_text, option_a, option_b, option_c, option_d, correct_index "
+                f"FROM questions WHERE id IN ({placeholders})", qids
+            ).fetchall()
+            qmap = {r['id']: r for r in qtexts}
+
+        wrong_rows = conn.execute("""
+            SELECT question_idx, given_answer, COUNT(*) AS cnt
+            FROM question_attempts
+            WHERE session_id=? AND status='answered' AND is_correct=0
+              AND given_answer IS NOT NULL AND given_answer >= 0
+            GROUP BY question_idx, given_answer
+        """, (pin,)).fetchall()
+        wrong_map = {}
+        for r in wrong_rows:
+            wrong_map.setdefault(r['question_idx'], []).append((r['given_answer'], r['cnt']))
+
+        questions = []
+        reg_qs = reg_mod_obj.get('questions') or []
+        for r in qrows:
+            qtext = qmap.get(r['question_id'])
+            reg_q = None
+            if isinstance(reg_qs, list) and r['question_idx'] < len(reg_qs):
+                reg_q = reg_qs[r['question_idx']] or {}
+            # Prefer the questions-table text, then the live registry (which holds
+            # the full module object the trainer broadcast), then a label.
+            q_text = (qtext['question_text'] if qtext else None) or (reg_q.get('question_text') if isinstance(reg_q, dict) else None) or f"Question {r['question_idx'] + 1}"
+            q_opts = ([qtext[k] for k in ('option_a', 'option_b', 'option_c', 'option_d')] if qtext else None) or \
+                     ([reg_q.get('option_a'), reg_q.get('option_b'), reg_q.get('option_c'), reg_q.get('option_d')] if isinstance(reg_q, dict) else []) or []
+            if qtext is not None:
+                q_correct = qtext['correct_index']
+            elif isinstance(reg_q, dict):
+                q_correct = reg_q.get('correct_index')
+            else:
+                q_correct = None
+            total = r['correct'] + r['wrong'] + r['skipped'] + r['late']
+            attempted = r['correct'] + r['wrong']
+            wrong_opts = sorted(wrong_map.get(r['question_idx'], []), key=lambda x: -x[1])
+            questions.append({
+                'question_idx': r['question_idx'],
+                'question_text': q_text,
+                'options': q_opts,
+                'correct_index': q_correct,
+                'correct': r['correct'], 'wrong': r['wrong'],
+                'skipped': r['skipped'], 'late': r['late'],
+                'attempted': attempted, 'total_attempts': total,
+                'percent_correct': round(attempted / total * 100, 1) if total else 0,
+                'top_wrong_options': [{'index': o, 'count': c} for o, c in wrong_opts],
+            })
+
+        srows = conn.execute("""
+            SELECT qa.emp_code, e.emp_name, e.branch_name,
+                   SUM(qa.marks_obtained) AS marks,
+                   COUNT(*) AS attempts,
+                   COALESCE(SUM(CASE WHEN qa.status='answered' AND qa.is_correct=1 THEN 1 ELSE 0 END),0) AS correct,
+                   COALESCE(SUM(CASE WHEN qa.status='answered' AND qa.is_correct=0 THEN 1 ELSE 0 END),0) AS wrong,
+                   COALESCE(SUM(CASE WHEN qa.status='skipped' THEN 1 ELSE 0 END),0) AS skipped,
+                   COALESCE(SUM(CASE WHEN qa.status='late' THEN 1 ELSE 0 END),0) AS late
+            FROM question_attempts qa LEFT JOIN employees e ON qa.emp_code=e.emp_code
+            WHERE qa.session_id=?
+            GROUP BY qa.emp_code
+            ORDER BY marks DESC
+        """, (pin,)).fetchall()
+
+        n_q = len(questions)
+        students = [{
+            'emp_code': r['emp_code'], 'emp_name': r['emp_name'] or r['emp_code'],
+            'branch_name': r['branch_name'] or '', 'marks': r['marks'] or 0,
+            'attempts': r['attempts'], 'correct': r['correct'], 'wrong': r['wrong'],
+            'skipped': r['skipped'], 'late': r['late'],
+            'total_questions': n_q,
+            'percentage': round((r['marks'] or 0) / n_q * 100, 1) if n_q else 0,
+        } for r in srows]
+
+        return jsonify({
+            'status': 'success',
+            'session_id': pin,
+            'module_title': (ts['module_title'] if ts else None) or reg_title,
+            'module_id': (ts['module_id'] if ts else None) or reg_mod_obj.get('id'),
+            'trainer_id': ts['trainer_id'] if ts else None,
+            'started_at': ts['started_at'] if ts else None,
+            'pass_percentage': (ts['pass_percentage'] if ts else None) or reg_mod_obj.get('pass_percentage'),
+            'questions_count': (ts['questions_count'] if ts else None) or (len(reg_qs) if reg_qs else None),
+            'questions': questions,
+            'students': students,
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        conn.close()
+
 @app.route('/api/trainers/performance', methods=['GET'])
 def trainers_performance():
     """Trainer Productivity & Quality comparison matrix.
@@ -4429,7 +4562,31 @@ def on_join_session(data):
     join_room(pin)
     print(f"Employee {emp_id} connected to session PIN: {pin}")
     reg = _session_state(pin)
-    
+
+    # FRESH-START RESET: a brand-new module launch from the Library sends
+    # reset=true (admin generates a fresh PIN). Wipe ALL live state so a student
+    # scanning the QR / opening the join link for this PIN can NEVER see the
+    # previous session's questions or phase before the trainer clicks
+    # Pre-Test / Post-Test. PIN reuse + stale SESSION_REGISTRY was the root cause
+    # of "student got questions before the trainer clicked".
+    if emp_id == 'TRAINER' and data.get('reset'):
+        SESSION_REGISTRY[pin] = {
+            "push_time": 0.0,
+            "correct_index": -1,
+            "leaderboard": {},
+            "view": None,
+            "question_idx": 0,
+            "active_module": None,
+            "module_id": None,
+            "assignment_day": None,
+            "test_started_at": 0.0,
+            "question_started_at": 0.0,
+            "test_duration_sec": 1200,
+            "question_timeout_sec": 60,
+            "total_questions": 0,
+        }
+        reg = SESSION_REGISTRY[pin]
+
     # Persist a live session row when the trainer opens the room (feeds Analytics Hub).
     # Bind the module_id at JOIN time — waiting for the first question broadcast
     # left sessions showing "no module" when the trainer never pushed a question.
