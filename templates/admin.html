@@ -7483,7 +7483,6 @@ const [connectedTrainees, setConnectedTrainees] = useState([]);
             const [assignmentDay, setAssignmentDay] = useState('zero day');
             const [activeModule, setActiveModule] = useState(null);
             const [activeQIdx, setActiveQIdx] = useState(0);
-            const [selectedLanguageOverride, setSelectedLanguageOverride] = useState('en');
 
             // Ref mirror of activeModule so reconnects can re-bind the module id
             // even when the state update from localStorage hasn't landed yet.
@@ -7533,7 +7532,6 @@ const [connectedTrainees, setConnectedTrainees] = useState([]);
                     if (data.active_module) setActiveModule(data.active_module);
                     if (data.current_view) setStage(data.current_view);
                     if (data.current_question_idx !== undefined) setActiveQIdx(data.current_question_idx);
-                    if (data.language_override) setSelectedLanguageOverride(data.language_override);
                     if (data.connected_trainees) setConnectedTrainees(data.connected_trainees);
                     if (data.question_remaining_sec !== undefined) {
                         setTimerState(prev => ({ ...prev, question_remaining_sec: data.question_remaining_sec, test_remaining_sec: data.test_remaining_sec ?? prev.test_remaining_sec, question_timeout_sec: data.question_timeout_sec ?? prev.question_timeout_sec, test_duration_sec: data.test_duration_sec ?? prev.test_duration_sec, timed_phase: data.current_view }));
@@ -7625,11 +7623,6 @@ const [connectedTrainees, setConnectedTrainees] = useState([]);
                 }
             }, [sessionId]);
 
-            const broadcastLanguageOverride = (lang) => {
-                setSelectedLanguageOverride(lang);
-                socket.emit('trainer_broadcast', { pin: sessionId, forceLanguage: lang });
-            };
-
             const getActiveQuestionData = () => {
                 if (activeModule?.questions?.length > 0) {
                     const q = activeModule.questions[activeQIdx];
@@ -7694,9 +7687,9 @@ return {
                     options: qData.options.map(cleanOptionText),
                     correctIndex: qData.correctIndex,
                     translations: qData.translations,
-                    forceLanguage: selectedLanguageOverride,
                     activeModule: activeModule,
                     module_id: activeModule.id,
+                    module_title: activeModule.title,
                     question_idx: qIdx,
                     totalQs: qData.totalQs
                 });
@@ -7717,9 +7710,9 @@ return {
                     options: [q.option_a, q.option_b, q.option_c, q.option_d].map(cleanOptionText),
                     correctIndex: q.correct_index,
                     translations: q.translations,
-                    forceLanguage: selectedLanguageOverride,
                     activeModule: activeModule,
                     module_id: activeModule.id,
+                    module_title: activeModule.title,
                     question_idx: newIdx,
                     totalQs: activeModule.questions.length
                 });
@@ -8026,15 +8019,6 @@ return {
                                         ))}
                                         <button onClick={triggerFinalPodium} className="w-full mt-4 p-4 bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-amber-200 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"><i className="fas fa-crown"></i> Launch Podium</button>
                                         <button onClick={triggerShowResults} className="w-full mt-2 p-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-200 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"><i className="fas fa-flag-checkered"></i> Show Results</button>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><i className="fas fa-language text-purple-600"></i> Broadcast Language</h4>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {['en', 'hindi', 'hinglish', 'marathi', 'telugu', 'tamil'].map(l => (
-                                            <button key={l} onClick={() => broadcastLanguageOverride(l)} className={`py-2 px-3 rounded-xl border text-[10px] font-bold transition-all ${selectedLanguageOverride === l ? 'bg-slate-900 text-white border-slate-900 shadow-lg' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>{l.toUpperCase()}</button>
-                                        ))}
                                     </div>
                                 </div>
 

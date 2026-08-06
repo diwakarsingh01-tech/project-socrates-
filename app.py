@@ -4204,7 +4204,6 @@ def _session_state(pin):
             "leaderboard": {},
             "view": None,
             "question_idx": 0,
-            "language_override": "en",
             "active_module": None,
             "module_id": None,
             "assignment_day": None,
@@ -4309,11 +4308,32 @@ def on_join_session(data):
                 conn.commit()
                 conn.close()
             if mod_id:
+                # STALE-MODULE GUARD: the trainer picking a DIFFERENT module on
+                # this PIN starts a brand-new assessment. Reset every piece of
+                # live state so students joining (or a trainer refresh) never get
+                # the previous module's questions, view, or leaderboard — the root
+                # cause of "TW module selected but Gold Loan questions shown".
+                # Reconnect/refresh sends module_id=null (localStorage was already
+                # consumed), so a legit resume keeps its state untouched.
+                if reg.get('module_id') is not None and reg['module_id'] != mod_id:
+                    for k in ('active_module', 'view', 'question', 'options',
+                              'correct_index', 'assignment_day',
+                              'timed_phase', 'votes', 'translations',
+                              'active_translations'):
+                        reg.pop(k, None)
+                    reg['leaderboard'] = {}
+                    reg['question_idx'] = 0
+                    reg['total_questions'] = 0
+                    reg['test_started_at'] = 0.0
+                    reg['question_started_at'] = 0.0
+                    reg['test_duration_sec'] = 1200
+                    reg['question_timeout_sec'] = 60
+                    reg['push_time'] = 0.0
                 reg['module_id'] = mod_id
                 # Only backfill a partial module object if the registry has none —
                 # a full active_module from a question broadcast always wins.
                 if not reg.get('active_module'):
-                    conn = sqlite3.connect(DB_FILE)
+                    conn = get_db_connection()
                     trow = conn.execute("SELECT title FROM modules WHERE id=?", (mod_id,)).fetchone()
                     conn.close()
                     if trow and trow['title']:
@@ -4381,8 +4401,6 @@ def on_trainer_broadcast(data):
     new_idx = data.get('question_idx')
     if new_idx is not None:
         reg['question_idx'] = new_idx
-    if data.get('forceLanguage'):
-        reg['language_override'] = data.get('forceLanguage')
     if data.get('assignment_day'):
         reg['assignment_day'] = data.get('assignment_day')
     if data.get('activeModule'):
@@ -4606,7 +4624,6 @@ def on_get_session_state(data):
         'active_module': mod if isinstance(mod, dict) else None,
         'current_view': reg.get('view'),
         'current_question_idx': reg.get('question_idx', 0),
-        'language_override': reg.get('language_override', 'en'),
         'assignment_day': reg.get('assignment_day'),
         'question_remaining_sec': max(0, int(q_timeout - (now - reg.get('question_started_at', 0.0)))) if reg.get('question_started_at') else q_timeout,
         'test_remaining_sec': max(0, int(t_dur - (now - reg.get('test_started_at', 0.0)))) if reg.get('test_started_at') else t_dur,
@@ -4646,7 +4663,6 @@ def on_request_sync(data):
         'test_remaining_sec': max(0, int(t_dur - (now - reg.get('test_started_at', 0.0)))) if reg.get('test_started_at') else t_dur,
         'question_timeout_sec': q_timeout,
         'test_duration_sec': t_dur,
-        'forceLanguage': reg.get('language_override', 'en')
     }
     if isinstance(mod, dict):
         qs = mod.get('questions') or []

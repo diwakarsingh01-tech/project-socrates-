@@ -214,6 +214,7 @@
                 const saved = localStorage.getItem('socrates_activeModuleId');
                 return saved !== null ? parseInt(saved) : 1;
             });
+            const [activeModuleTitle, setActiveModuleTitle] = useState(() => localStorage.getItem('socrates_activeModuleTitle') || '');
             const [securityLock, setSecurityLock] = useState(false);
             const [certificateId, setCertificateId] = useState(() => localStorage.getItem('socrates_certificate_id') || '');
             const [passedStatus, setPassedStatus] = useState(() => {
@@ -226,7 +227,6 @@
                 const saved = localStorage.getItem('socrates_activeTranslations');
                 return saved ? JSON.parse(saved) : {};
             });
-            const [activeLanguage, setActiveLanguage] = useState('en');
             const [hasSubmittedCurrent, setHasSubmittedCurrent] = useState(() => localStorage.getItem('socrates_hasSubmittedCurrent') === 'true');
 
             const [correctCount, setCorrectCount] = useState(() => parseInt(localStorage.getItem('socrates_correctCount') || '0'));
@@ -293,10 +293,10 @@
 
                     if (data.options) setActiveOptions(data.options);
                     if (data.module_id) setActiveModuleId(data.module_id);
+                    if (data.module_title) setActiveModuleTitle(data.module_title);
                     if (data.totalQs) setModuleTotalQs(data.totalQs);
                     if (data.assignment_day) setActiveAssignmentDay(data.assignment_day);
                     if (data.translations) setActiveTranslations(data.translations); else if (data.question) setActiveTranslations({});
-                    if (data.forceLanguage) setActiveLanguage(data.forceLanguage);
                     if (data.question_remaining_sec !== undefined) {
                         setTimerData({ question_remaining_sec: data.question_remaining_sec, test_remaining_sec: data.test_remaining_sec ?? data.test_duration_sec ?? 1200, question_timeout_sec: data.question_timeout_sec ?? 60, test_duration_sec: data.test_duration_sec ?? 1200 });
                     }
@@ -319,9 +319,9 @@
                     }
                     if (data.options) setActiveOptions(data.options);
                     if (data.module_id) setActiveModuleId(data.module_id);
+                    if (data.module_title) setActiveModuleTitle(data.module_title);
                     if (data.assignment_day) setActiveAssignmentDay(data.assignment_day);
                     if (data.total_questions) setModuleTotalQs(data.total_questions);
-                    if (data.forceLanguage) setActiveLanguage(data.forceLanguage);
                     if (data.question_remaining_sec !== undefined) {
                         setTimerData({ question_remaining_sec: data.question_remaining_sec, test_remaining_sec: data.test_remaining_sec ?? data.test_duration_sec ?? 1200, question_timeout_sec: data.question_timeout_sec ?? 60, test_duration_sec: data.test_duration_sec ?? 1200 });
                     }
@@ -330,6 +330,7 @@
                 socket.on('session_info', (data) => {
                     if (data.view) setView(data.view);
                     if (data.module_id) setActiveModuleId(data.module_id);
+                    if (data.module_title) setActiveModuleTitle(data.module_title);
                     if (data.assignment_day) setActiveAssignmentDay(data.assignment_day);
                     if (data.total_questions) setModuleTotalQs(data.total_questions);
                     if (data.question_remaining_sec !== undefined) {
@@ -394,6 +395,7 @@
                 localStorage.setItem('socrates_activeQIdx', activeQIdx.toString());
                 localStorage.setItem('socrates_activeOptions', JSON.stringify(activeOptions));
                 localStorage.setItem('socrates_activeModuleId', activeModuleId);
+                localStorage.setItem('socrates_activeModuleTitle', activeModuleTitle || '');
                 localStorage.setItem('socrates_activeAssignmentDay', activeAssignmentDay || '');
                 localStorage.setItem('socrates_activeTranslations', JSON.stringify(activeTranslations));
                 localStorage.setItem('socrates_correctCount', correctCount);
@@ -403,19 +405,18 @@
                 localStorage.setItem('socrates_hasSubmittedCurrent', hasSubmittedCurrent.toString());
                 localStorage.setItem('socrates_certificate_id', certificateId || '');
                 localStorage.setItem('socrates_passed_status', passedStatus === null ? '' : passedStatus.toString());
-            }, [view, empId, empDetails, pin, activeQuestion, activeQIdx, activeOptions, activeModuleId, activeAssignmentDay, activeTranslations, correctCount, wrongCount, unattemptedCount, totalQuestions, hasSubmittedCurrent, certificateId, passedStatus]);
+            }, [view, empId, empDetails, pin, activeQuestion, activeQIdx, activeOptions, activeModuleId, activeModuleTitle, activeAssignmentDay, activeTranslations, correctCount, wrongCount, unattemptedCount, totalQuestions, hasSubmittedCurrent, certificateId, passedStatus]);
 
             const renderContent = () => {
                 switch(view) {
-                    case 'dashboard': return <Dashboard empDetails={empDetails} assignmentDay={activeAssignmentDay} />;
+                    case 'dashboard': return <Dashboard empDetails={empDetails} assignmentDay={activeAssignmentDay} moduleTitle={activeModuleTitle} />;
                     case 'pretest': 
                     case 'posttest': 
                         return (
                             <Quiz 
                                 type={view === 'pretest' ? "Pre-Test" : "Post-Test"}
                                 empId={empId} pin={pin} question={activeQuestion} options={activeOptions} moduleId={activeModuleId}
-                                assignmentDay={activeAssignmentDay} translations={activeTranslations} activeLanguage={activeLanguage}
-                                setActiveLanguage={setActiveLanguage} counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
+                                assignmentDay={activeAssignmentDay} translations={activeTranslations} counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
                                 locked={securityLock} onSecurityLock={() => setSecurityLock(true)} totalQs={moduleTotalQs} qIdx={activeQIdx}
                                 questionRemaining={timerData.question_remaining_sec} testRemaining={timerData.test_remaining_sec}
                                 onResultUpdate={(certId, passed) => {
@@ -451,7 +452,8 @@
                 localStorage.clear();
                 setView('login'); setEmpId(''); setEmpDetails(null); setPin('');
                 setActiveQuestion(''); setActiveQIdx(-1); setActiveOptions([]); setActiveModuleId(1);
-                setActiveAssignmentDay('zero day'); setActiveTranslations({}); setActiveLanguage('en');
+                setActiveModuleTitle('');
+                setActiveAssignmentDay('zero day'); setActiveTranslations({});
                 setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0); setTotalQuestions(0);
                 setHasSubmittedCurrent(false); setCertificateId(''); setPassedStatus(null); setSecurityLock(false);
                 setModuleTotalQs(0);
@@ -591,7 +593,7 @@
             );
         };
 
-        const Dashboard = ({ empDetails, assignmentDay }) => (
+        const Dashboard = ({ empDetails, assignmentDay, moduleTitle }) => (
             <div className="animate-fade-in flex flex-col gap-6 mt-2">
                 <div className="text-center md:text-left bg-white/5 backdrop-blur-xl p-6 sm:p-8 rounded-3xl sm:rounded-[32px] border border-white/5 shadow-xl space-y-4">
                     <div className="w-16 h-16 sm:w-20 sm:h-20 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-2xl sm:rounded-3xl flex items-center justify-center text-2xl sm:text-3xl mx-auto md:mx-0 shadow-inner"><i className="fas fa-id-badge"></i></div>
@@ -606,8 +608,9 @@
                 <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border-l-8 sm:border-l-[12px] border-amber-500 rounded-[2rem] p-6 sm:p-8 shadow-xl border border-white/5 relative overflow-hidden flex flex-col justify-center min-h-[160px] sm:min-h-[180px]">
                     <div className="absolute -top-4 -right-4 opacity-[0.03] rotate-12 text-[100px] sm:text-[120px] text-amber-500"><i className="fas fa-book-open"></i></div>
                     <span className="text-[9px] sm:text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 w-fit px-3 py-1.5 rounded-full uppercase tracking-widest mb-3 sm:mb-4">Live Module Status</span>
-                    <h4 className="font-outfit font-black text-lg sm:text-xl text-white">{assignmentDay?.toUpperCase() || 'GENERAL'} REFRESHER SESSION</h4>
-                    <p className="text-xs text-slate-300 mt-2 font-bold flex items-center gap-2"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span> Cloud Link Active</p>
+                    <h4 className="font-outfit font-black text-lg sm:text-xl text-white">{moduleTitle || ((assignmentDay?.toUpperCase() || 'GENERAL') + ' REFRESHER SESSION')}</h4>
+                    {moduleTitle && assignmentDay && <p className="text-[10px] sm:text-[11px] text-slate-400 mt-1.5 font-black uppercase tracking-widest">{assignmentDay}</p>}
+                    <p className="text-xs text-slate-300 mt-2 font-bold flex items-center gap-2"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span> Live Session Connected — trainer will start the assessment shortly</p>
                 </div>
             </div>
         );
@@ -623,7 +626,7 @@
             );
         };
 
-        const Quiz = ({type, empId, pin, question, options, moduleId, assignmentDay, translations, activeLanguage, setActiveLanguage, counts, onScoreSubmit, locked, onSecurityLock, onResultUpdate, totalQs, qIdx, questionRemaining, testRemaining}) => {
+        const Quiz = ({type, empId, pin, question, options, moduleId, assignmentDay, translations, counts, onScoreSubmit, locked, onSecurityLock, onResultUpdate, totalQs, qIdx, questionRemaining, testRemaining}) => {
             const [selected, setSelected] = useState(null);
             const [submitted, setSubmitted] = useState(false);
             const [tabSwitchCount, setTabSwitchCount] = useState(0);
@@ -672,8 +675,8 @@
                 return () => document.removeEventListener('visibilitychange', handleVisibility);
             }, []);
 
-            const qText = cleanQuestionText((translations?.[activeLanguage]?.question) || question || (fallbackQuestions[assignmentDay]?.question) || fallbackQuestions['zero day'].question);
-            const qOpts = ((translations?.[activeLanguage]?.options) || (options?.length ? options : (fallbackQuestions[assignmentDay]?.options || fallbackQuestions['zero day'].options))).map(cleanOptionText);
+            const qText = cleanQuestionText(question || (fallbackQuestions[assignmentDay]?.question) || fallbackQuestions['zero day'].question);
+            const qOpts = ((options?.length ? options : (fallbackQuestions[assignmentDay]?.options || fallbackQuestions['zero day'].options))).map(cleanOptionText);
 
             // Authoritative scoring: the server evaluates the answer and confirms via socket.
             // The DB write runs only inside score_confirmation (no client-side answer-key dependence).
@@ -740,10 +743,7 @@
                         </div>
                     </div>
                     <div className="px-6 py-4 bg-slate-950/20 border-b border-white/5 flex items-center gap-3 shrink-0 overflow-x-auto no-scrollbar">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0"><i className="fas fa-language mr-1"></i> Lang:</span>
-                        {['en', 'hindi', 'hinglish', 'punjabi', 'bengali', 'marathi', 'telugu', 'tamil', 'gujarati', 'kannada'].map(l => (
-                            <button key={l} onClick={() => setActiveLanguage(l)} className={`px-4 py-1.5 rounded-full text-[10px] font-black border transition-all whitespace-nowrap ${activeLanguage === l ? 'bg-amber-500 border-amber-500 text-slate-950 font-extrabold shadow-lg shadow-amber-500/25' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'}`}>{l.toUpperCase()}</button>
-                        ))}
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest shrink-0"><i className="fas fa-satellite-dish mr-1"></i> Live Broadcast Session</span>
                     </div>
                     <div className="p-6 md:p-8 flex-1 overflow-y-auto no-scrollbar">
                         {submitted ? (
