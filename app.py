@@ -320,6 +320,14 @@ def init_db():
         created_at TEXT,
         updated_at TEXT
     )''')
+
+    # Migration: MoM bifurcation — type (Training/Business) + structured fields JSON
+    cursor.execute("PRAGMA table_info(visits)")
+    visit_cols = [row[1] for row in cursor.fetchall()]
+    if 'mom_type' not in visit_cols:
+        cursor.execute("ALTER TABLE visits ADD COLUMN mom_type TEXT")
+    if 'mom_fields' not in visit_cols:
+        cursor.execute("ALTER TABLE visits ADD COLUMN mom_fields TEXT")
     
     # Per-question live-test attempts (1-mark model, append-only per attempt).
     # One row per (session, trainee, question) — enables skipped/late tracking,
@@ -1447,18 +1455,26 @@ def plan_visit():
     if info['zone'] is None or info['division'] is None:
         return jsonify({"status": "error", "message": f"Branch '{branch_name}' not found in the master roster. Please pick a branch from the list (Business Unit → Zone → Division → Branch)."}), 400
     purpose = str(data.get('purpose', '')).strip()
+    meeting_agenda = str(data.get('meeting_agenda', '')).strip() or purpose
+    meeting_with = str(data.get('meeting_with', '')).strip()
+    travel_mode = str(data.get('travel_mode', '')).strip()
+    travel_from = str(data.get('travel_from', '')).strip()
+    travel_to = str(data.get('travel_to', '')).strip()
+    overnight_stay = str(data.get('overnight_stay', '')).strip()
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
     conn = get_db_connection()
     cur = conn.execute("""
         INSERT INTO visits (trainer_id, trainer_name, zone, division, branch_name, branch_code, business_unit,
                             planned_date, end_date, meeting_agenda, meeting_with, purpose, key_contacts, details,
+                            travel_mode, travel_from, travel_to, overnight_stay,
                             status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PLANNED', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PLANNED', ?, ?)
     """, (
         trainer_id, trainer_name, info['zone'], info['division'], info['branch_name'], info['branch_code'],
         info['business_unit'], planned_date, str(data.get('end_date', '')).strip() or planned_date,
-        purpose, '', purpose, str(data.get('key_contacts', '')).strip(), str(data.get('details', '')).strip(),
+        meeting_agenda, meeting_with, purpose, str(data.get('key_contacts', '')).strip(), str(data.get('details', '')).strip(),
+        travel_mode, travel_from, travel_to, overnight_stay,
         now, now
     ))
     conn.commit()
@@ -1683,19 +1699,85 @@ def visit_verify():
     return jsonify({"status": "success", "message": f"Visit {visit['branch_name']} verified via {actor}."})
 
 
+def _mom_bullets(value):
+    """Split a textarea value into indented bullet lines for the formatted MoM."""
+    lines = [ln.strip() for ln in str(value or '').splitlines() if ln.strip()]
+    return [f"   \u2022 {ln}" for ln in lines] or ["   \u2022 \u2014"]
+
+
+def _format_mom_text(mom_type, fields, visit):
+    """Render a management-ready MoM document from structured fields."""
+    header = [
+        "MINUTES OF MEETING \u2014 " + ("TRAINING SESSION" if mom_type == 'Training' else "BUSINESS DISCUSSION"),
+        "=" * 62,
+        f"Branch        : {visit['branch_name'] or '\u2014'}  ({visit['division'] or '\u2014'} / {visit['zone'] or '\u2014'})",
+        f"Date          : {visit['planned_date'] or '\u2014'}",
+        f"Trainer       : {visit['trainer_name'] or '\u2014'}",
+        f"Business Unit : {visit['business_unit'] or '\u2014'}",
+        "-" * 62,
+    ]
+    if mom_type == 'Training':
+        body = [
+            f"1. SESSION TOPIC       : {fields.get('session_topic') or '\u2014'}",
+            f"2. NO. OF PARTICIPANTS : {fields.get('participant_count') or '\u2014'}",
+            f"3. PARTICIPANTS        : {fields.get('participants') or '\u2014'}",
+            "4. KEY TOPICS COVERED :",
+            *_mom_bullets(fields.get('key_topics')),
+            "5. OBSERVATIONS / GAPS:",
+            *_mom_bullets(fields.get('observations')),
+            "6. ACTION ITEMS       :",
+            *_mom_bullets(fields.get('action_items')),
+            "7. FOLLOW-UP          : " + (f"{fields.get('follow_up_owner') or '\u2014'} | Deadline: {fields.get('follow_up_deadline') or '\u2014'}"),
+        ]
+    else:
+        body = [
+            f"1. BUSINESS OBJECTIVE : {fields.get('business_objective') or '\u2014'}",
+            f"2. ATTENDEES          : {fields.get('attendees') or '\u2014'}",
+            "3. KEY POINTS DISCUSSED:",
+            *_mom_bullets(fields.get('key_points')),
+            "4. DECISIONS TAKEN    :",
+            *_mom_bullets(fields.get('decisions')),
+            "5. ACTION ITEMS       :",
+            *_mom_bullets(fields.get('action_items')),
+            "6. FOLLOW-UP          : " + (f"{fields.get('follow_up_owner') or '\u2014'} | Deadline: {fields.get('follow_up_deadline') or '\u2014'}"),
+        ]
+    footer = ["-" * 62, f"Prepared by {visit['trainer_name'] or '\u2014'} via Socratic Travel Hub"]
+    return "\n".join(header + body + footer)
+
+
 @app.route('/api/visits/<int:visit_id>/mom', methods=['POST'])
 def save_visit_mom(visit_id):
     data = request.json or {}
+    mom_type = str(data.get('mom_type', '')).strip()
+    mom_fields = data.get('mom_fields') or {}
+    if not isinstance(mom_fields, dict):
+        mom_fields = {}
     mom_notes = str(data.get('mom_notes', '')).strip()
-    if not mom_notes:
-        return jsonify({"status": "error", "message": "MoM notes are required."}), 400
+
     conn = get_db_connection()
     visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
     if not visit:
         conn.close()
         return jsonify({"status": "error", "message": "Visit not found."}), 404
+
+    # Legacy path: free-text notes without a type.
+    if mom_type not in ('Training', 'Business'):
+        if not mom_notes:
+            conn.close()
+            return jsonify({"status": "error", "message": "MoM notes are required."}), 400
+        mom_type = None
+        mom_fields = None
+    else:
+        # Build the formatted MoM from structured fields if no raw notes given.
+        if not mom_notes:
+            mom_notes = _format_mom_text(mom_type, mom_fields, visit)
+        mom_fields = json.dumps(mom_fields, ensure_ascii=False)
+
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    conn.execute("UPDATE visits SET mom_notes=?, updated_at=? WHERE id=?", (mom_notes, now, visit_id))
+    conn.execute(
+        "UPDATE visits SET mom_notes=?, mom_type=?, mom_fields=?, updated_at=? WHERE id=?",
+        (mom_notes, mom_type, mom_fields, now, visit_id)
+    )
     conn.commit()
     conn.close()
     return jsonify({"status": "success", "message": "Minutes of Meeting saved & formatted for management mail!"})

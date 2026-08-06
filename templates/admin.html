@@ -3886,7 +3886,6 @@ loadTrainers();
             const [isUploadingVisits, setIsUploadingVisits] = useState(false);
             const [showMomModal, setShowMomModal] = useState(false);
             const [momVisitId, setMomVisitId] = useState(null);
-            const [momDetails, setMomDetails] = useState('');
 
             // Plan form states
             const [branchName, setBranchName] = useState('');
@@ -3897,6 +3896,19 @@ loadTrainers();
             const [businessAgenda, setBusinessAgenda] = useState('');
             const [keyContacts, setKeyContacts] = useState('');
             const [details, setDetails] = useState('');
+
+            // Full itinerary columns (Travel Plan): agenda, meeting-with, travel details
+            const [agenda, setAgenda] = useState('');
+            const [meetingWith, setMeetingWith] = useState('');
+            const [travelMode, setTravelMode] = useState('');
+            const [travelFrom, setTravelFrom] = useState('');
+            const [travelTo, setTravelTo] = useState('');
+            const [overnightStay, setOvernightStay] = useState('No');
+
+            // MoM bifurcation: Training vs Business with structured fields
+            const [momType, setMomType] = useState('Training');
+            const [momFields, setMomFields] = useState({});
+            const [momPreview, setMomPreview] = useState('');
 
             // Geofence active tracking states
             const [activeCheckinVisit, setActiveCheckinVisit] = useState(null);
@@ -4127,10 +4139,15 @@ const getFirstDayOfMonth = (date) => {
                 e.preventDefault();
                 if (!momVisitId) return;
 
+                // Build the formatted MoM client-side too, so preview/copy and save match.
+                const visit = visits.find(v => v.id === momVisitId) || {};
+                const preview = buildMomPreview(momType, momFields, visit);
+                setMomPreview(preview);
+
                 fetch(`/api/visits/${momVisitId}/mom`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mom_notes: momDetails })
+                    body: JSON.stringify({ mom_type: momType, mom_fields: momFields, mom_notes: preview })
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -4144,6 +4161,62 @@ setShowMomModal(false);
                     }
                 })
                 .catch(err => alert('Error saving MoM'));
+            };
+
+            const buildMomPreview = (type, f, visit) => {
+                const line = (n, k, v) => v ? `${n}. ${k}: ${v}` : null;
+                const bullets = (v) => (v || '').split('\n').map(s => s.trim()).filter(Boolean).map(s => `   • ${s}`).join('\n');
+                const hr = '──────────────────────────────────────────────────────────';
+                const head = [
+                    `MINUTES OF MEETING — ${type === 'Training' ? 'TRAINING SESSION' : 'BUSINESS DISCUSSION'}`,
+                    hr,
+                    `Branch        : ${visit.branch_name || '—'}  (${visit.division || '—'} / ${visit.zone || '—'})`,
+                    `Date          : ${visit.planned_date || '—'}`,
+                    `Trainer       : ${visit.trainer_name || '—'}`,
+                    `Business Unit : ${visit.business_unit || '—'}`,
+                    hr
+                ].join('\n');
+                let body = [];
+                if (type === 'Training') {
+                    body = [
+                        line(1, 'SESSION TOPIC       ', f.session_topic),
+                        line(2, 'NO. OF PARTICIPANTS ', f.participant_count),
+                        line(3, 'PARTICIPANTS        ', f.participants),
+                        f.key_topics ? `4. KEY TOPICS COVERED :\n${bullets(f.key_topics)}` : null,
+                        f.observations ? `5. OBSERVATIONS / GAPS:\n${bullets(f.observations)}` : null,
+                        f.action_items ? `6. ACTION ITEMS       :\n${bullets(f.action_items)}` : null,
+                        (f.follow_up_owner || f.follow_up_deadline) ? `7. FOLLOW-UP          : ${f.follow_up_owner || '—'} | Deadline: ${f.follow_up_deadline || '—'}` : null
+                    ];
+                } else {
+                    body = [
+                        line(1, 'BUSINESS OBJECTIVE ', f.business_objective),
+                        line(2, 'ATTENDEES          ', f.attendees),
+                        f.key_points ? `3. KEY POINTS DISCUSSED:\n${bullets(f.key_points)}` : null,
+                        f.decisions ? `4. DECISIONS TAKEN    :\n${bullets(f.decisions)}` : null,
+                        f.action_items ? `5. ACTION ITEMS       :\n${bullets(f.action_items)}` : null,
+                        (f.follow_up_owner || f.follow_up_deadline) ? `6. FOLLOW-UP          : ${f.follow_up_owner || '—'} | Deadline: ${f.follow_up_deadline || '—'}` : null
+                    ];
+                }
+                const bodyText = body.filter(Boolean).join('\n');
+                return [head, bodyText, hr, `Prepared by ${visit.trainer_name || '—'} via Socratic Travel Hub`].join('\n');
+            };
+
+            const handleMomFieldChange = (key, value) => {
+                setMomFields(prev => ({ ...prev, [key]: value }));
+            };
+
+            const openMomModal = (visit) => {
+                setMomVisitId(visit.id);
+                let type = 'Training';
+                let fields = {};
+                if (visit.mom_type === 'Training' || visit.mom_type === 'Business') {
+                    type = visit.mom_type;
+                    try { fields = JSON.parse(visit.mom_fields || '{}') || {}; } catch (err) { fields = {}; }
+                }
+                setMomType(type);
+                setMomFields(fields);
+                setMomPreview('');
+                setShowMomModal(true);
             };
 
             useEffect(() => {
@@ -4184,6 +4257,9 @@ setShowMomModal(false);
                     purposeText += ` (Agenda: ${businessAgenda.trim()})`;
                 }
 
+                const finalAgenda = (agenda || purposeText || 'Field Visit').trim();
+                const finalTravelTo = (travelTo || branchName).trim();
+
                 fetch('/api/visits/plan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -4192,8 +4268,14 @@ setShowMomModal(false);
                         planned_date: plannedDate,
                         end_date: endDate || plannedDate,
                         purpose: purposeText,
+                        meeting_agenda: finalAgenda,
+                        meeting_with: meetingWith.trim(),
                         key_contacts: keyContacts.trim(),
-                        details: details.trim()
+                        details: details.trim(),
+                        travel_mode: travelMode,
+                        travel_from: travelFrom.trim(),
+                        travel_to: finalTravelTo,
+                        overnight_stay: overnightStay
                     })
                 })
                 .then(res => res.json())
@@ -4208,6 +4290,15 @@ setShowMomModal(false);
                         setBusinessAgenda('');
                         setKeyContacts('');
                         setDetails('');
+                        setAgenda('');
+                        setMeetingWith('');
+                        setTravelMode('');
+                        setTravelFrom('');
+                        setTravelTo('');
+                        setOvernightStay('No');
+                        setPlanBu('');
+                        setPlanZone('');
+                        setPlanDivision('');
                         loadVisits();
                     } else {
                         alert("❌ Error: " + data.message);
@@ -4540,6 +4631,7 @@ message: data.message,
                                                     <th className="py-4 px-6">Destination</th>
                                                     <th className="py-4 px-6">Schedule</th>
                                                     <th className="py-4 px-6">Agenda & Meeting</th>
+                                                    <th className="py-4 px-6">Travel</th>
                                                     <th className="py-4 px-6">Trainer</th>
                                                     <th className="py-4 px-6 text-center">Compliance</th>
                                                     <th className="py-4 px-6 text-center">Actions</th>
@@ -4548,19 +4640,24 @@ message: data.message,
                                             <tbody className="divide-y divide-slate-100">
                                                 {filteredVisits.map(visit => (
                                                     <tr key={visit.id} className="hover:bg-slate-50/50 transition-colors">
-                                                        <td className="py-3 px-6"><div className="font-black text-slate-900">{visit.branch_name}</div><div className="text-[9px] text-slate-400 font-bold">{visit.division}</div></td>
+                                                        <td className="py-3 px-6"><div className="font-black text-slate-900">{visit.branch_name}</div><div className="text-[9px] text-slate-400 font-bold">{visit.division} • {visit.zone}</div></td>
                                                         <td className="py-3 px-6 font-bold text-slate-600">
                                                             {visit.end_date && visit.end_date !== visit.planned_date ? `${visit.planned_date} to ${visit.end_date}` : visit.planned_date}
+                                                            {visit.overnight_stay === 'Yes' && <div className="text-[8px] font-black text-amber-600 uppercase mt-0.5"><i className="fas fa-moon mr-1"></i>Overnight Stay</div>}
                                                         </td>
                                                         <td className="py-3 px-6 max-w-[150px] truncate"><div className="text-slate-700 font-bold" title={visit.meeting_agenda || visit.purpose}>{visit.meeting_agenda || visit.purpose}</div><div className="text-[8px] font-medium text-slate-500 uppercase" title={visit.meeting_with}>{visit.meeting_with || 'N/A'}</div></td>
+                                                        <td className="py-3 px-6 max-w-[130px]">
+                                                            <div className="flex items-center gap-1.5 text-slate-600 font-bold"><i className={`fas ${visit.travel_mode === 'Flight' ? 'fa-plane' : visit.travel_mode === 'Train' ? 'fa-train' : visit.travel_mode === 'Bus' ? 'fa-bus' : 'fa-car'} text-[9px] text-blue-500`}></i>{visit.travel_mode || 'Car'}</div>
+                                                            <div className="text-[8px] font-medium text-slate-400 uppercase truncate" title={visit.travel_from}>{visit.travel_from || '—'} → {visit.travel_to || visit.branch_name}</div>
+                                                        </td>
                                                         <td className="py-3 px-6"><div className="text-slate-700 font-bold">{visit.trainer_name}</div><div className="text-[8px] font-mono text-blue-500 uppercase">{visit.trainer_id}</div></td>
                                                         <td className="py-3 px-6 text-center">
                                                             <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest border ${visit.status === 'VERIFIED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : visit.status === 'GEOFENCED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>{visit.status}</span>
                                                         </td>
                                                         <td className="py-3 px-6 text-center">
                                                             <div className="flex items-center justify-center gap-2">
-                                                                <button onClick={() => { setMomVisitId(visit.id); setMomDetails(visit.mom_notes || ''); setShowMomModal(true); }} className="border border-indigo-200 text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-sm flex items-center gap-1" title="Minutes of Meeting">
-                                                                    <i className="fas fa-file-signature text-[10px]"></i> MoM
+                                                                <button onClick={() => openMomModal(visit)} className="border border-indigo-200 text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100 px-2 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-sm flex items-center gap-1" title="Minutes of Meeting">
+                                                                    <i className="fas fa-file-signature text-[10px]"></i> MoM{visit.mom_type ? (visit.mom_type === 'Training' ? ' (T)' : ' (B)') : ''}
                                                                 </button>
                                                                 {visit.status === 'VERIFIED' ? (
                                                                     <span className="flex items-center gap-1"><i className="fas fa-check-circle text-emerald-500"></i> <span className="text-[9px] font-black text-emerald-600 uppercase">Passed</span></span>
@@ -4589,29 +4686,101 @@ message: data.message,
                         {/* MoM Modal */}
                         {showMomModal && (
                             <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-                                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all">
+                                <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl border border-slate-200 overflow-hidden transform transition-all">
                                     <div className="px-6 py-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                                         <div>
                                             <h3 className="font-bold text-lg text-socrates-dark">Minutes of Meeting (MoM)</h3>
-                                            <p className="text-xs text-slate-500 mt-0.5">Format and mail meeting highlights to management.</p>
+                                            <p className="text-xs text-slate-500 mt-0.5">Structured MoM — Training & Business — ready for management mail.</p>
                                         </div>
                                         <button onClick={() => setShowMomModal(false)} className="text-slate-400 hover:text-slate-700 text-xl"><i className="fas fa-times"></i></button>
                                     </div>
                                     <form onSubmit={handleSaveMom}>
-                                        <div className="p-6 space-y-4">
+                                        <div className="max-h-[70vh] overflow-y-auto p-6 space-y-4">
+                                            {/* MoM Type toggle */}
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Key Takeaways & Action Items</label>
-                                                <textarea value={momDetails} onChange={e => setMomDetails(e.target.value)} required rows="5" placeholder="e.g. Discussed branch audit findings. Required management support for..." className="input-field"></textarea>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">MoM Type</label>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <button type="button" onClick={() => setMomType('Training')} className={`flex items-center justify-center gap-2 p-3 rounded-2xl border-2 transition-all cursor-pointer ${momType === 'Training' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>
+                                                        <i className="fas fa-chalkboard-teacher text-sm"></i><span className="text-[11px] font-black uppercase">Training MoM</span>
+                                                    </button>
+                                                    <button type="button" onClick={() => setMomType('Business')} className={`flex items-center justify-center gap-2 p-3 rounded-2xl border-2 transition-all cursor-pointer ${momType === 'Business' ? 'border-indigo-600 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-400'}`}>
+                                                        <i className="fas fa-briefcase text-sm"></i><span className="text-[11px] font-black uppercase">Business MoM</span>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {momType === 'Training' ? (
+                                                <>
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Session Topic</label>
+                                                            <input type="text" value={momFields.session_topic || ''} onChange={e => handleMomFieldChange('session_topic', e.target.value)} placeholder="e.g. Two-Wheeler Loans Refresher" className="input-field" />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">No. of Participants</label>
+                                                            <input type="number" min="0" value={momFields.participant_count || ''} onChange={e => handleMomFieldChange('participant_count', e.target.value)} placeholder="e.g. 15" className="input-field" />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Participants (names, comma-separated)</label>
+                                                        <input type="text" value={momFields.participants || ''} onChange={e => handleMomFieldChange('participants', e.target.value)} placeholder="e.g. AMIT PATEL, RAVI SHINDE, ..." className="input-field" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Key Topics Covered (one per line)</label>
+                                                        <textarea rows="3" value={momFields.key_topics || ''} onChange={e => handleMomFieldChange('key_topics', e.target.value)} placeholder="e.g.&#10;KYC norms & documentation&#10;Digital disbursal process&#10;Cross-sell: gold loan basics" className="input-field" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Observations / Gaps</label>
+                                                        <textarea rows="3" value={momFields.observations || ''} onChange={e => handleMomFieldChange('observations', e.target.value)} placeholder="e.g.&#10;Staff clarity on new product terms&#10;Need refresher on system screens" className="input-field" />
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Business Objective</label>
+                                                        <input type="text" value={momFields.business_objective || ''} onChange={e => handleMomFieldChange('business_objective', e.target.value)} placeholder="e.g. Branch sales review & pipeline planning" className="input-field" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Attendees (names / roles, comma-separated)</label>
+                                                        <input type="text" value={momFields.attendees || ''} onChange={e => handleMomFieldChange('attendees', e.target.value)} placeholder="e.g. Branch Manager, Sales Head, RM Team" className="input-field" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Key Points Discussed (one per line)</label>
+                                                        <textarea rows="3" value={momFields.key_points || ''} onChange={e => handleMomFieldChange('key_points', e.target.value)} placeholder="e.g.&#10;Monthly target vs achievement&#10;Delinquency review&#10;Lead conversion blockers" className="input-field" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Decisions Taken (one per line)</label>
+                                                        <textarea rows="3" value={momFields.decisions || ''} onChange={e => handleMomFieldChange('decisions', e.target.value)} placeholder="e.g.&#10;Weekly review call on Fridays&#10;BM to share pipeline every Monday" className="input-field" />
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Action Items (one per line)</label>
+                                                <textarea rows="3" value={momFields.action_items || ''} onChange={e => handleMomFieldChange('action_items', e.target.value)} placeholder="e.g.&#10;Share training calendar with branch&#10;Follow up on pending documentation" className="input-field" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Follow-up Owner</label>
+                                                    <input type="text" value={momFields.follow_up_owner || ''} onChange={e => handleMomFieldChange('follow_up_owner', e.target.value)} placeholder="e.g. Branch Manager" className="input-field" />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Deadline</label>
+                                                    <input type="date" value={momFields.follow_up_deadline || ''} onChange={e => handleMomFieldChange('follow_up_deadline', e.target.value)} className="input-field" />
+                                                </div>
+                                            </div>
+
+                                            {/* Live formatted preview */}
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase tracking-wide">Formatted Preview</label>
+                                                <pre className="bg-slate-900 text-emerald-300 text-[10px] leading-relaxed p-4 rounded-xl whitespace-pre-wrap font-mono max-h-56 overflow-y-auto">{(momPreview || (() => { const v = visits.find(x => x.id === momVisitId) || {}; return buildMomPreview(momType, momFields, v); })())}</pre>
                                             </div>
                                         </div>
                                         <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 font-semibold">
                                             <button type="button" onClick={() => {
-                                                const visit = visits.find(v => v.id === momVisitId);
-                                                if (visit) {
-
-const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trainer_name}\nLocation: ${visit.branch_name} (${visit.division} / ${visit.zone})\nDates: ${visit.planned_date} to ${visit.end_date || visit.planned_date}\nAgenda: ${visit.meeting_agenda || visit.purpose}\nMet With: ${visit.meeting_with || 'N/A'}\n\nKey Minutes of Meeting:\n${momDetails}\n\n---\nAuto-generated via Socratic Travel Hub`;
-                                                    navigator.clipboard.writeText(mailBody).then(() => alert("Formatted Mail copied to clipboard!"));
-                                                }
+                                                const v = visits.find(x => x.id === momVisitId) || {};
+                                                const preview = momPreview || buildMomPreview(momType, momFields, v);
+                                                navigator.clipboard.writeText(preview).then(() => alert("Formatted MoM copied to clipboard!"));
                                             }} className="btn-outline flex items-center gap-2"><i className="fas fa-copy"></i> Copy Mail Format</button>
                                             <button type="button" onClick={() => setShowMomModal(false)} className="btn-outline">Cancel</button>
                                             <button type="submit" className="btn-primary shadow-md flex items-center gap-2"><i className="fas fa-paper-plane"></i> Save MoM</button>
@@ -4685,7 +4854,7 @@ const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trai
                     {/* Planning Modal */}
                     {showPlanModal && (
                         <div className="fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
-                            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden transform transition-all animate-scale-up">
+                            <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-xl border border-slate-200 overflow-hidden transform transition-all animate-scale-up">
                                 <div className="px-8 py-6 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
                                     <div>
                                         <h3 className="font-black text-lg text-socrates-dark">New Itinerary</h3>
@@ -4694,7 +4863,7 @@ const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trai
                                     <button onClick={() => setShowPlanModal(false)} className="w-8 h-8 rounded-full bg-slate-200 text-slate-500 hover:bg-slate-300 transition-all"><i className="fas fa-times"></i></button>
                                 </div>
                                 <form onSubmit={handlePlanSubmit}>
-                                    <div className="p-8 space-y-5">
+                                    <div className="max-h-[70vh] overflow-y-auto p-8 space-y-5">
                                         <div className="space-y-1.5">
                                             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Business Unit</label>
                                             <SmartSelect
@@ -4739,6 +4908,16 @@ const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trai
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-1.5">
+                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Branch Code</label>
+                                                <input type="text" value={branchName} readOnly placeholder="Auto from Master Roster" className="input-field bg-slate-50 text-slate-400 font-bold text-xs" />
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Meeting With</label>
+                                                <input type="text" value={meetingWith} onChange={e => setMeetingWith(e.target.value)} placeholder="e.g. Branch Manager" className="input-field bg-white font-bold text-xs" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
 
 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Start Date</label>
                                                 <input type="date" value={plannedDate} onChange={e => setPlannedDate(e.target.value)} required className="input-field bg-white font-bold text-xs" />
@@ -4762,8 +4941,36 @@ const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trai
                                             </div>
                                         </div>
                                         <div className="space-y-1.5">
-                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Strategic Notes</label>
-                                            <textarea value={details} onChange={e => setDetails(e.target.value)} placeholder="Visit goals..." className="input-field min-h-[80px] text-xs font-bold" />
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Agenda / Purpose</label>
+                                            <input type="text" value={agenda} onChange={e => setAgenda(e.target.value)} placeholder="e.g. Refresher Training on Two-Wheeler Loans" className="input-field bg-white font-bold text-xs" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Travel Details</label>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <select value={travelMode} onChange={e => setTravelMode(e.target.value)} className="input-field bg-white font-bold text-xs">
+                                                    <option value="">Mode</option>
+                                                    <option value="Car">Car</option>
+                                                    <option value="Train">Train</option>
+                                                    <option value="Bus">Bus</option>
+                                                    <option value="Flight">Flight</option>
+                                                    <option value="Other">Other</option>
+                                                </select>
+                                                <input type="text" value={travelFrom} onChange={e => setTravelFrom(e.target.value)} placeholder="Travel From" className="input-field bg-white font-bold text-xs" />
+                                                <input type="text" value={travelTo} onChange={e => setTravelTo(e.target.value)} placeholder="Travel To" className="input-field bg-white font-bold text-xs" />
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1.5">
+                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Overnight Stay</label>
+                                                <select value={overnightStay} onChange={e => setOvernightStay(e.target.value)} className="input-field bg-white font-bold text-xs">
+                                                    <option value="No">No</option>
+                                                    <option value="Yes">Yes</option>
+                                                </select>
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Strategic Notes</label>
+                                                <textarea value={details} onChange={e => setDetails(e.target.value)} placeholder="Visit goals..." className="input-field min-h-[80px] text-xs font-bold" />
+                                            </div>
                                         </div>
                                     </div>
                                     <div className="p-6 bg-slate-50 border-t border-slate-100 flex gap-3">
