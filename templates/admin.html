@@ -4868,6 +4868,16 @@ const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trai
             const [histGroupBy, setHistGroupBy] = useState('branch_name');
             const [histPeriod, setHistPeriod] = useState('month');
 
+            // Phase 10b: Pre-Test vs Post-Test growth (product-wise + drill-down modal)
+            const [growthData, setGrowthData] = useState(null);
+            const [growthLoading, setGrowthLoading] = useState(false);
+            const [growthModule, setGrowthModule] = useState('');
+            const [growthTrainer, setGrowthTrainer] = useState('');
+            const [modalModule, setModalModule] = useState(null);
+            const [modalData, setModalData] = useState(null);
+            const [modalPage, setModalPage] = useState(1);
+            const [modalLoading, setModalLoading] = useState(false);
+
             const loadAnalytics = () => {
                 setLoading(true);
                 let url = '/api/analytics?';
@@ -4947,6 +4957,77 @@ if (selectedBranch) url += `branch=${encodeURIComponent(selectedBranch)}&`;
             useEffect(() => {
                 loadHistory();
             }, [selectedZone, selectedDiv, selectedBranch, selectedBU, selectedProduct, startDate, endDate, histAgent, histModule, histGroupBy, histPeriod]);
+
+            // Pre-Test vs Post-Test growth: module-wise summary (widget)
+            const loadGrowth = () => {
+                setGrowthLoading(true);
+                let url = '/api/analytics/growth?';
+                if (selectedZone) url += `zone=${encodeURIComponent(selectedZone)}&`;
+                if (selectedDiv) url += `division=${encodeURIComponent(selectedDiv)}&`;
+                if (selectedBranch) url += `branch=${encodeURIComponent(selectedBranch)}&`;
+                if (selectedBU) url += `business_unit=${encodeURIComponent(selectedBU)}&`;
+                if (selectedProduct) url += `product_name=${encodeURIComponent(selectedProduct)}&`;
+                if (startDate) url += `start_date=${encodeURIComponent(startDate)}&`;
+                if (endDate) url += `end_date=${encodeURIComponent(endDate)}&`;
+                if (growthModule) url += `module_id=${encodeURIComponent(growthModule)}&`;
+                if (growthTrainer) url += `trainer_id=${encodeURIComponent(growthTrainer)}&`;
+                fetch(url)
+                    .then(res => res.json())
+                    .then(data => {
+                        setGrowthData(data);
+                        setGrowthLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Failed to load growth:", err);
+                        setGrowthData(null);
+                        setGrowthLoading(false);
+                    });
+            };
+
+            useEffect(() => {
+                loadGrowth();
+            }, [selectedZone, selectedDiv, selectedBranch, selectedBU, selectedProduct, startDate, endDate, growthModule, growthTrainer]);
+
+            // Pre-Test vs Post-Test growth: drill-down detail for one module (modal)
+            const loadGrowthDetail = (moduleId, page = 1) => {
+                setModalLoading(true);
+                setModalModule(moduleId);
+                setModalPage(page);
+                let url = `/api/analytics/growth?module_id=${encodeURIComponent(moduleId)}&page=${page}`;
+                if (selectedZone) url += `&zone=${encodeURIComponent(selectedZone)}`;
+                if (selectedDiv) url += `&division=${encodeURIComponent(selectedDiv)}`;
+                if (selectedBranch) url += `&branch=${encodeURIComponent(selectedBranch)}`;
+                if (selectedBU) url += `&business_unit=${encodeURIComponent(selectedBU)}`;
+                if (selectedProduct) url += `&product_name=${encodeURIComponent(selectedProduct)}`;
+                if (startDate) url += `&start_date=${encodeURIComponent(startDate)}`;
+                if (endDate) url += `&end_date=${encodeURIComponent(endDate)}`;
+                if (growthTrainer) url += `&trainer_id=${encodeURIComponent(growthTrainer)}`;
+                fetch(url)
+                    .then(res => res.json())
+                    .then(data => {
+                        setModalData(data);
+                        setModalLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Failed to load growth detail:", err);
+                        setModalData(null);
+                        setModalLoading(false);
+                    });
+            };
+
+            const closeGrowthModal = () => {
+                setModalModule(null);
+                setModalData(null);
+                setModalPage(1);
+            };
+
+            // Close growth detail modal with Escape key
+            useEffect(() => {
+                if (!modalModule) return;
+                const onKey = (e) => { if (e.key === 'Escape') closeGrowthModal(); };
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            }, [modalModule]);
 
             const handlePushRefresherCampaign = (empCodes) => {
                 if (!empCodes || empCodes.length === 0) return;
@@ -5407,9 +5488,9 @@ value={selectedProduct}
                                 {/* Main Visualization Charts Side-by-Side Panel */}
                                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-                                    {/* CHART 1: Pre-Test vs Post-Test Growth Delta (Aggregated double-bars) */}
+                                    {/* CHART 1: Pre-Test vs Post-Test growth (module/product-wise, filterable) */}
                                     <div className="lg:col-span-2 border border-slate-200 rounded-2xl p-6 bg-slate-50/40 relative shadow-sm">
-                                        <div className="flex justify-between items-center mb-6">
+                                        <div className="flex justify-between items-start mb-5">
                                             <div>
                                                 <h4 className="font-bold text-sm text-socrates-dark tracking-tight">Pre-Test vs. Post-Test growth</h4>
                                                 <p className="text-[10px] text-slate-400 font-medium">Measuring core knowledge levels before & after training</p>
@@ -5420,48 +5501,80 @@ value={selectedProduct}
                                             </div>
                                         </div>
 
-                                        {loading ? (
+                                        {/* Module / product + trainer filters */}
+                                        <div className="flex flex-wrap gap-3 mb-4">
+                                            <select
+                                                value={growthModule}
+                                                onChange={e => setGrowthModule(e.target.value)}
+                                                className="input-field bg-white text-xs font-semibold"
+                                            >
+                                                <option value="">All Modules / Products</option>
+                                                {(growthData?.modules || []).map(m => (
+                                                    <option key={m.id} value={m.id}>{m.title}</option>
+                                                ))}
+                                            </select>
+                                            <input
+                                                type="text"
+                                                value={growthTrainer}
+                                                onChange={e => setGrowthTrainer(e.target.value)}
+                                                placeholder="Trainer ID (e.g. TR-NORTH)"
+                                                className="input-field bg-white text-xs font-semibold"
+                                            />
+                                        </div>
 
-<div className="h-64 flex flex-col justify-center items-center gap-3">
+                                        {growthLoading ? (
+                                            <div className="h-64 flex flex-col justify-center items-center gap-3">
                                                 <div className="w-8 h-8 border-3 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
-                                                <span className="text-xs font-bold text-slate-400">Loading learning deltas...</span>
+                                                <span className="text-xs font-bold text-slate-400">Loading growth deltas...</span>
                                             </div>
-                                        ) : !hasLive ? (
+                                        ) : !growthData || !growthData.summary || growthData.summary.length === 0 ? (
                                             <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
                                                 <i className="fas fa-chart-bar text-3xl text-slate-200"></i>
-                                                <span className="text-xs font-bold">No assessment results to chart yet.</span>
+                                                <span className="text-xs font-bold">No assessment results for the selected filters.</span>
                                             </div>
                                         ) : (
-                                            <div className="h-64 flex items-end justify-around pb-6 pt-4 relative border-b border-slate-200 px-4">
-                                                {Object.keys(temporal).map(dayKey => {
-                                                    const d = temporal[dayKey];
-                                                    const growth = Math.round(d.post - d.pre);
-                                                    const labelMap = { 'ZERO DAY': 'Zero Day', 'SIX DAYS': 'Six Days', 'TWENTY DAYS': 'Twenty Days' };
-                                                    return (
-                                                        <div key={dayKey} className="flex flex-col items-center w-28 group">
-                                                            <div className="flex items-end gap-3 h-44 relative">
-                                                                <div 
-                                                                    style={{ height: `${d.pre}%` }} 
-                                                                    className="w-8 bg-gradient-to-t from-blue-600 to-blue-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
-                                                                    title={`Pre-Test: ${d.pre}%`}
-                                                                >
-                                                                    <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-blue-600">{d.pre}%</span>
-                                                                </div>
-                                                                <div 
-                                                                    style={{ height: `${d.post}%` }} 
-                                                                    className="w-8 bg-gradient-to-t from-emerald-500 to-emerald-400 rounded-t-lg shadow-md hover:scale-105 transition-transform relative"
-                                                                    title={`Post-Test: ${d.post}%`}
-                                                                >
-                                                                    <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] font-extrabold text-emerald-600">{d.post}%</span>
-                                                                </div>
-                                                            </div>
-                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-4">{labelMap[dayKey] || dayKey}</span>
-                                                            <span className="text-[9px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full mt-1.5 shadow-sm">
-                                                                <i className="fas fa-arrow-up mr-0.5"></i> +{growth}%
-                                                            </span>
-                                                        </div>
-                                                    );
-                                                })}
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-xs">
+                                                    <thead>
+                                                        <tr className="text-left text-[9px] uppercase tracking-wider text-slate-400 border-b border-slate-200">
+                                                            <th className="py-2 pr-3 font-bold">Module / Product</th>
+                                                            <th className="py-2 pr-3 font-bold text-center">Trainees</th>
+                                                            <th className="py-2 pr-3 font-bold text-center">Sessions</th>
+                                                            <th className="py-2 pr-3 font-bold text-center">Pre %</th>
+                                                            <th className="py-2 pr-3 font-bold text-center">Post %</th>
+                                                            <th className="py-2 pr-3 font-bold text-center">Growth</th>
+                                                            <th className="py-2 font-bold text-right">Details</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {growthData.summary.map((s, i) => {
+                                                            const g = s.growth;
+                                                            const growthColor = g === null ? 'text-slate-400' : g > 0 ? 'text-emerald-600' : g < 0 ? 'text-rose-600' : 'text-slate-500';
+                                                            const growthIcon = g === null ? '' : g > 0 ? 'fa-arrow-up' : g < 0 ? 'fa-arrow-down' : '';
+                                                            return (
+                                                                <tr key={s.module_id || i} className="border-b border-slate-100 last:border-0">
+                                                                    <td className="py-2.5 pr-3 font-bold text-socrates-dark">{s.module_title}</td>
+                                                                    <td className="py-2.5 pr-3 text-center font-semibold text-slate-500">{s.trainees}</td>
+                                                                    <td className="py-2.5 pr-3 text-center font-semibold text-slate-500">{s.sessions}</td>
+                                                                    <td className="py-2.5 pr-3 text-center font-bold text-blue-600">{s.avg_pre !== null ? `${s.avg_pre}%` : '—'}</td>
+                                                                    <td className="py-2.5 pr-3 text-center font-bold text-emerald-600">{s.avg_post !== null ? `${s.avg_post}%` : '—'}</td>
+                                                                    <td className={`py-2.5 pr-3 text-center font-extrabold ${growthColor}`}>
+                                                                        {g === null ? '—' : `${g > 0 ? '+' : ''}${g}%`}
+                                                                        {growthIcon && <i className={`fas ${growthIcon} ml-1`}></i>}
+                                                                    </td>
+                                                                    <td className="py-2.5 text-right">
+                                                                        <button
+                                                                            onClick={() => loadGrowthDetail(s.module_id, 1)}
+                                                                            className="text-[10px] font-bold text-socrates-primary hover:underline"
+                                                                        >
+                                                                            <i className="fas fa-eye mr-1"></i>View Details
+                                                                        </button>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         )}
                                     </div>
@@ -5537,6 +5650,132 @@ value={selectedProduct}
                                         )}
                                     </div>
                                 </div>
+
+                                {/* Pre-Test vs Post-Test Growth — Product-wise drill-down modal */}
+                                {modalModule && (
+                                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={closeGrowthModal}>
+                                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                                            {/* Header */}
+                                            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-200 bg-slate-50 rounded-t-2xl sticky top-0 z-10">
+                                                <div className="pr-4">
+                                                    <h4 className="font-bold text-sm text-socrates-dark">
+                                                        {(growthData?.summary || []).find(s => String(s.module_id) === String(modalModule))?.module_title ||
+                                                         (growthData?.modules || []).find(m => String(m.id) === String(modalModule))?.title ||
+                                                         `Module ${modalModule}`}
+                                                    </h4>
+                                                    <p className="text-[10px] text-slate-400 font-medium">Per-trainee pre/post score breakdown</p>
+                                                </div>
+                                                <button onClick={closeGrowthModal} className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-rose-600 hover:border-rose-200 shrink-0">
+                                                    <i className="fas fa-times"></i>
+                                                </button>
+                                            </div>
+
+                                            {/* Stats summary */}
+                                            {modalData?.stats && (
+                                                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 px-6 py-4 border-b border-slate-100">
+                                                    <div className="bg-blue-50 rounded-xl p-3 text-center">
+                                                        <div className="text-[9px] font-bold uppercase tracking-wider text-blue-400">Avg Pre</div>
+                                                        <div className="text-lg font-extrabold text-blue-600">{modalData.stats.avg_pre !== null ? `${modalData.stats.avg_pre}%` : '—'}</div>
+                                                    </div>
+                                                    <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                                                        <div className="text-[9px] font-bold uppercase tracking-wider text-emerald-400">Avg Post</div>
+                                                        <div className="text-lg font-extrabold text-emerald-600">{modalData.stats.avg_post !== null ? `${modalData.stats.avg_post}%` : '—'}</div>
+                                                    </div>
+                                                    <div className={`rounded-xl p-3 text-center ${modalData.stats.growth === null ? 'bg-slate-50' : modalData.stats.growth > 0 ? 'bg-emerald-50' : modalData.stats.growth < 0 ? 'bg-rose-50' : 'bg-slate-50'}`}>
+                                                        <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Growth</div>
+                                                        <div className={`text-lg font-extrabold ${modalData.stats.growth === null ? 'text-slate-400' : modalData.stats.growth > 0 ? 'text-emerald-600' : modalData.stats.growth < 0 ? 'text-rose-600' : 'text-slate-500'}`}>
+                                                            {modalData.stats.growth === null ? '—' : `${modalData.stats.growth > 0 ? '+' : ''}${modalData.stats.growth}%`}
+                                                        </div>
+                                                    </div>
+                                                    <div className="bg-indigo-50 rounded-xl p-3 text-center">
+                                                        <div className="text-[9px] font-bold uppercase tracking-wider text-indigo-400">Trainees</div>
+                                                        <div className="text-lg font-extrabold text-indigo-600">{modalData.stats.trainees}</div>
+                                                    </div>
+                                                    <div className="bg-amber-50 rounded-xl p-3 text-center">
+                                                        <div className="text-[9px] font-bold uppercase tracking-wider text-amber-500">Sessions</div>
+                                                        <div className="text-lg font-extrabold text-amber-600">{modalData.stats.sessions}</div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Detail table */}
+                                            <div className="px-6 py-4">
+                                                {modalLoading ? (
+                                                    <div className="h-48 flex flex-col justify-center items-center gap-3">
+                                                        <div className="w-8 h-8 border-3 border-socrates-primary border-t-transparent rounded-full fa-spin"></div>
+                                                        <span className="text-xs font-bold text-slate-400">Loading trainee breakdown...</span>
+                                                    </div>
+                                                ) : !modalData || !modalData.detail || modalData.detail.length === 0 ? (
+                                                    <div className="h-40 flex flex-col items-center justify-center gap-2 text-slate-400">
+                                                        <i className="fas fa-users text-3xl text-slate-200"></i>
+                                                        <span className="text-xs font-bold">No trainee records for this module under the selected filters.</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="overflow-x-auto">
+                                                        <table className="w-full text-xs">
+                                                            <thead>
+                                                                <tr className="text-left text-[9px] uppercase tracking-wider text-slate-400 border-b border-slate-200">
+                                                                    <th className="py-2 pr-3 font-bold">Trainee</th>
+                                                                    <th className="py-2 pr-3 font-bold">Branch</th>
+                                                                    <th className="py-2 pr-3 font-bold">Date</th>
+                                                                    <th className="py-2 pr-3 font-bold">Milestone</th>
+                                                                    <th className="py-2 pr-3 font-bold text-center">Pre %</th>
+                                                                    <th className="py-2 pr-3 font-bold text-center">Post %</th>
+                                                                    <th className="py-2 font-bold text-center">Growth</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {modalData.detail.map(r => {
+                                                                    const rg = r.growth;
+                                                                    const rgColor = rg === null ? 'text-slate-400' : rg > 0 ? 'text-emerald-600' : rg < 0 ? 'text-rose-600' : 'text-slate-500';
+                                                                    return (
+                                                                        <tr key={r.id} className="border-b border-slate-100 last:border-0">
+                                                                            <td className="py-2.5 pr-3">
+                                                                                <span className="font-bold text-socrates-dark">{r.emp_name}</span>
+                                                                                <span className="block text-[9px] text-slate-400 font-semibold">{r.emp_code}</span>
+                                                                            </td>
+                                                                            <td className="py-2.5 pr-3 font-semibold text-slate-500">{r.branch_name || '—'}</td>
+                                                                            <td className="py-2.5 pr-3 font-semibold text-slate-500">{r.training_date || '—'}</td>
+                                                                            <td className="py-2.5 pr-3 text-[10px] font-bold text-slate-400 uppercase">{r.assignment_day || '—'}</td>
+                                                                            <td className="py-2.5 pr-3 text-center font-bold text-blue-600">{r.pre_test_score !== null ? `${r.pre_test_score}%` : '—'}</td>
+                                                                            <td className="py-2.5 pr-3 text-center font-bold text-emerald-600">{r.post_test_score !== null ? `${r.post_test_score}%` : '—'}</td>
+                                                                            <td className={`py-2.5 text-center font-extrabold ${rgColor}`}>
+                                                                                {rg === null ? '—' : `${rg > 0 ? '+' : ''}${rg}%`}
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Pagination */}
+                                            {modalData && modalData.pages > 1 && (
+                                                <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 border-t border-slate-100">
+                                                    <span className="text-[10px] font-bold text-slate-400">{modalData.total} record(s) — Page {modalData.page} of {modalData.pages}</span>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            disabled={modalData.page <= 1}
+                                                            onClick={() => loadGrowthDetail(modalModule, modalData.page - 1)}
+                                                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                        >
+                                                            <i className="fas fa-chevron-left mr-1"></i>Prev
+                                                        </button>
+                                                        <button
+                                                            disabled={modalData.page >= modalData.pages}
+                                                            onClick={() => loadGrowthDetail(modalModule, modalData.page + 1)}
+                                                            className="px-3 py-1.5 rounded-lg border border-slate-200 text-[10px] font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                                        >
+                                                            Next<i className="fas fa-chevron-right ml-1"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Dynamic Breakdown Ranking Table (Zone/Div/Branch/Executive) */}
                                 <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm bg-white">

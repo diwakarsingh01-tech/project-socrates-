@@ -3247,6 +3247,199 @@ def analytics_history():
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route('/api/analytics/growth', methods=['GET'])
+def analytics_growth():
+    """Product/module-wise Pre vs Post growth (dashboard widget + drill-down modal).
+
+    SUMMARY (no module_id):
+      - one row per module: avg pre, avg post, growth = avg_post - avg_pre,
+        paired growth (records where BOTH scores exist), trainees, sessions.
+    DETAIL (module_id + page):
+      - paginated per-record rows for one module with per-row growth + stats.
+
+    Filters: zone, division, branch, emp_code, business_unit, product_name,
+             start_date, end_date, module_id, trainer_id (+ trainer scope).
+    """
+    conn = get_db_connection()
+    try:
+        args = request.args
+        module_id = args.get('module_id', '').strip()
+        trainer_id = args.get('trainer_id', '').strip()
+
+        where_sql, base_params = _analytics_where(args)
+        if not where_sql:
+            where_sql = " WHERE 1=1"
+
+        # Access control: non-global roles only see their assigned scope.
+        scope_conds, scope_params = [], []
+        _user = _session_user()
+        if _user and not _is_global_role(_user.get('role', '')):
+            _scope = _trainer_scope(_user.get('trainer_id'))
+            if _scope:
+                if _scope.get('zones'):
+                    scope_conds.append("UPPER(TRIM(e.zone)) IN ({})".format(','.join('?' * len(_scope['zones']))))
+                    scope_params.extend(_scope['zones'])
+                if _scope.get('divisions'):
+                    scope_conds.append("UPPER(TRIM(e.division)) IN ({})".format(','.join('?' * len(_scope['divisions']))))
+                    scope_params.extend(_scope['divisions'])
+                if _scope.get('branches'):
+                    scope_conds.append("UPPER(TRIM(e.branch_name)) IN ({})".format(','.join('?' * len(_scope['branches']))))
+                    scope_params.extend(_scope['branches'])
+                if _scope.get('business_units'):
+                    scope_conds.append("UPPER(TRIM(e.business_unit)) IN ({})".format(','.join('?' * len(_scope['business_units']))))
+                    scope_params.extend(_scope['business_units'])
+
+        # Extra filters (bound AFTER scope params, matching SQL order).
+        extra_conds, extra_params = [], []
+        if module_id:
+            extra_conds.append("a.module_id = ?")
+            extra_params.append(module_id)
+        if trainer_id:
+            extra_conds.append("UPPER(TRIM(a.trainer_id)) = UPPER(TRIM(?))")
+            extra_params.append(trainer_id)
+
+        conds = scope_conds + extra_conds
+        if conds:
+            where_sql += " AND " + " AND ".join(conds)
+        params = base_params + scope_params + extra_params
+
+        base = ("FROM assessment_results a "
+                "LEFT JOIN employees e ON a.emp_code = e.emp_code "
+                "LEFT JOIN modules m ON a.module_id = m.id")
+
+        modules = conn.execute("SELECT id, title FROM modules ORDER BY title ASC").fetchall()
+
+        def _fmt(v):
+            return round(v, 1) if v is not None else None
+
+        if module_id:
+            # ---- DETAIL mode: per-record rows for one module (pagination) ----
+            try:
+                page = max(1, int(args.get('page', 1) or 1))
+            except ValueError:
+                page = 1
+            try:
+                page_size = max(5, min(50, int(args.get('page_size', 10) or 10)))
+            except ValueError:
+                page_size = 10
+            offset = (page - 1) * page_size
+
+            total = conn.execute(
+                "SELECT COUNT(*) AS c {base} {where}".format(base=base, where=where_sql),
+                params
+            ).fetchone()['c']
+            pages = max(1, (total + page_size - 1) // page_size) if total else 1
+            page = min(page, pages)
+            offset = (page - 1) * page_size
+
+            rows = conn.execute("""
+                SELECT a.id, a.emp_code, e.emp_name, a.module_id, m.title AS module_title,
+                       a.training_date, a.assignment_day, a.session_id,
+                       a.trainer_id, t.name AS trainer_name,
+                       a.pre_test_score, a.post_test_score,
+                       (a.post_test_score - a.pre_test_score) AS growth,
+                       a.zone, a.division, a.branch_name, a.business_unit
+                {base}
+                LEFT JOIN trainers t ON a.trainer_id = t.trainer_id
+                {where}
+                ORDER BY a.training_date DESC, a.id DESC
+                LIMIT ? OFFSET ?
+            """.format(base=base, where=where_sql), params + [page_size, offset]).fetchall()
+
+            stats = conn.execute("""
+                SELECT COUNT(DISTINCT a.emp_code) AS trainees,
+                       COUNT(DISTINCT a.session_id) AS sessions,
+                       COUNT(*) AS records,
+                       AVG(a.pre_test_score) AS avg_pre,
+                       AVG(a.post_test_score) AS avg_post,
+                       AVG(CASE WHEN a.pre_test_score IS NOT NULL AND a.post_test_score IS NOT NULL
+                                THEN a.post_test_score - a.pre_test_score END) AS paired_growth
+                {base}
+                {where}
+            """.format(base=base, where=where_sql), params).fetchone()
+
+            detail = [{
+                "id": r['id'],
+                "emp_code": r['emp_code'],
+                "emp_name": r['emp_name'] or r['emp_code'],
+                "training_date": r['training_date'],
+                "assignment_day": r['assignment_day'],
+                "session_id": r['session_id'],
+                "trainer_name": r['trainer_name'],
+                "zone": r['zone'],
+                "division": r['division'],
+                "branch_name": r['branch_name'],
+                "business_unit": r['business_unit'],
+                "pre_test_score": _fmt(r['pre_test_score']),
+                "post_test_score": _fmt(r['post_test_score']),
+                "growth": _fmt(r['growth']),
+            } for r in rows]
+
+            conn.close()
+            return jsonify({
+                "status": "success",
+                "mode": "detail",
+                "module_id": module_id,
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "pages": pages,
+                "detail": detail,
+                "stats": {
+                    "avg_pre": _fmt(stats['avg_pre']),
+                    "avg_post": _fmt(stats['avg_post']),
+                    "growth": _fmt(stats['avg_post'] - stats['avg_pre']) if stats['avg_pre'] is not None and stats['avg_post'] is not None else None,
+                    "paired_growth": _fmt(stats['paired_growth']),
+                    "trainees": stats['trainees'],
+                    "sessions": stats['sessions'],
+                    "records": stats['records'],
+                },
+            })
+
+        # ---- SUMMARY mode: one row per module with real averages ----
+        summary = conn.execute("""
+            SELECT a.module_id, m.title AS module_title,
+                   COUNT(*) AS records,
+                   COUNT(DISTINCT a.emp_code) AS trainees,
+                   COUNT(DISTINCT a.session_id) AS sessions,
+                   AVG(a.pre_test_score) AS avg_pre,
+                   AVG(a.post_test_score) AS avg_post,
+                   AVG(CASE WHEN a.pre_test_score IS NOT NULL AND a.post_test_score IS NOT NULL
+                            THEN a.post_test_score - a.pre_test_score END) AS paired_growth
+            {base}
+            {where}
+            GROUP BY a.module_id, m.title
+            HAVING COUNT(a.pre_test_score) + COUNT(a.post_test_score) > 0
+            ORDER BY avg_post IS NULL, avg_post DESC, m.title ASC
+        """.format(base=base, where=where_sql), params).fetchall()
+
+        summary_out = [{
+            "module_id": r['module_id'],
+            "module_title": r['module_title'] or "Module {0}".format(r['module_id']),
+            "records": r['records'],
+            "trainees": r['trainees'],
+            "sessions": r['sessions'],
+            "avg_pre": _fmt(r['avg_pre']),
+            "avg_post": _fmt(r['avg_post']),
+            "growth": _fmt(r['avg_post'] - r['avg_pre']) if r['avg_pre'] is not None and r['avg_post'] is not None else None,
+            "paired_growth": _fmt(r['paired_growth']),
+        } for r in summary]
+
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "mode": "summary",
+            "summary": summary_out,
+            "modules": [{"id": r['id'], "title": r['title']} for r in modules],
+            "total": len(summary_out),
+        })
+    except Exception as e:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 @app.route('/api/analytics/export', methods=['GET'])
 def export_analytics():
     conn = get_db_connection()
