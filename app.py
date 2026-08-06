@@ -244,8 +244,15 @@ def init_db():
         trainer_id TEXT,
         module_id INTEGER,
         branch_name TEXT,
+        started_at TEXT,
         FOREIGN KEY(trainer_id) REFERENCES trainers(trainer_id)
     )''')
+
+    # Migration: started_at for older DBs (session start time shown in dashboards)
+    cursor.execute("PRAGMA table_info(training_sessions)")
+    ts_cols = [row[1] for row in cursor.fetchall()]
+    if 'started_at' not in ts_cols:
+        cursor.execute("ALTER TABLE training_sessions ADD COLUMN started_at TEXT")
     
     # Assessment Results (For learning curves) — append-only training history.
     # A new training occurrence (session_id) always INSERTs a new row; the UNIQUE key
@@ -380,6 +387,15 @@ def _session_user():
     """Return the logged-in admin/trainer session user dict, or None."""
     user = session.get('user')
     return user if user else None
+
+
+def _norm_name(text):
+    """Normalize a person's name for tolerant matching: collapse any run of
+    whitespace (spaces/tabs/newlines), trim edges, and casefold. This makes
+    'Ritwik  Kumar', 'ritwik kumar' and 'RITWIK KUMAR' compare equal."""
+    if not text:
+        return ''
+    return re.sub(r'\s+', ' ', str(text)).strip().casefold()
 
 
 def _trainer_scope(trainer_id):
@@ -541,12 +557,17 @@ def admin_forgot_password():
 
     conn = get_db_connection()
     row = conn.execute(
-        "SELECT * FROM trainers WHERE UPPER(trainer_id)=UPPER(?) AND UPPER(TRIM(name))=UPPER(TRIM(?))",
-        (tid, name)
+        "SELECT * FROM trainers WHERE UPPER(TRIM(trainer_id))=UPPER(?)",
+        (tid,)
     ).fetchone()
     if not row:
         conn.close()
-        return jsonify({"status": "error", "message": "Identity could not be verified. Trainer ID and full name must match exactly. Contact your Super Admin for help."}), 404
+        return jsonify({"status": "error", "message": f"Trainer ID '{tid}' is not registered in the system. Contact your Super Admin to create your account."}), 404
+    # Tolerant name check: collapse internal whitespace + case-insensitive, so
+    # 'Ritwik  Kumar' (double space) or 'ritwik kumar' still verify.
+    if _norm_name(row['name']) != _norm_name(name):
+        conn.close()
+        return jsonify({"status": "error", "message": "Identity could not be verified. The Trainer ID is registered, but the full name does not match. Check the exact spelling (e.g. 'RITWIK KUMAR' vs 'Ritwik Kumar')."}, 404)
     if row['status'] and str(row['status']).lower() == 'inactive':
         conn.close()
         return jsonify({"status": "error", "message": "Account is inactive. Contact your Super Admin."}), 403
@@ -592,10 +613,17 @@ def admin_login():
         return jsonify({"status": "error", "message": "Please enter both Trainer ID and Password."}), 400
         
     conn = get_db_connection()
+    # Primary path: exact Trainer ID (case-insensitive) + password.
     user = conn.execute(
-        "SELECT * FROM trainers WHERE (UPPER(trainer_id)=UPPER(?) OR UPPER(name)=UPPER(?)) AND password=?",
-        (raw_id, raw_id, password)
+        "SELECT * FROM trainers WHERE UPPER(TRIM(trainer_id))=UPPER(?) AND password=?",
+        (raw_id, password)
     ).fetchone()
+    if not user:
+        # Fallback: log in by full name with tolerant matching (case + whitespace
+        # normalized) — the name is only a convenience alias, never a hard key.
+        cands = conn.execute("SELECT * FROM trainers WHERE password=?", (password,)).fetchall()
+        target = _norm_name(raw_id)
+        user = next((c for c in cands if _norm_name(c['name'] or '') == target), None)
     
     if user:
         if user['status'] and str(user['status']).lower() == 'inactive':
@@ -2268,11 +2296,11 @@ def dashboard_stats():
         for s in recent:
             title = ''
             trow = conn.execute("SELECT title FROM modules WHERE id=?", (s['module_id'],)).fetchone()
-            if trow:
+            if trow and trow['title']:
                 title = trow['title']
             tr_name = ''
             trow2 = conn.execute("SELECT name FROM trainers WHERE trainer_id=?", (s['trainer_id'],)).fetchone()
-            if trow2:
+            if trow2 and trow2['name']:
                 tr_name = trow2['name']
             attendee = 0
             if s['module_id']:
@@ -2282,9 +2310,10 @@ def dashboard_stats():
                 ).fetchone()['c']
             recent_sessions.append({
                 "date": s['date'],
-                "module_title": title,
-                "branch_name": s['branch_name'],
-                "trainer_name": tr_name or s['trainer_id'],
+                "started_at": s['started_at'] or '',
+                "module_title": title or '—',
+                "branch_name": s['branch_name'] or '—',
+                "trainer_name": tr_name or s['trainer_id'] or '—',
                 "attendee_count": attendee
             })
 
@@ -3052,12 +3081,15 @@ def submit_assessment():
         post_test_score = data.get('post_test_score')
         if test_type == 'pre':
             if pre_test_score is None:
-                pre_test_score = computed_score if computed_score is not None else 0.0
+                # Keep NULL when no score was produced: a missing pre-test must
+                # NOT be recorded as a fake 0.0, or analytics would treat an
+                # unattempted test as a real 0% (and growth as post - 0).
+                pre_test_score = computed_score if computed_score is not None else None
         elif test_type == 'post':
             if post_test_score is None:
-                post_test_score = computed_score if computed_score is not None else 0.0
+                post_test_score = computed_score if computed_score is not None else None
         elif pre_test_score is None and post_test_score is None:
-            pre_test_score = computed_score if computed_score is not None else 0.0
+            pre_test_score = computed_score if computed_score is not None else None
         
         # Passing threshold from module config (default 70)
         pass_pct = 70
@@ -3121,8 +3153,8 @@ def submit_assessment():
             conn.execute(f"UPDATE assessment_results SET {', '.join(updates)} WHERE id=?", params)
             result_id = row['id']
         else:
-            p_val = pre_test_score if pre_test_score is not None else 0.0
-            post_val = post_test_score if post_test_score is not None else 0.0
+            p_val = pre_test_score if pre_test_score is not None else None
+            post_val = post_test_score if post_test_score is not None else None
             cert_id = data.get('certificate_id')
             cur = conn.execute("""INSERT INTO assessment_results
                 (emp_code, module_id, assignment_day, session_id, training_date, trainer_id,
@@ -3349,8 +3381,8 @@ def get_analytics():
                 "module_id": m['module_id'],
                 "title": m['title'] or f"Module #{m['module_id']}",
                 "participants": m['participants'],
-                "avg_pre": round(m['avg_pre'] or 0, 1),
-                "avg_post": round(m['avg_post'] or 0, 1),
+                "avg_pre": round(m['avg_pre'], 1) if m['avg_pre'] is not None else None,
+                "avg_post": round(m['avg_post'], 1) if m['avg_post'] is not None else None,
                 "avg_time_seconds": round(m['avg_time'] or 0, 0),
                 "pass_rate": m['pass_rate'] or 0.0
             }
@@ -3393,7 +3425,7 @@ def get_analytics():
             return 'ZERO DAY'
         return str(day).upper()
 
-    defaults = {'pre': 0.0, 'post': 0.0, 'count': 0}
+    defaults = {'pre': None, 'post': None, 'count': 0}
     payload = {
         'ZERO DAY': dict(defaults),
         'SIX DAYS': dict(defaults),
@@ -3402,16 +3434,18 @@ def get_analytics():
     for r in results:
         day = _norm_day(r['assignment_day'])
         entry = payload.setdefault(day, dict(defaults))
-        entry['pre'] = round(r['avg_pre'] or 0.0, 1)
-        entry['post'] = round(r['avg_post'] or 0.0, 1)
+        # Preserve NULL: a milestone with no real scores must stay null so the
+        # UI can show "—" instead of a misleading 0%.
+        entry['pre'] = round(r['avg_pre'], 1) if r['avg_pre'] is not None else None
+        entry['post'] = round(r['avg_post'], 1) if r['avg_post'] is not None else None
         entry['count'] = r['participants']
 
     summary_metrics = {
         "branches_count": summary_row['branches_count'] or 0,
         "employees_count": summary_row['employees_count'] or 0,
         "records_count": summary_row['records_count'] or 0,
-        "avg_post": round(summary_row['avg_post'] or 0.0, 1),
-        "growth": round(summary_row['growth'] or 0.0, 1),
+        "avg_post": round(summary_row['avg_post'], 1) if summary_row['avg_post'] is not None else None,
+        "growth": round(summary_row['growth'], 1) if summary_row['growth'] is not None else None,
         "role_wise": {r['role'] or 'UNASSIGNED': r['cnt'] for r in role_rows}
     }
     has_live_data = (summary_row['records_count'] or 0) > 0
@@ -4250,19 +4284,40 @@ def on_join_session(data):
     print(f"Employee {emp_id} connected to session PIN: {pin}")
     reg = _session_state(pin)
     
-    # Persist a live session row when the trainer opens the room (feeds Analytics Hub)
+    # Persist a live session row when the trainer opens the room (feeds Analytics Hub).
+    # Bind the module_id at JOIN time — waiting for the first question broadcast
+    # left sessions showing "no module" when the trainer never pushed a question.
     if emp_id == 'TRAINER':
         try:
             trainer_id = session.get('user', {}).get('trainer_id')
+            mod_id = data.get('module_id')
+            if mod_id:
+                try:
+                    mod_id = int(mod_id)
+                except (TypeError, ValueError):
+                    mod_id = None
             if trainer_id:
                 conn = sqlite3.connect(DB_FILE)
                 conn.execute(
-                    "INSERT INTO training_sessions (session_id, date, trainer_id) VALUES (?, ?, ?) "
-                    "ON CONFLICT(session_id) DO NOTHING",
-                    (pin, datetime.datetime.now().strftime("%Y-%m-%d"), trainer_id)
+                    "INSERT INTO training_sessions (session_id, date, trainer_id, module_id, started_at) "
+                    "VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(session_id) DO UPDATE SET "
+                    "module_id=COALESCE(excluded.module_id, training_sessions.module_id)",
+                    (pin, datetime.datetime.now().strftime("%Y-%m-%d"), trainer_id, mod_id,
+                     datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
                 )
                 conn.commit()
                 conn.close()
+            if mod_id:
+                reg['module_id'] = mod_id
+                # Only backfill a partial module object if the registry has none —
+                # a full active_module from a question broadcast always wins.
+                if not reg.get('active_module'):
+                    conn = sqlite3.connect(DB_FILE)
+                    trow = conn.execute("SELECT title FROM modules WHERE id=?", (mod_id,)).fetchone()
+                    conn.close()
+                    if trow and trow['title']:
+                        reg['active_module'] = {'id': mod_id, 'title': trow['title']}
         except Exception as e:
             print(f"trainer session persist failed: {e}")
 

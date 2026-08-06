@@ -5635,10 +5635,11 @@ if (selectedBranch) url += `branch=${encodeURIComponent(selectedBranch)}&`;
                 const midPct = totalParticipants > 0 ? ((midCount / totalParticipants) * 100).toFixed(1) : '0.0';
                 const highPct = totalParticipants > 0 ? ((highCount / totalParticipants) * 100).toFixed(1) : '0.0';
 
-                // Calculate learning growth delta (Day 20 post score vs Zero Day pre score)
-                const zeroDayPre = temporal['ZERO DAY']?.pre || 0;
-                const day20Post = temporal['TWENTY DAYS']?.post || 0;
-                const overallGrowth = (day20Post - zeroDayPre).toFixed(1);
+                // Calculate learning growth delta (Day 20 post score vs Zero Day pre score).
+                // Only meaningful when both real scores exist — otherwise show an honest '—'.
+                const zeroDayPre = temporal['ZERO DAY']?.pre != null ? temporal['ZERO DAY'].pre : null;
+                const day20Post = temporal['TWENTY DAYS']?.post != null ? temporal['TWENTY DAYS'].post : null;
+                const overallGrowth = (zeroDayPre != null && day20Post != null) ? (day20Post - zeroDayPre).toFixed(1) : null;
 
                 // Build filter scope string
                 const filtersUsed = [];
@@ -5724,6 +5725,15 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
 
                 const aiRecsStr = aiRecs.map((r, i) => `${i + 1}. ${r}`).join("\n");
 
+                // Milestone row formatter: null scores render as '—', never as a fake 0%.
+                const milestoneRow = (key, label) => {
+                    const t = temporal[key] || {};
+                    const pre = t.pre != null ? `${t.pre}%` : '—';
+                    const post = t.post != null ? `${t.post}%` : '—';
+                    const growth = (t.pre != null && t.post != null) ? `${(t.post - t.pre).toFixed(1)}%` : '—';
+                    return `• ${label}:\n   - Pre-Test Score: ${pre} | Post-Test Score: ${post} | Growth: ${growth}\n`;
+                };
+
                 const emailBody = `Subject: REPORT: Socrates AI Socratic Training Performance & Action Plan\n\n` +
 `Dear Leadership Team,\n\n` +
 `Please find below the comprehensive, highly analytical training performance and policy compliance report compiled dynamically from our Socrates AI Socratic Training Platform.\n\n` +
@@ -5733,7 +5743,7 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
 `• Scope of Review: ${scopeStr}\n` +
 `• Total Branches Visited (Trained): ${branchesCount}\n` +
 `• Total Trained Employees: ${employeesCount}\n` +
-`• Overall Policy Mastery Growth (Learning Delta): +${overallGrowth}% \n\n` +
+`• Overall Policy Mastery Growth (Learning Delta): ${overallGrowth != null ? `+${overallGrowth}%` : '— (no paired Day 0 pre / Day 20 post data yet)'} \n\n` +
 `=========================================\n` +
 `2. ROLE-WISE TRAINING PENETRATION \n` +
 `=========================================\n` +
@@ -5748,11 +5758,11 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
 `4. SOCRATIC TEMPORAL LEARNING PROGRESSION\n` +
 `=========================================\n` +
 `• ZERO DAY (Tenure & LTV Ratios)  :\n` +
-`   - Pre-Test Score: ${temporal['ZERO DAY']?.pre || 0}% | Post-Test Score: ${temporal['ZERO DAY']?.post || 0}% | Growth: +${((temporal['ZERO DAY']?.post || 0) - (temporal['ZERO DAY']?.pre || 0)).toFixed(1)}%\n` +
+`${milestoneRow('ZERO DAY', '   - Pre-Test Score')}\n` +
 `• SIX DAYS (CIBIL & Approval Limits) :\n` +
-`   - Pre-Test Score: ${temporal['SIX DAYS']?.pre || 0}% | Post-Test Score: ${temporal['SIX DAYS']?.post || 0}% | Growth: +${((temporal['SIX DAYS']?.post || 0) - (temporal['SIX DAYS']?.pre || 0)).toFixed(1)}%\n` +
+`${milestoneRow('SIX DAYS', '   - Pre-Test Score')}\n` +
 `• TWENTY DAYS (Self-Employed Docs)  :\n` +
-`   - Pre-Test Score: ${temporal['TWENTY DAYS']?.pre || 0}% | Post-Test Score: ${temporal['TWENTY DAYS']?.post || 0}% | Growth: +${((temporal['TWENTY DAYS']?.post || 0) - (temporal['TWENTY DAYS']?.pre || 0)).toFixed(1)}%\n\n` +
+`${milestoneRow('TWENTY DAYS', '   - Pre-Test Score')}\n\n` +
 `=========================================\n` +
 `5. CRITICAL REGIONAL PAIN AREAS FLAGGED\n` +
 `=========================================\n` +
@@ -5797,18 +5807,21 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
             };
 
             const temporal = analytics?.temporal || {
-                'ZERO DAY': { pre: 0.0, post: 0.0, count: 0 },
-                'SIX DAYS': { pre: 0.0, post: 0.0, count: 0 },
-                'TWENTY DAYS': { pre: 0.0, post: 0.0, count: 0 }
+                'ZERO DAY': { pre: null, post: null, count: 0 },
+                'SIX DAYS': { pre: null, post: null, count: 0 },
+                'TWENTY DAYS': { pre: null, post: null, count: 0 }
             };
 
             const hasLive = analytics?.has_live_data;
 
             // Memory decay (Day 20 post vs Day 0 post) is only meaningful when both
-            // longitudinal milestones have real records; otherwise show an honest
+            // longitudinal milestones have REAL post scores; otherwise show an honest
             // "insufficient data" state instead of a misleading 0 or negative value.
-            const hasLongitudinal = hasLive && temporal['ZERO DAY'].count > 0 && temporal['TWENTY DAYS'].count > 0;
-            const memoryDecay = hasLongitudinal ? Math.round(temporal['TWENTY DAYS'].post - temporal['ZERO DAY'].post) : null;
+            const zeroDayPost = temporal['ZERO DAY'].post;
+            const twentyDayPost = temporal['TWENTY DAYS'].post;
+            const hasLongitudinal = hasLive && temporal['ZERO DAY'].count > 0 && temporal['TWENTY DAYS'].count > 0
+                && zeroDayPost != null && twentyDayPost != null;
+            const memoryDecay = hasLongitudinal ? Math.round(twentyDayPost - zeroDayPost) : null;
 
             return (
                 <div className="card overflow-hidden">
@@ -6025,7 +6038,7 @@ value={selectedProduct}
                                         <div className="space-y-1">
                                             <p className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-widest">Avg. Post-Test</p>
                                             <p className="text-3xl font-black text-slate-900 font-outfit">
-                                                {analytics?.summary_metrics?.avg_post ?? 0}%
+                                                {analytics?.summary_metrics?.avg_post != null ? `${analytics.summary_metrics.avg_post}%` : '—'}
                                             </p>
                                         </div>
                                         <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center text-xl shadow-inner border border-emerald-100">
@@ -6036,7 +6049,7 @@ value={selectedProduct}
                                         <div className="space-y-1">
                                             <p className="text-[10px] font-extrabold text-violet-600 uppercase tracking-widest">Overall Learning Growth</p>
                                             <p className="text-3xl font-black text-slate-900 font-outfit">
-                                                {analytics?.summary_metrics?.growth ?? 0}%
+                                                {analytics?.summary_metrics?.growth != null ? `${analytics.summary_metrics.growth}%` : '—'}
                                             </p>
                                         </div>
                                         <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-full flex items-center justify-center text-xl shadow-inner border border-violet-100">
@@ -6165,19 +6178,19 @@ value={selectedProduct}
 
                                                     {/* Day 0 Node */}
                                                     <div className="z-10 flex flex-col items-center">
-                                                        <div className="w-8 h-8 rounded-full bg-emerald-500 border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold">{temporal['ZERO DAY'].post}%</div>
+                                                        <div className="w-8 h-8 rounded-full bg-emerald-500 border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold">{zeroDayPost != null ? `${zeroDayPost}%` : '—'}</div>
                                                         <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-1.5">Day 0</span>
                                                     </div>
 
                                                     {/* Day 6 Node */}
                                                     <div className="z-10 flex flex-col items-center">
-                                                        <div className={`w-8 h-8 rounded-full border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold ${temporal['SIX DAYS'].post >= 75 ? 'bg-emerald-500' : 'bg-amber-500'}`}>{temporal['SIX DAYS'].post}%</div>
+                                                        <div className={`w-8 h-8 rounded-full border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold ${(temporal['SIX DAYS'].post != null && temporal['SIX DAYS'].post >= 75) ? 'bg-emerald-500' : 'bg-amber-500'}`}>{temporal['SIX DAYS'].post != null ? `${temporal['SIX DAYS'].post}%` : '—'}</div>
                                                         <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-1.5">Day 6</span>
                                                     </div>
 
                                                     {/* Day 20 Node */}
                                                     <div className="z-10 flex flex-col items-center">
-                                                        <div className={`w-8 h-8 rounded-full border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold ${temporal['TWENTY DAYS'].post >= 80 ? 'bg-emerald-500' : 'bg-amber-500'}`}>{temporal['TWENTY DAYS'].post}%</div>
+                                                        <div className={`w-8 h-8 rounded-full border-4 border-white shadow flex items-center justify-center text-white text-[9px] font-extrabold ${(twentyDayPost != null && twentyDayPost >= 80) ? 'bg-emerald-500' : 'bg-amber-500'}`}>{twentyDayPost != null ? `${twentyDayPost}%` : '—'}</div>
                                                         <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-1.5">Day 20</span>
                                                     </div>
                                                 </div>
@@ -7472,11 +7485,20 @@ const [connectedTrainees, setConnectedTrainees] = useState([]);
             const [activeQIdx, setActiveQIdx] = useState(0);
             const [selectedLanguageOverride, setSelectedLanguageOverride] = useState('en');
 
+            // Ref mirror of activeModule so reconnects can re-bind the module id
+            // even when the state update from localStorage hasn't landed yet.
+            const activeModuleRef = useRef(null);
+            activeModuleRef.current = activeModule;
+            // Module loaded from the Library handoff on this mount (localStorage
+            // is consumed immediately, so keep a ref for the join emit below).
+            const freshModuleRef = useRef(null);
+
             const [activeTab, setActiveTab] = useState('display'); 
             const [leaderboard, setLeaderboard] = useState([]);
             const [showPodium, setShowPodium] = useState(false);
             const [mobileTab, setMobileTab] = useState('controls'); 
             const [timerState, setTimerState] = useState({ question_remaining_sec: 0, test_remaining_sec: 0, question_timeout_sec: 60, test_duration_sec: 1200, timed_phase: null });
+            const [sessionStartedAt, setSessionStartedAt] = useState(null);
 
             const fmtTime = (s) => {
                 const sec = Math.max(0, Math.floor(s || 0));
@@ -7490,7 +7512,11 @@ const [connectedTrainees, setConnectedTrainees] = useState([]);
                 const stored = localStorage.getItem('socrates_active_module');
                 const isFreshStart = !!stored;
                 if (stored) {
-                    try { setActiveModule(JSON.parse(stored)); } catch(e) {}
+                    try {
+                        const m = JSON.parse(stored);
+                        setActiveModule(m);
+                        freshModuleRef.current = m;
+                    } catch(e) {}
                     localStorage.removeItem('socrates_active_module');
                 }
 
@@ -7573,12 +7599,25 @@ const [connectedTrainees, setConnectedTrainees] = useState([]);
 
             useEffect(() => {
                 if (sessionId) {
+                    const moduleIdAtJoin = () => {
+                        // Fresh Library handoff wins; then live state (reconnects).
+                        if (freshModuleRef.current?.id) return freshModuleRef.current.id;
+                        if (activeModuleRef.current?.id) return activeModuleRef.current.id;
+                        let mod = null;
+                        try {
+                            const stored = localStorage.getItem('socrates_active_module');
+                            if (stored) mod = JSON.parse(stored);
+                        } catch(e) {}
+                        return mod?.id || null;
+                    };
                     const handleConnect = () => {
-                        socket.emit('join_session', {pin: sessionId, emp_id: 'TRAINER'});
+                        setSessionStartedAt(prev => prev || new Date().toLocaleTimeString());
+                        socket.emit('join_session', {pin: sessionId, emp_id: 'TRAINER', module_id: moduleIdAtJoin()});
                     };
                     socket.on('connect', handleConnect);
                     if (socket.connected) {
-                        socket.emit('join_session', {pin: sessionId, emp_id: 'TRAINER'});
+                        setSessionStartedAt(prev => prev || new Date().toLocaleTimeString());
+                        socket.emit('join_session', {pin: sessionId, emp_id: 'TRAINER', module_id: moduleIdAtJoin()});
                     }
                     return () => {
                         socket.off('connect', handleConnect);
@@ -7742,7 +7781,13 @@ return {
                             </div>
                             <div className="hidden sm:block">
                                 <h2 className="text-sm font-black text-slate-900 uppercase tracking-tight">Socrates Live Broadcast</h2>
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{activeModule?.title || 'No Module Active'}</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                                    {activeModule?.title
+                                        ? <><span className="text-socrates-primary">{activeModule.title}</span><span className="text-slate-300">•</span></>
+                                        : <span className="text-rose-500">No Module Active — Select a module from the Library first</span>}
+                                    <span className="text-slate-400">{user?.name || 'Trainer'}</span>
+                                    {sessionStartedAt && <><span className="text-slate-300">•</span><span className="text-slate-400">Started {sessionStartedAt}</span></>}
+                                </p>
                             </div>
                         </div>
                         <div className="flex items-center gap-4">
