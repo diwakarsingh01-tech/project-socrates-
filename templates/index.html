@@ -189,6 +189,7 @@
                 return saved ? JSON.parse(saved) : null;
             });
             const [pin, setPin] = useState(() => localStorage.getItem('socrates_pin') || '');
+            const [joinError, setJoinError] = useState('');
 
             useEffect(() => {
                 const urlPin = new URLSearchParams(window.location.search).get('pin');
@@ -336,6 +337,17 @@
                     }
                 });
 
+                // Master-roster gating: the server rejects joins for profiles that
+                // are not in the ACTIVE master roster. Revert to login with a clear
+                // message instead of silently sitting on an empty dashboard.
+                socket.on('join_error', (data) => {
+                    setJoinError((data && data.message) || "Profile not found in the master roster. Please contact your administrator.");
+                    setView('login');
+                    localStorage.removeItem('socrates_empId');
+                    localStorage.removeItem('socrates_empDetails');
+                    localStorage.removeItem('socrates_view');
+                });
+
                 socket.on('client_command', (data) => {
                     if (data.command === 'reset_scores') {
                         setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0); setTotalQuestions(0); setHasSubmittedCurrent(false);
@@ -446,7 +458,7 @@
                 if (window.location.search) window.history.replaceState({}, '', window.location.pathname);
             };
 
-            if (view === 'login') return <Login onLogin={(id, details, sessionPin) => { setEmpId(id); setEmpDetails(details); setPin(sessionPin); setView('dashboard'); socket.emit('join_session', {pin: sessionPin, emp_id: id}); }} />;
+            if (view === 'login') return <Login joinError={joinError} onLogin={(id, details, sessionPin) => { setJoinError(''); setEmpId(id); setEmpDetails(details); setPin(sessionPin); setView('dashboard'); socket.emit('join_session', {pin: sessionPin, emp_id: id}); }} />;
 
             return (
                 <div className="w-full h-[100dvh] bg-[#090D16] flex flex-col relative overflow-hidden transition-all duration-300">
@@ -477,7 +489,7 @@
             );
         };
 
-        const Login = ({onLogin}) => {
+        const Login = ({onLogin, joinError}) => {
             const [pin, setPin] = useState('');
 
             useEffect(() => {
@@ -539,6 +551,12 @@
                                     <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Session Access PIN</label>
                                     <input type="text" value={pin} onChange={e => setPin(e.target.value)} placeholder="0000" className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-2xl px-4 py-3 text-center tracking-[0.5em] font-black text-3xl text-slate-100 outline-none transition-all focus:ring-4 focus:ring-amber-500/10" />
                                 </div>
+                                {joinError && (
+                                    <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 animate-fade-in">
+                                        <div className="text-[10px] font-black text-rose-400 uppercase tracking-widest mb-1 flex items-center gap-1.5"><i className="fas fa-exclamation-triangle"></i> Profile Not Found</div>
+                                        <div className="text-xs font-bold text-rose-300 leading-relaxed">{joinError}</div>
+                                    </div>
+                                )}
                                 <div className="relative">
                                     <label className="block text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest">Find Your Profile</label>
                                     <input type="text" placeholder="NAME OR EMPLOYEE CODE" value={searchQuery} onChange={e => setSearchQuery(e.target.value.toUpperCase())} className="w-full bg-[#0D111C]/60 border border-white/5 focus:border-[#D97706] rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 outline-none transition-all focus:ring-4 focus:ring-amber-500/10 font-bold uppercase" />

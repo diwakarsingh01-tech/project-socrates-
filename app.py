@@ -415,6 +415,26 @@ def _apply_trainer_scope(query_parts, params, scope):
             params.extend(scope['business_units'])
     return "".join(query_parts), params
 
+
+def _roster_emp(emp_code, active_only=True):
+    """Master-roster lookup. Returns the active employee row or None.
+
+    The master roster is the single source of truth: emp codes that do not
+    exist (or are not ACTIVE) here cannot use the portal.
+    """
+    code = str(emp_code or '').strip().upper()
+    if not code:
+        return None
+    conn = get_db_connection()
+    try:
+        if active_only:
+            row = conn.execute("SELECT * FROM employees WHERE emp_code=? AND status='ACTIVE'", (code,)).fetchone()
+        else:
+            row = conn.execute("SELECT * FROM employees WHERE emp_code=?", (code,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
 # --- HTML TEMPLATE ROUTES ---
 @app.route('/')
 def index():
@@ -789,10 +809,17 @@ def get_roster_filters():
             for row in conn.execute("SELECT DISTINCT TRIM(branch_name), TRIM(division), TRIM(zone) FROM employees WHERE branch_name IS NOT NULL AND TRIM(branch_name) != '' ORDER BY branch_name").fetchall()
         ]
 
+        # BU -> Zone linkage so the hierarchy can cascade Business Unit -> Zone -> Division -> Branch
+        zones_meta = [
+            {"name": row[0].strip(), "business_unit": (row[1] or '').strip()}
+            for row in conn.execute("SELECT DISTINCT TRIM(zone), TRIM(business_unit) FROM employees WHERE zone IS NOT NULL AND TRIM(zone) != '' AND business_unit IS NOT NULL AND TRIM(business_unit) != '' ORDER BY zone").fetchall()
+        ]
+
         conn.close()
         return jsonify({
             "status": "success",
             "zones": zones,
+            "zones_meta": zones_meta,
             "divisions": divisions,
             "divisions_meta": divisions_meta,
             "branches": branches,
@@ -1027,12 +1054,26 @@ def search_roster():
     query = request.args.get('q', '').strip()
     if not query:
         return jsonify([])
-        
+
     conn = get_db_connection()
-    # Case-insensitive query matches emp_name or emp_code
+    # Case-insensitive query matches emp_name or emp_code; only ACTIVE roster members.
+    # Optional org scope params narrow the search inside a BU/Zone/Division/Branch context.
+    where = ["status = 'ACTIVE'", "(emp_name LIKE ? OR emp_code LIKE ?)"]
+    params = [f"%{query}%", f"%{query}%"]
+    scope_map = {
+        'bu': 'business_unit',
+        'zone': 'zone',
+        'division': 'division',
+        'branch': 'branch_name',
+    }
+    for key, col in scope_map.items():
+        val = request.args.get(key, '').strip()
+        if val:
+            where.append(f"UPPER(TRIM({col})) = UPPER(TRIM(?))")
+            params.append(val)
     results = conn.execute(
-        "SELECT * FROM employees WHERE emp_name LIKE ? OR emp_code LIKE ? LIMIT 10",
-        (f"%{query}%", f"%{query}%")
+        "SELECT * FROM employees WHERE " + " AND ".join(where) + " ORDER BY emp_name LIMIT 10",
+        params
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in results])
@@ -1402,6 +1443,9 @@ def plan_visit():
 
     trainer_id, trainer_name = _trainer_id_and_name(str(data.get('trainer_id', '')).strip())
     info = _resolve_branch_info(branch_name)
+    # Master roster gate: visits can only be planned for branches present in the roster.
+    if info['zone'] is None or info['division'] is None:
+        return jsonify({"status": "error", "message": f"Branch '{branch_name}' not found in the master roster. Please pick a branch from the list (Business Unit → Zone → Division → Branch)."}), 400
     purpose = str(data.get('purpose', '')).strip()
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -1531,8 +1575,12 @@ def upload_visits():
                 travel_mode = r[travel_mode_idx].strip() if travel_mode_idx != -1 and len(r) > travel_mode_idx else ''
 
                 info = _resolve_branch_info(branch_code or '')
-                if not info['zone'] and branch_code:
-                    errors.append(f"Row {row_idx}: branch '{branch_code}' not found in roster — mapped as raw branch (no zone/division).")
+                # Master roster gate: visits can only be recorded for branches
+                # present in the roster — unknown branches are skipped, never
+                # stored as blank zone/division rows.
+                if not info['zone']:
+                    errors.append(f"Row {row_idx}: branch '{branch_code}' not found in master roster — row skipped.")
+                    continue
 
                 conn.execute("""
                     INSERT INTO visits (trainer_id, trainer_name, zone, division, branch_name, branch_code, business_unit,
@@ -1686,6 +1734,7 @@ def export_visits():
     zone = request.args.get('zone', '').strip()
     division = request.args.get('division', '').strip()
     branch = request.args.get('branch', '').strip()
+    bu = request.args.get('bu', '').strip()
     trainer = request.args.get('trainer', '').strip()
     status = request.args.get('status', '').strip()
 
@@ -1710,6 +1759,9 @@ def export_visits():
     if branch:
         query += " AND UPPER(TRIM(branch_name))=UPPER(TRIM(?))"
         params.append(branch)
+    if bu:
+        query += " AND UPPER(TRIM(business_unit))=UPPER(TRIM(?))"
+        params.append(bu)
     if trainer:
         query += " AND UPPER(TRIM(trainer_name))=UPPER(TRIM(?))"
         params.append(trainer)
@@ -2592,6 +2644,10 @@ def submit_assessment():
     emp_code = str(data.get('emp_code', '')).upper()
     module_id = data.get('module_id')
     assignment_day = str(data.get('assignment_day', 'zero day')).upper()
+
+    # Master roster gate: unknown/inactive emp codes cannot submit assessments.
+    if not _roster_emp(emp_code):
+        return jsonify({"status": "error", "message": f"Employee '{emp_code}' not found in the master roster. Please contact your administrator."}), 400
     
     conn = get_db_connection()
     try:
@@ -2940,9 +2996,11 @@ def get_analytics():
             {"name": row[0].strip(), "division": (row[1] or '').strip(), "zone": (row[2] or '').strip()}
             for row in conn.execute("SELECT DISTINCT TRIM(branch_name), TRIM(division), TRIM(zone) FROM employees" + opt_where + " AND branch_name IS NOT NULL AND TRIM(branch_name) != '' ORDER BY branch_name", opt_params).fetchall()
         ]
-        executives = [
-            {"code": row[0], "name": row[1], "branch": (row[2] or ''), "division": (row[3] or ''), "zone": (row[4] or '')}
-            for row in conn.execute("SELECT emp_code, emp_name, branch_name, division, zone FROM employees" + opt_where + " ORDER BY emp_name", opt_params).fetchall()
+        # Executives list removed from payload for 50K-scale safety — the UI now
+        # uses the debounced /api/roster/search endpoint for employee picking.
+        zones_meta = [
+            {"name": row[0].strip(), "business_unit": (row[1] or '').strip()}
+            for row in conn.execute("SELECT DISTINCT TRIM(zone), TRIM(business_unit) FROM employees" + opt_where + " AND zone IS NOT NULL AND TRIM(zone) != '' AND business_unit IS NOT NULL AND TRIM(business_unit) != '' ORDER BY zone", opt_params).fetchall()
         ]
         business_units = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(business_unit) FROM employees" + opt_where + " AND business_unit IS NOT NULL AND TRIM(business_unit) != '' ORDER BY business_unit", opt_params).fetchall()]
         products = [r[0].strip() for r in conn.execute("SELECT DISTINCT TRIM(product_name) FROM employees" + opt_where + " AND product_name IS NOT NULL AND TRIM(product_name) != '' ORDER BY product_name", opt_params).fetchall()]
@@ -2996,9 +3054,9 @@ def get_analytics():
         "module_usage": module_usage,
         "filter_options": {
             "zones": zones,
+            "zones_meta": zones_meta,
             "divisions": divisions,
             "branches": branches,
-            "executives": executives,
             "business_units": business_units,
             "products": products
         },
@@ -3709,6 +3767,9 @@ def submit_feedback():
     understanding = str(data.get('understanding', ''))
     manpower_saved = str(data.get('manpower_saved', ''))
     comments = str(data.get('comments', ''))
+    # Master roster gate: only roster members can submit session feedback.
+    if not _roster_emp(emp_code):
+        return jsonify({"status": "error", "message": f"Employee '{emp_code}' not found in the master roster. Please contact your administrator."}), 400
     conn = get_db_connection()
     try:
         conn.execute(
@@ -3804,6 +3865,14 @@ def _leaderboard_payload(reg):
 def on_join_session(data):
     pin = str(data.get('pin'))
     emp_id = data.get('emp_id')
+
+    # Master roster gate: trainees must exist (and be ACTIVE) in the master
+    # roster to enter the classroom — the roster is the single source of truth.
+    if emp_id and emp_id != 'TRAINER':
+        if not _roster_emp(emp_id):
+            emit('join_error', {'message': f"Profile '{emp_id}' not found in the master roster. Please contact your administrator."}, room=request.sid)
+            return
+
     join_room(pin)
     print(f"Employee {emp_id} connected to session PIN: {pin}")
     reg = _session_state(pin)
@@ -3987,6 +4056,11 @@ def on_submit_vote(data):
     answer_idx = int(data.get('answer_idx', 0))
     q_idx = int(data.get('question_idx', 0))
     reg = _session_state(pin)
+
+    # Master roster gate: answers from non-roster employees are rejected.
+    if emp_id and emp_id != 'TRAINER' and not _roster_emp(emp_id):
+        emit('join_error', {'message': f"Profile '{emp_id}' not found in the master roster. Please contact your administrator."}, room=request.sid)
+        return
 
     is_correct = False
     marks_obtained = 0

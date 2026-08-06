@@ -220,6 +220,134 @@ background: rgba(217,119,6,0.1);
         };
         db.init();
 
+        // SMART SELECT — typeahead combobox for cascading BU → Zone → Division →
+        // Branch and any long list. 50K-scale safe: renders only the filtered
+        // subset, closes on outside click, clears the selection when emptied.
+        const SmartSelect = ({ label, value, onChange, options, placeholder }) => {
+            const [open, setOpen] = useState(false);
+            const [query, setQuery] = useState('');
+            const ref = useRef(null);
+            useEffect(() => {
+                const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+                document.addEventListener('mousedown', close);
+                return () => document.removeEventListener('mousedown', close);
+            }, []);
+            const selected = (options || []).find(o => o.value === value);
+            const q = query.trim().toLowerCase();
+            const filtered = q ? (options || []).filter(o => (o.label || o.value).toLowerCase().includes(q)) : (options || []);
+            return (
+                <div className="relative" ref={ref}>
+                    {label && <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">{label}</label>}
+                    <input
+                        type="text"
+                        value={open ? query : (selected ? selected.label : (value || ''))}
+                        onFocus={() => { setOpen(true); setQuery(''); }}
+                        onChange={(e) => { setQuery(e.target.value); setOpen(true); if (!e.target.value) onChange(''); }}
+                        placeholder={placeholder || 'Type to search...'}
+                        className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-amber-500 pr-8"
+                    />
+                    <i className="fas fa-chevron-down absolute right-3 text-slate-400 text-[10px] pointer-events-none" style={{ top: label ? '2.6rem' : '0.9rem' }}></i>
+                    {open && (
+                        <div className="absolute z-40 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
+                            {filtered.length === 0 && (
+                                <div className="px-3 py-3 text-xs text-slate-400 italic">No match found in master roster</div>
+                            )}
+                            {filtered.slice(0, 100).map(o => (
+                                <div
+                                    key={o.value}
+                                    onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
+                                    className={`px-3 py-2.5 text-xs cursor-pointer flex items-center justify-between hover:bg-amber-50 ${value === o.value ? 'bg-amber-50 font-bold text-amber-800' : 'text-slate-700'}`}
+                                >
+                                    <span>{o.label}</span>
+                                    {value === o.value && <i className="fas fa-check text-[10px] text-amber-600"></i>}
+                                </div>
+                            ))}
+                            {filtered.length > 100 && (
+                                <div className="px-3 py-2 text-[10px] text-slate-400 border-t border-slate-100">Showing first 100 — keep typing to narrow</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // ROSTER SEARCH SELECT — debounced server-side employee search against the
+        // master roster (/api/roster/search). 50K-scale safe: the full roster is
+        // never shipped to the browser; the backend returns at most 10 ACTIVE
+        // matches per keystroke. Optional scope params (bu/zone/division/branch)
+        // narrow the search inside the currently cascaded org context.
+        const RosterSearchSelect = ({ value, onChange, scope = {} }) => {
+            const [open, setOpen] = useState(false);
+            const [query, setQuery] = useState('');
+            const [options, setOptions] = useState([]);
+            const [searching, setSearching] = useState(false);
+            const ref = useRef(null);
+            const timer = useRef(null);
+            useEffect(() => {
+                const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+                document.addEventListener('mousedown', close);
+                return () => document.removeEventListener('mousedown', close);
+            }, []);
+            useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+            const doSearch = (q) => {
+                if (timer.current) clearTimeout(timer.current);
+                if (q.trim().length < 2) { setOptions([]); setSearching(false); return; }
+                setSearching(true);
+                timer.current = setTimeout(() => {
+                    let url = `/api/roster/search?q=${encodeURIComponent(q.trim())}`;
+                    if (scope.bu) url += `&bu=${encodeURIComponent(scope.bu)}`;
+                    if (scope.zone) url += `&zone=${encodeURIComponent(scope.zone)}`;
+                    if (scope.division) url += `&division=${encodeURIComponent(scope.division)}`;
+                    if (scope.branch) url += `&branch=${encodeURIComponent(scope.branch)}`;
+                    fetch(url)
+                        .then(res => res.json())
+                        .then(data => {
+                            setOptions((Array.isArray(data) ? data : []).map(r => ({ value: r.emp_code, label: `${r.emp_name} (${r.emp_code})` })));
+                            setSearching(false);
+                            setOpen(true);
+                        })
+                        .catch(() => { setOptions([]); setSearching(false); });
+                }, 300);
+            };
+            const selected = options.find(o => o.value === value) || (value ? { value, label: value } : null);
+            return (
+                <div className="relative" ref={ref}>
+                    <input
+                        type="text"
+                        value={open ? query : (selected ? selected.label : (value || ''))}
+                        onFocus={() => { setOpen(true); if (!query) setOptions([]); }}
+                        onChange={(e) => { setQuery(e.target.value); setOpen(true); if (!e.target.value) { onChange(''); setOptions([]); } else { doSearch(e.target.value); } }}
+                        placeholder="Search name or employee code..."
+                        className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-amber-500 pr-8"
+                    />
+                    {searching
+                        ? <i className="fas fa-spinner fa-spin absolute right-3 text-slate-400 text-[10px]" style={{ top: '0.9rem' }}></i>
+                        : <i className="fas fa-chevron-down absolute right-3 text-slate-400 text-[10px] pointer-events-none" style={{ top: '0.9rem' }}></i>}
+                    {open && (
+                        <div className="absolute z-40 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
+                            {query.trim().length < 2 ? (
+                                <div className="px-3 py-3 text-xs text-slate-400 italic">Type at least 2 characters to search the master roster</div>
+                            ) : options.length === 0 && !searching ? (
+                                <div className="px-3 py-3 text-xs text-slate-400 italic">No match found in master roster</div>
+                            ) : (
+                                options.slice(0, 100).map(o => (
+                                    <div
+                                        key={o.value}
+                                        onClick={() => { onChange(o.value); setOpen(false); setQuery(''); }}
+                                        className={`px-3 py-2.5 text-xs cursor-pointer flex items-center justify-between hover:bg-amber-50 ${value === o.value ? 'bg-amber-50 font-bold text-amber-800' : 'text-slate-700'}`}
+                                    >
+                                        <span>{o.label}</span>
+                                        {value === o.value && <i className="fas fa-check text-[10px] text-amber-600"></i>}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+        const optList = (arr) => (arr || []).map(x => ({ value: x, label: x }));
+
         const App = () => {
             const [view, setView] = useState('login'); 
             const [user, setUser] = useState(null); 
@@ -1140,6 +1268,13 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                 } else if (type === 'bu') {
                     newBu = val;
                     setSelBu(val);
+                    // BU is the first cascade level: changing it resets zone/division/branch
+                    newZone = '';
+                    newDiv = '';
+                    newBranch = '';
+                    setSelZone('');
+                    setSelDiv('');
+                    setSelBranch('');
                 } else if (type === 'role') {
                     newRole = val;
                     setSelRole(val);
@@ -1602,36 +1737,49 @@ const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business 
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
-                                                <input type="text" list="manual-branches" value={branchName} onChange={e => setBranchName(e.target.value.toUpperCase())} placeholder="e.g. DELHI RF" className="input-field uppercase" />
-                                                <datalist id="manual-branches">
-                                                    {filterOptions.branches && filterOptions.branches.map((b, idx) => <option key={idx} value={b} />)}
-                                                </datalist>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
+                                                <SmartSelect
+                                                    value={bu}
+                                                    onChange={v => { setBu(v || ''); setZone(''); setDivision(''); setBranchName(''); }}
+                                                    options={optList(filterOptions.business_units)}
+                                                    placeholder="Select Business Unit"
+                                                />
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
-                                                <input type="text" list="manual-zones" value={zone} onChange={e => setZone(e.target.value.toUpperCase())} placeholder="e.g. NORTH ZONE" className="input-field uppercase" />
-                                                <datalist id="manual-zones">
-                                                    {filterOptions.zones && filterOptions.zones.map((z, idx) => <option key={idx} value={z} />)}
-                                                </datalist>
+                                                <SmartSelect
+                                                    value={zone}
+                                                    onChange={v => { setZone(v || ''); setDivision(''); setBranchName(''); }}
+                                                    options={(filterOptions.zones_meta || filterOptions.zones || [])
+                                                        .filter(z => !bu || (z.business_unit || z).toString().trim().toUpperCase() === bu.trim().toUpperCase())
+                                                        .map(z => ({ value: z.name || z, label: z.name ? `${z.name} (${z.business_unit})` : z }))}
+                                                    placeholder="Select Zone"
+                                                />
                                             </div>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
-                                                <input type="text" list="manual-divisions" value={division} onChange={e => setDivision(e.target.value.toUpperCase())} placeholder="e.g. DELHI DIVISION" className="input-field uppercase" />
-                                                <datalist id="manual-divisions">
-
-{filterOptions.divisions && filterOptions.divisions.map((d, idx) => <option key={idx} value={d} />)}
-                                                </datalist>
+                                                <SmartSelect
+                                                    value={division}
+                                                    onChange={v => { setDivision(v || ''); setBranchName(''); }}
+                                                    options={(filterOptions.divisions_meta || [])
+                                                        .filter(d => !zone || (d.zone || '').trim().toUpperCase() === zone.trim().toUpperCase())
+                                                        .map(d => ({ value: d.name, label: `${d.name} (${d.zone})` }))}
+                                                    placeholder="Select Division"
+                                                />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
-                                                <input type="text" list="manual-bus" value={bu} onChange={e => setBu(e.target.value.toUpperCase())} placeholder="e.g. TWO-WHEELER" className="input-field uppercase" />
-                                                <datalist id="manual-bus">
-                                                    {filterOptions.business_units && filterOptions.business_units.map((b, idx) => <option key={idx} value={b} />)}
-                                                </datalist>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
+                                                <SmartSelect
+                                                    value={branchName}
+                                                    onChange={v => setBranchName(v || '')}
+                                                    options={(filterOptions.branches_meta || [])
+                                                        .filter(br => (!division || (br.division || '').trim().toUpperCase() === division.trim().toUpperCase()) && (!zone || (br.zone || '').trim().toUpperCase() === zone.trim().toUpperCase()))
+                                                        .map(br => ({ value: br.name, label: `${br.name} (${br.division})` }))}
+                                                    placeholder="Select Branch"
+                                                />
                                             </div>
                                         </div>
 
@@ -1709,62 +1857,48 @@ const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business 
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
-                                                <input type="text" value={editBranchName} onChange={e => setEditBranchName(e.target.value.toUpperCase())} placeholder="e.g. AHMEDABAD" className="input-field uppercase" />
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
+                                                <SmartSelect
+                                                    value={editBu}
+                                                    onChange={v => { setEditBu(v || ''); setEditZone(''); setEditDivision(''); setEditBranchName(''); }}
+                                                    options={optList(filterOptions.business_units)}
+                                                    placeholder="Select Business Unit"
+                                                />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
-                                                {filterOptions.divisions_meta && filterOptions.divisions_meta.length > 0 ? (
-                                                    <select value={editDivision} onChange={e => setEditDivision(e.target.value)} className="input-field bg-white">
-                                                        {filterOptions.divisions_meta
-
-.filter(d => !editZone || (d.zone || '').trim().toUpperCase() === editZone.trim().toUpperCase())
-                                                            .map((d, idx) => <option key={idx} value={d.name}>{d.name}</option>)}
-                                                    </select>
-                                                ) : (
-                                                    <input type="text" value={editDivision} onChange={e => setEditDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
-                                                )}
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
+                                                <SmartSelect
+                                                    value={editZone}
+                                                    onChange={v => { setEditZone(v || ''); setEditDivision(''); setEditBranchName(''); }}
+                                                    options={(filterOptions.zones_meta || filterOptions.zones || [])
+                                                        .filter(z => !editBu || (z.business_unit || z).toString().trim().toUpperCase() === editBu.trim().toUpperCase())
+                                                        .map(z => ({ value: z.name || z, label: z.name ? `${z.name} (${z.business_unit})` : z }))}
+                                                    placeholder="Select Zone"
+                                                />
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
-                                                <select value={editZone} onChange={e => {
-                                                    const newZone = e.target.value;
-                                                    setEditZone(newZone);
-                                                    const possibleDivs = filterOptions.divisions_meta.filter(d => (d.zone || '').trim().toUpperCase() === newZone.trim().toUpperCase());
-                                                    if (possibleDivs.length > 0) {
-                                                        setEditDivision(possibleDivs[0].name);
-                                                    } else {
-                                                        setEditDivision('');
-                                                    }
-                                                }} className="input-field bg-white">
-                                                    {filterOptions.zones && filterOptions.zones.length > 0 ? (
-                                                        filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
-                                                    ) : (
-                                                        <>
-                                                            <option value="NORTH ZONE">NORTH ZONE</option>
-                                                            <option value="WEST ZONE">WEST ZONE</option>
-                                                            <option value="EAST ZONE">EAST ZONE</option>
-                                                        </>
-                                                    )}
-                                                </select>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
+                                                <SmartSelect
+                                                    value={editDivision}
+                                                    onChange={v => { setEditDivision(v || ''); setEditBranchName(''); }}
+                                                    options={(filterOptions.divisions_meta || [])
+                                                        .filter(d => !editZone || (d.zone || '').trim().toUpperCase() === editZone.trim().toUpperCase())
+                                                        .map(d => ({ value: d.name, label: `${d.name} (${d.zone})` }))}
+                                                    placeholder="Select Division"
+                                                />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
-                                                <select value={editBu} onChange={e => setEditBu(e.target.value)} className="input-field bg-white">
-                                                    {filterOptions.business_units && filterOptions.business_units.length > 0 ? (
-                                                        filterOptions.business_units.map((b, idx) => <option key={idx} value={b}>{b}</option>)
-                                                    ) : (
-                                                        <>
-                                                            <option value="TWO-WHEELER">TWO-WHEELER</option>
-                                                            <option value="PERSONAL LOAN">PERSONAL LOAN</option>
-                                                            <option value="GOLD LOAN">GOLD LOAN</option>
-                                                            <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
-                                                            <option value="RETAIL">RETAIL</option>
-                                                        </>
-                                                    )}
-                                                </select>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
+                                                <SmartSelect
+                                                    value={editBranchName}
+                                                    onChange={v => setEditBranchName(v || '')}
+                                                    options={(filterOptions.branches_meta || [])
+                                                        .filter(br => (!editDivision || (br.division || '').trim().toUpperCase() === editDivision.trim().toUpperCase()) && (!editZone || (br.zone || '').trim().toUpperCase() === editZone.trim().toUpperCase()))
+                                                        .map(br => ({ value: br.name, label: `${br.name} (${br.division})` }))}
+                                                    placeholder="Select Branch"
+                                                />
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
@@ -1831,69 +1965,48 @@ const csvData = "Employee Code,Employee Name,Branch Name,Zone,Division,Business 
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
-                                                <input type="text" value={bulkBranchName} onChange={e => setBulkBranchName(e.target.value.toUpperCase())} placeholder="e.g. AHMEDABAD RF" className="input-field uppercase" />
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
+                                                <SmartSelect
+                                                    value={bulkBu}
+                                                    onChange={v => { setBulkBu(v || ''); setBulkZone(''); setBulkDivision(''); setBulkBranchName(''); }}
+                                                    options={optList(filterOptions.business_units)}
+                                                    placeholder="No Change (optional)"
+                                                />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
-                                                {filterOptions.divisions_meta && filterOptions.divisions_meta.length > 0 ? (
-                                                    <select value={bulkDivision} onChange={e => setBulkDivision(e.target.value)} className="input-field bg-white">
-                                                        <option value="">-- No Change --</option>
-                                                        {filterOptions.divisions_meta
-                                                            .filter(d => !bulkZone || (d.zone || '').trim().toUpperCase() === bulkZone.trim().toUpperCase())
-                                                            .map((d, idx) => <option key={idx} value={d.name}>{d.name}</option>)}
-                                                    </select>
-                                                ) : (
-                                                    <input type="text" value={bulkDivision} onChange={e => setBulkDivision(e.target.value.toUpperCase())} placeholder="e.g. GUJARAT DIVISION" className="input-field uppercase" />
-                                                )}
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
+                                                <SmartSelect
+                                                    value={bulkZone}
+                                                    onChange={v => { setBulkZone(v || ''); setBulkDivision(''); setBulkBranchName(''); }}
+                                                    options={(filterOptions.zones_meta || filterOptions.zones || [])
+                                                        .filter(z => !bulkBu || (z.business_unit || z).toString().trim().toUpperCase() === bulkBu.trim().toUpperCase())
+                                                        .map(z => ({ value: z.name || z, label: z.name ? `${z.name} (${z.business_unit})` : z }))}
+                                                    placeholder="No Change (optional)"
+                                                />
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Zone</label>
-                                                <select value={bulkZone} onChange={e => {
-                                                    const newZone = e.target.value;
-                                                    setBulkZone(newZone);
-                                                    if (newZone) {
-                                                        const possibleDivs = filterOptions.divisions_meta.filter(d => (d.zone || '').trim().toUpperCase() === newZone.trim().toUpperCase());
-                                                        if (possibleDivs.length > 0) {
-                                                            setBulkDivision(possibleDivs[0].name);
-                                                        } else {
-                                                            setBulkDivision('');
-                                                        }
-                                                    } else {
-                                                        setBulkDivision('');
-                                                    }
-                                                }} className="input-field bg-white">
-                                                    <option value="">-- No Change --</option>
-                                                    {filterOptions.zones && filterOptions.zones.length > 0 ? (
-
-filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
-                                                    ) : (
-                                                        <>
-                                                            <option value="NORTH ZONE">NORTH ZONE</option>
-                                                            <option value="WEST ZONE">WEST ZONE</option>
-                                                            <option value="EAST ZONE">EAST ZONE</option>
-                                                        </>
-                                                    )}
-                                                </select>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Division</label>
+                                                <SmartSelect
+                                                    value={bulkDivision}
+                                                    onChange={v => { setBulkDivision(v || ''); setBulkBranchName(''); }}
+                                                    options={(filterOptions.divisions_meta || [])
+                                                        .filter(d => !bulkZone || (d.zone || '').trim().toUpperCase() === bulkZone.trim().toUpperCase())
+                                                        .map(d => ({ value: d.name, label: `${d.name} (${d.zone})` }))}
+                                                    placeholder="No Change (optional)"
+                                                />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Business Unit (BU)</label>
-                                                <select value={bulkBu} onChange={e => setBulkBu(e.target.value)} className="input-field bg-white">
-                                                    <option value="">-- No Change --</option>
-                                                    {filterOptions.business_units && filterOptions.business_units.length > 0 ? (
-                                                        filterOptions.business_units.map((b, idx) => <option key={idx} value={b}>{b}</option>)
-                                                    ) : (
-                                                        <>
-                                                            <option value="TWO-WHEELER">TWO-WHEELER</option>
-                                                            <option value="PERSONAL LOAN">PERSONAL LOAN</option>
-                                                            <option value="GOLD LOAN">GOLD LOAN</option>
-                                                            <option value="COMMERCIAL VEHICLE">COMMERCIAL VEHICLE</option>
-                                                            <option value="RETAIL">RETAIL</option>
-                                                        </>
-                                                    )}
-                                                </select>
+                                                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Branch Name</label>
+                                                <SmartSelect
+                                                    value={bulkBranchName}
+                                                    onChange={v => setBulkBranchName(v || '')}
+                                                    options={(filterOptions.branches_meta || [])
+                                                        .filter(br => (!bulkDivision || (br.division || '').trim().toUpperCase() === bulkDivision.trim().toUpperCase()) && (!bulkZone || (br.zone || '').trim().toUpperCase() === bulkZone.trim().toUpperCase()))
+                                                        .map(br => ({ value: br.name, label: `${br.name} (${br.division})` }))}
+                                                    placeholder="No Change (optional)"
+                                                />
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
@@ -2174,36 +2287,46 @@ filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
 
 <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 items-center shadow-inner">
                                 <div>
+                                    <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Business Unit</label>
+                                    <SmartSelect
+                                        value={selBu}
+                                        onChange={v => handleFilterChange('bu', v)}
+                                        options={optList(filterOptions.business_units)}
+                                        placeholder="All Business Units"
+                                    />
+                                </div>
+                                <div>
                                     <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Zone</label>
-                                    <select value={selZone} onChange={e => handleFilterChange('zone', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
-                                        <option value="">All Zones</option>
-                                        {filterOptions.zones && filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)}
-                                    </select>
+                                    <SmartSelect
+                                        value={selZone}
+                                        onChange={v => handleFilterChange('zone', v)}
+                                        options={(filterOptions.zones_meta || filterOptions.zones || [])
+                                            .filter(z => !selBu || (z.business_unit || z).toString().trim().toUpperCase() === selBu.trim().toUpperCase())
+                                            .map(z => ({ value: z.name || z, label: z.name ? `${z.name} (${z.business_unit})` : z }))}
+                                        placeholder="All Zones"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Division</label>
-                                    <select value={selDiv} onChange={e => handleFilterChange('division', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
-                                        <option value="">All Divisions</option>
-                                        {filterOptions.divisions_meta && filterOptions.divisions_meta
+                                    <SmartSelect
+                                        value={selDiv}
+                                        onChange={v => handleFilterChange('division', v)}
+                                        options={(filterOptions.divisions_meta || [])
                                             .filter(d => !selZone || (d.zone || '').trim().toUpperCase() === selZone.trim().toUpperCase())
-                                            .map((d, idx) => <option key={idx} value={d.name}>{d.name} ({d.zone})</option>)}
-                                    </select>
+                                            .map(d => ({ value: d.name, label: `${d.name} (${d.zone})` }))}
+                                        placeholder="All Divisions"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Branch</label>
-                                    <select value={selBranch} onChange={e => handleFilterChange('branch', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
-                                        <option value="">All Branches</option>
-                                        {filterOptions.branches_meta && filterOptions.branches_meta
+                                    <SmartSelect
+                                        value={selBranch}
+                                        onChange={v => handleFilterChange('branch', v)}
+                                        options={(filterOptions.branches_meta || [])
                                             .filter(br => (!selDiv || (br.division || '').trim().toUpperCase() === selDiv.trim().toUpperCase()) && (!selZone || (br.zone || '').trim().toUpperCase() === selZone.trim().toUpperCase()))
-                                            .map((br, idx) => <option key={idx} value={br.name}>{br.name} ({br.division})</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Business Unit</label>
-                                    <select value={selBu} onChange={e => handleFilterChange('bu', e.target.value)} className="input-field bg-white py-1.5 text-xs font-semibold text-slate-700 shadow-sm border-slate-200 hover:border-slate-350 rounded-lg">
-                                        <option value="">All Business Units</option>
-                                        {filterOptions.business_units && filterOptions.business_units.map((bu, idx) => <option key={idx} value={bu}>{bu}</option>)}
-                                    </select>
+                                            .map(br => ({ value: br.name, label: `${br.name} (${br.division})` }))}
+                                        placeholder="All Branches"
+                                    />
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-extrabold text-slate-400 mb-1.5 uppercase tracking-widest">Filter by Role</label>
@@ -3783,7 +3906,10 @@ loadTrainers();
             const [managerPin, setManagerPin] = useState('');
             const [verifyResult, setVerifyResult] = useState(null);
 
-            const [branchOptions, setBranchOptions] = useState([]);
+            const [rosterMeta, setRosterMeta] = useState({ business_units: [], zones_meta: [], divisions_meta: [], branches_meta: [] });
+            const [planBu, setPlanBu] = useState('');
+            const [planZone, setPlanZone] = useState('');
+            const [planDivision, setPlanDivision] = useState('');
 
             // Monthly planning compliance states
             const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().substring(0, 7)); // YYYY-MM
@@ -3805,6 +3931,7 @@ loadTrainers();
             const [filterBranch, setFilterBranch] = useState('');
             const [filterTrainer, setFilterTrainer] = useState('');
             const [filterStatus, setFilterStatus] = useState('');
+            const [filterBu, setFilterBu] = useState('');
 
             const getDaysInMonth = (date) => {
                 const year = date.getFullYear();
@@ -3848,19 +3975,22 @@ const getFirstDayOfMonth = (date) => {
                         if (yearStr !== filterYear) return false;
                     }
 
-                    // 2. Zone filter
+                    // 2. Business Unit filter
+                    if (filterBu && (v.business_unit || '').trim().toUpperCase() !== filterBu.trim().toUpperCase()) return false;
+
+                    // 3. Zone filter
                     if (filterZone && v.zone !== filterZone) return false;
 
-                    // 3. Division filter
+                    // 4. Division filter
                     if (filterDivision && v.division !== filterDivision) return false;
 
-                    // 4. Branch filter
+                    // 5. Branch filter
                     if (filterBranch && v.branch_name !== filterBranch) return false;
 
-                    // 5. Trainer filter
+                    // 6. Trainer filter
                     if (filterTrainer && v.trainer_name !== filterTrainer) return false;
 
-                    // 6. Status filter
+                    // 7. Status filter
                     if (filterStatus && v.status !== filterStatus) return false;
 
                     return true;
@@ -3940,6 +4070,7 @@ const getFirstDayOfMonth = (date) => {
                 let url = `/api/visits/export?period=${filterPeriod}`;
                 if (filterPeriod === 'MONTH' && filterMonth) url += `&month=${filterMonth}`;
                 if (filterPeriod === 'YEAR' && filterYear) url += `&year=${filterYear}`;
+                if (filterBu) url += `&bu=${encodeURIComponent(filterBu)}`;
                 if (filterZone) url += `&zone=${encodeURIComponent(filterZone)}`;
                 if (filterDivision) url += `&division=${encodeURIComponent(filterDivision)}`;
                 if (filterBranch) url += `&branch=${encodeURIComponent(filterBranch)}`;
@@ -4017,13 +4148,18 @@ setShowMomModal(false);
 
             useEffect(() => {
                 loadVisits();
-                // Load roster filters to get branch list options
+                // Load roster filters (BU → Zone → Division → Branch hierarchy) for
+                // the cascading filter console and plan modal — master roster is the
+                // single source of truth for org structure.
                 fetch('/api/roster/filters')
                     .then(res => res.json())
                     .then(data => {
-                        if (data.branches_meta) {
-                            setBranchOptions(data.branches_meta);
-                        }
+                        setRosterMeta({
+                            business_units: data.business_units || [],
+                            zones_meta: data.zones_meta || [],
+                            divisions_meta: data.divisions_meta || [],
+                            branches_meta: data.branches_meta || []
+                        });
                     })
                     .catch(err => console.error("Error loading roster branches:", err));
             }, []);
@@ -4239,37 +4375,57 @@ message: data.message,
                                     </div>
                                 )}
                                 <div className="space-y-1.5">
-                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Trainer</label>
-                                    <select value={filterTrainer} onChange={e => setFilterTrainer(e.target.value)} className="input-field bg-white text-[11px] font-bold">
-                                        <option value="">All Trainers</option>
-
-{uniqueTrainers.map(tr => <option key={tr} value={tr}>{tr}</option>)}
-                                    </select>
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Business Unit</label>
+                                    <SmartSelect
+                                        value={filterBu}
+                                        onChange={v => { setFilterBu(v || ''); setFilterZone(''); setFilterDivision(''); setFilterBranch(''); }}
+                                        options={optList(rosterMeta.business_units)}
+                                        placeholder="All BUs"
+                                    />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Zone</label>
-                                    <select value={filterZone} onChange={e => setFilterZone(e.target.value)} className="input-field bg-white text-[11px] font-bold">
-                                        <option value="">All Zones</option>
-                                        {uniqueZones.map(zn => <option key={zn} value={zn}>{zn}</option>)}
-                                    </select>
+                                    <SmartSelect
+                                        value={filterZone}
+                                        onChange={v => { setFilterZone(v || ''); setFilterDivision(''); setFilterBranch(''); }}
+                                        options={(rosterMeta.zones_meta || [])
+                                            .filter(z => !filterBu || (z.business_unit || '').trim().toUpperCase() === filterBu.trim().toUpperCase())
+                                            .map(z => ({ value: z.name, label: `${z.name} (${z.business_unit})` }))}
+                                        placeholder="All Zones"
+                                    />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Division</label>
-                                    <select value={filterDivision} onChange={e => setFilterDivision(e.target.value)} className="input-field bg-white text-[11px] font-bold">
-                                        <option value="">All Divisions</option>
-                                        {uniqueDivisions.map(div => <option key={div} value={div}>{div}</option>)}
-                                    </select>
+                                    <SmartSelect
+                                        value={filterDivision}
+                                        onChange={v => { setFilterDivision(v || ''); setFilterBranch(''); }}
+                                        options={(rosterMeta.divisions_meta || [])
+                                            .filter(d => !filterZone || (d.zone || '').trim().toUpperCase() === filterZone.trim().toUpperCase())
+                                            .map(d => ({ value: d.name, label: `${d.name} (${d.zone})` }))}
+                                        placeholder="All Divisions"
+                                    />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Branch</label>
-                                    <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)} className="input-field bg-white text-[11px] font-bold">
-                                        <option value="">All Branches</option>
-                                        {uniqueBranches.map(br => <option key={br} value={br}>{br}</option>)}
+                                    <SmartSelect
+                                        value={filterBranch}
+                                        onChange={v => setFilterBranch(v || '')}
+                                        options={(rosterMeta.branches_meta || [])
+                                            .filter(br => (!filterDivision || (br.division || '').trim().toUpperCase() === filterDivision.trim().toUpperCase()) && (!filterZone || (br.zone || '').trim().toUpperCase() === filterZone.trim().toUpperCase()))
+                                            .map(br => ({ value: br.name, label: `${br.name} (${br.division})` }))}
+                                        placeholder="All Branches"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">Trainer</label>
+                                    <select value={filterTrainer} onChange={e => setFilterTrainer(e.target.value)} className="input-field bg-white text-[11px] font-bold">
+                                        <option value="">All Trainers</option>
+                                        {uniqueTrainers.map(tr => <option key={tr} value={tr}>{tr}</option>)}
                                     </select>
                                 </div>
                                 <div className="flex gap-2">
                                     <button onClick={handleExportCalendar} className="flex-1 btn-outline bg-white border-slate-200 py-2.5 text-[10px] font-black uppercase tracking-widest">Export CSV</button>
-                                    <button onClick={() => { setFilterPeriod('ALL'); setFilterZone(''); setFilterDivision(''); setFilterBranch(''); setFilterTrainer(''); setFilterStatus(''); }} className="btn-outline bg-white border-slate-200 py-2.5 px-3 text-[10px] font-black uppercase tracking-widest"><i className="fas fa-undo"></i></button>
+                                    <button onClick={() => { setFilterPeriod('ALL'); setFilterBu(''); setFilterZone(''); setFilterDivision(''); setFilterBranch(''); setFilterTrainer(''); setFilterStatus(''); }} className="btn-outline bg-white border-slate-200 py-2.5 px-3 text-[10px] font-black uppercase tracking-widest"><i className="fas fa-undo"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -4540,11 +4696,46 @@ const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trai
                                 <form onSubmit={handlePlanSubmit}>
                                     <div className="p-8 space-y-5">
                                         <div className="space-y-1.5">
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Business Unit</label>
+                                            <SmartSelect
+                                                value={planBu}
+                                                onChange={v => { setPlanBu(v || ''); setPlanZone(''); setPlanDivision(''); setBranchName(''); }}
+                                                options={optList(rosterMeta.business_units)}
+                                                placeholder="-- Select BU --"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Zone</label>
+                                            <SmartSelect
+                                                value={planZone}
+                                                onChange={v => { setPlanZone(v || ''); setPlanDivision(''); setBranchName(''); }}
+                                                options={(rosterMeta.zones_meta || [])
+                                                    .filter(z => !planBu || (z.business_unit || '').trim().toUpperCase() === planBu.trim().toUpperCase())
+                                                    .map(z => ({ value: z.name, label: `${z.name} (${z.business_unit})` }))}
+                                                placeholder="-- Select Zone --"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Division</label>
+                                            <SmartSelect
+                                                value={planDivision}
+                                                onChange={v => { setPlanDivision(v || ''); setBranchName(''); }}
+                                                options={(rosterMeta.divisions_meta || [])
+                                                    .filter(d => !planZone || (d.zone || '').trim().toUpperCase() === planZone.trim().toUpperCase())
+                                                    .map(d => ({ value: d.name, label: `${d.name} (${d.zone})` }))}
+                                                placeholder="-- Select Division --"
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
                                             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Production Branch</label>
-                                            <select value={branchName} onChange={e => setBranchName(e.target.value)} required className="input-field bg-white font-bold text-xs">
-                                                <option value="">-- Select Branch --</option>
-                                                {branchOptions.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
-                                            </select>
+                                            <SmartSelect
+                                                value={branchName}
+                                                onChange={v => setBranchName(v || '')}
+                                                options={(rosterMeta.branches_meta || [])
+                                                    .filter(br => (!planDivision || (br.division || '').trim().toUpperCase() === planDivision.trim().toUpperCase()) && (!planZone || (br.zone || '').trim().toUpperCase() === planZone.trim().toUpperCase()))
+                                                    .map(br => ({ value: br.name, label: `${br.name} (${br.division})` }))}
+                                                placeholder="-- Select Branch --"
+                                            />
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-1.5">
@@ -4679,6 +4870,14 @@ const mailBody = `Management Update: Field Visit Report\n\nTrainer: ${visit.trai
                 business_units: [],
                 products: []
             });
+            const [trainersList, setTrainersList] = useState([]);
+
+            useEffect(() => {
+                fetch('/api/trainers')
+                    .then(res => res.json())
+                    .then(data => setTrainersList(Array.isArray(data) ? data : []))
+                    .catch(err => console.error("Error loading analytics trainers:", err));
+            }, []);
 
             // Phase 9 States
             const [expandedBucket, setExpandedBucket] = useState(null);
@@ -5061,16 +5260,11 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
                 alert("✨ Premium Dynamic Socratic AI Leadership Email Report successfully compiled and copied to clipboard! You can now paste (Ctrl+V/Cmd+V) directly into your email body to share with leadership.");
             };
 
-            // Cascading lists filters
+            // Cascading lists filters (executives removed — server-side search via /api/roster/search)
             const filteredDivisions = filterOptions.divisions.filter(d => !selectedZone || d.zone === selectedZone);
             const filteredBranches = filterOptions.branches.filter(b => 
                 (!selectedZone || b.zone === selectedZone) && 
                 (!selectedDiv || b.division === selectedDiv)
-            );
-            const filteredExecutives = filterOptions.executives.filter(e => 
-                (!selectedZone || e.zone === selectedZone) && 
-                (!selectedDiv || e.division === selectedDiv) &&
-                (!selectedBranch || e.branch === selectedBranch)
             );
 
             const resetFilters = () => {
@@ -5173,73 +5367,67 @@ aiRecs.push(`📍 REGIONAL INTERVENTION: Focus Socratic diagnostic reinforcement
 
                     <div className="p-4 md:p-8 bg-white">
                         {/* Global Dynamic Control Filters Bar */}
-                        {(tab === 'executive' || tab === 'painpoints') && (
+                        {tab && (
                             <div className="bg-slate-50 p-4 md:p-6 rounded-2xl border border-slate-200/80 space-y-4 mb-8 shadow-sm animate-fade-in">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-end">
+                                    {/* Business Unit Select (first cascade level) */}
+                                    <div className="space-y-1.5">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-briefcase mr-1 text-slate-400"></i> Business Unit</label>
+                                        <SmartSelect
+                                            value={selectedBU}
+                                            onChange={v => { setSelectedBU(v || ''); setSelectedZone(''); setSelectedDiv(''); setSelectedBranch(''); setSelectedEmp(''); }}
+                                            options={optList(filterOptions.business_units)}
+                                            placeholder="All Business Units"
+                                        />
+                                    </div>
+
                                     {/* Zone Select */}
                                     <div className="space-y-1.5">
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-globe mr-1 text-slate-400"></i> Zone</label>
-                                        <select 
-                                            value={selectedZone} 
-                                            onChange={(e) => { setSelectedZone(e.target.value); setSelectedDiv(''); setSelectedBranch(''); setSelectedEmp(''); }} 
-                                            className="input-field bg-white py-2 text-xs font-semibold"
-                                        >
-                                            <option value="">All Zones</option>
-                                            {filterOptions.zones.map(z => <option key={z} value={z}>{z}</option>)}
-                                        </select>
+                                        <SmartSelect
+                                            value={selectedZone}
+                                            onChange={v => { setSelectedZone(v || ''); setSelectedDiv(''); setSelectedBranch(''); setSelectedEmp(''); }}
+                                            options={(filterOptions.zones_meta && filterOptions.zones_meta.length ? filterOptions.zones_meta : (filterOptions.zones || []).map(z => ({ name: z, business_unit: '' })))
+                                                .filter(z => !selectedBU || (z.business_unit || '').toString().trim().toUpperCase() === selectedBU.trim().toUpperCase())
+                                                .map(z => ({ value: z.name, label: z.business_unit ? `${z.name} (${z.business_unit})` : z.name }))}
+                                            placeholder="All Zones"
+                                        />
                                     </div>
 
                                     {/* Division Select */}
                                     <div className="space-y-1.5">
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-map mr-1 text-slate-400"></i> Division</label>
-
-<select 
-                                            value={selectedDiv} 
-                                            onChange={(e) => { setSelectedDiv(e.target.value); setSelectedBranch(''); setSelectedEmp(''); }} 
-                                            className="input-field bg-white py-2 text-xs font-semibold"
-                                        >
-                                            <option value="">All Divisions</option>
-                                            {filteredDivisions.map(d => <option key={d.name} value={d.name}>{d.name}</option>)}
-                                        </select>
+                                        <SmartSelect
+                                            value={selectedDiv}
+                                            onChange={v => { setSelectedDiv(v || ''); setSelectedBranch(''); setSelectedEmp(''); }}
+                                            options={(filterOptions.divisions || [])
+                                                .filter(d => !selectedZone || (d.zone || '').trim().toUpperCase() === selectedZone.trim().toUpperCase())
+                                                .map(d => ({ value: d.name, label: `${d.name} (${d.zone})` }))}
+                                            placeholder="All Divisions"
+                                        />
                                     </div>
 
                                     {/* Branch Select */}
                                     <div className="space-y-1.5">
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-store mr-1 text-slate-400"></i> Branch</label>
-                                        <select 
-                                            value={selectedBranch} 
-                                            onChange={(e) => { setSelectedBranch(e.target.value); setSelectedEmp(''); }} 
-                                            className="input-field bg-white py-2 text-xs font-semibold"
-                                        >
-                                            <option value="">All Branches</option>
-                                            {filteredBranches.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
-                                        </select>
+                                        <SmartSelect
+                                            value={selectedBranch}
+                                            onChange={v => { setSelectedBranch(v || ''); setSelectedEmp(''); }}
+                                            options={(filterOptions.branches || [])
+                                                .filter(b => (!selectedDiv || (b.division || '').trim().toUpperCase() === selectedDiv.trim().toUpperCase()) && (!selectedZone || (b.zone || '').trim().toUpperCase() === selectedZone.trim().toUpperCase()))
+                                                .map(b => ({ value: b.name, label: `${b.name} (${b.division})` }))}
+                                            placeholder="All Branches"
+                                        />
                                     </div>
 
-                                    {/* Executive Select */}
+                                    {/* Executive Search (server-side, 50K-safe) */}
                                     <div className="space-y-1.5">
                                         <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-user mr-1 text-slate-400"></i> Executive</label>
-                                        <select 
-                                            value={selectedEmp} 
-                                            onChange={(e) => setSelectedEmp(e.target.value)} 
-                                            className="input-field bg-white py-2 text-xs font-semibold"
-                                        >
-                                            <option value="">All Executives</option>
-                                            {filteredExecutives.map(e => <option key={e.code} value={e.code}>{e.name} ({e.code})</option>)}
-                                        </select>
-                                    </div>
-
-                                    {/* Business Unit Select */}
-                                    <div className="space-y-1.5">
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest"><i className="fas fa-briefcase mr-1 text-slate-400"></i> Business Unit</label>
-                                        <select 
-                                            value={selectedBU} 
-                                            onChange={(e) => setSelectedBU(e.target.value)} 
-                                            className="input-field bg-white py-2 text-xs font-semibold"
-                                        >
-                                            <option value="">All BUs</option>
-                                            {filterOptions.business_units && filterOptions.business_units.map(bu => <option key={bu} value={bu}>{bu}</option>)}
-                                        </select>
+                                        <RosterSearchSelect
+                                            value={selectedEmp}
+                                            onChange={v => setSelectedEmp(v || '')}
+                                            scope={{ bu: selectedBU, zone: selectedZone, division: selectedDiv, branch: selectedBranch }}
+                                        />
                                     </div>
 
                                     {/* Product Select */}
@@ -5367,13 +5555,14 @@ value={selectedProduct}
                                                     <option key={m.id} value={m.id}>{m.title}</option>
                                                 ))}
                                             </select>
-                                            <input
-                                                type="text"
-                                                value={growthTrainer}
-                                                onChange={e => setGrowthTrainer(e.target.value)}
-                                                placeholder="Trainer ID (e.g. TR-NORTH)"
-                                                className="input-field bg-white text-xs font-semibold"
-                                            />
+                                            <div className="min-w-[220px]">
+                                                <SmartSelect
+                                                    value={growthTrainer}
+                                                    onChange={v => setGrowthTrainer(v || '')}
+                                                    options={trainersList.map(t => ({ value: t.id, label: `${t.name} (${t.id})` }))}
+                                                    placeholder="All Trainers"
+                                                />
+                                            </div>
                                         </div>
 
                                         {growthLoading ? (
@@ -6457,12 +6646,12 @@ className={`h-full rounded-full bg-gradient-to-r ${
 
                                 <div className="bg-slate-50 p-4 md:p-5 rounded-2xl border border-slate-200/80 space-y-3 shadow-sm">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-                                        <select value={histAgent} onChange={e => setHistAgent(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-                                            <option value="">All Agents</option>
-                                            {(historyData?.agents || []).map(a => (
-                                                <option key={a.emp_code} value={a.emp_code}>{a.emp_name} ({a.emp_code})</option>
-                                            ))}
-                                        </select>
+                                        <SmartSelect
+                                            value={histAgent}
+                                            onChange={v => setHistAgent(v || '')}
+                                            options={(historyData?.agents || []).map(a => ({ value: a.emp_code, label: `${a.emp_name} (${a.emp_code})` }))}
+                                            placeholder="All Agents"
+                                        />
                                         <select value={histModule} onChange={e => setHistModule(e.target.value)} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
                                             <option value="">All Modules</option>
                                             {(historyData?.modules || []).map(m => (
