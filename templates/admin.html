@@ -409,7 +409,7 @@ background: rgba(217,119,6,0.1);
                         <div className="flex-1 p-4 overflow-y-auto space-y-1">
                             <div onClick={() => setView('dashboard')} className={`sidebar-link ${view==='dashboard'?'active':''}`}><i className="fas fa-layer-group w-5"></i> Dashboard</div>
                             <div onClick={() => { localStorage.removeItem('socrates_active_module'); setView('live_session'); }} className={`sidebar-link ${view==='live_session'?'active':''}`}><i className="fas fa-satellite-dish w-5"></i> Live Session</div>
-                            <div onClick={() => setView('library')} className={`sidebar-link ${view==='library'?'active':''}`}><i className="fas fa-robot w-5"></i> AI Library</div>
+                            <div onClick={() => setView('library')} className={`sidebar-link ${view==='library'?'active':''}`}><i className="fas fa-robot w-5"></i> Question Library</div>
                             <div onClick={() => setView('roster')} className={`sidebar-link ${view==='roster'?'active':''}`}><i className="fas fa-users-cog w-5"></i> Master Roster</div>
                             <div onClick={() => setView('analytics')} className={`sidebar-link ${view==='analytics'?'active':''}`}><i className="fas fa-chart-pie w-5"></i> Analytics Hub</div>
                             <div onClick={() => setView('travel_hub')} className={`sidebar-link ${view==='travel_hub'?'active':''}`}><i className="fas fa-map-marked-alt w-5"></i> Travel Hub</div>
@@ -516,7 +516,7 @@ background: rgba(217,119,6,0.1);
                         {[
                             { id: 'dashboard', icon: 'layer-group', label: 'Home' },
                             { id: 'live_session', icon: 'satellite-dish', label: 'Live' },
-                            { id: 'library', icon: 'robot', label: 'AI Library' },
+                            { id: 'library', icon: 'robot', label: 'Question Library' },
                             { id: 'roster', icon: 'users-cog', label: 'Roster' },
                             { id: 'travel_hub', icon: 'map-marked-alt', label: 'Travel' },
                             { id: 'analytics', icon: 'chart-pie', label: 'Data' }
@@ -571,7 +571,7 @@ background: rgba(217,119,6,0.1);
                                     <div onClick={() => { setView('dashboard'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='dashboard'?'active':''}`}><i className="fas fa-layer-group w-5 text-center text-base"></i> Dashboard</div>
 
 <div onClick={() => { localStorage.removeItem('socrates_active_module'); setView('live_session'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='live_session'?'active':''}`}><i className="fas fa-satellite-dish w-5 text-center text-base"></i> Live Session Control</div>
-                                    <div onClick={() => { setView('library'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='library'?'active':''}`}><i className="fas fa-robot w-5 text-center text-base"></i> AI Module Library</div>
+                                    <div onClick={() => { setView('library'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='library'?'active':''}`}><i className="fas fa-robot w-5 text-center text-base"></i> Question Module Library</div>
                                     <div onClick={() => { setView('roster'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='roster'?'active':''}`}><i className="fas fa-users-cog w-5 text-center text-base"></i> Employee Roster</div>
                                     <div onClick={() => { setView('analytics'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='analytics'?'active':''}`}><i className="fas fa-chart-pie w-5 text-center text-base"></i> Analytics Hub</div>
                                     <div onClick={() => { setView('travel_hub'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='travel_hub'?'active':''}`}><i className="fas fa-map-marked-alt w-5 text-center text-base"></i> Field Travel Hub</div>
@@ -679,7 +679,7 @@ modules_count: 0,
                     return;
                 }
                 if (isPendingAudit) {
-                    alert(`⚠️ Live launch blocked. Module '${selectedModule.title}' is still pending trainer audit (${approvedCount}/${totalCount} approved). Please complete the audit in the AI Library first.`);
+                    alert(`⚠️ Live launch blocked. Module '${selectedModule.title}' is still pending trainer audit (${approvedCount}/${totalCount} approved). Please complete the audit in the Question Library first.`);
                     return;
                 }
                 localStorage.setItem('socrates_active_module', JSON.stringify(selectedModule));
@@ -765,7 +765,7 @@ modules_count: 0,
                                                 onChange={(e)=>setSelectedModId(e.target.value)} 
                                                 className="input-field bg-white shadow-sm border-slate-300 py-3 text-sm font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-amber-100"
                                             >
-                                                {modules.length === 0 && <option value="">No modules available - Go to AI Library</option>}
+                                                {modules.length === 0 && <option value="">No modules available - Go to Question Library</option>}
                                                 {modules.map(m => {
                                                     const appCount = m.questions ? m.questions.filter(q => q.approved === 1).length : 0;
                                                     const totCount = m.questions_count || m.questions?.length || 15;
@@ -807,7 +807,7 @@ modules_count: 0,
                                             <div className="text-xs font-bold text-amber-800">Trainer Audit Pending</div>
                                             <p className="text-[11px] text-amber-700 font-medium mt-1 leading-normal">
                                                 This module is currently a Draft and cannot be launched in the broadcast environment until all questions are approved. 
-                                                Go to the <strong className="cursor-pointer underline text-socrates-primary hover:text-socrates-primaryHover" onClick={() => onNav('library')}>AI Library</strong> and click <strong>Resume Audit</strong> to review and approve questions.
+                                                Go to the <strong className="cursor-pointer underline text-socrates-primary hover:text-socrates-primaryHover" onClick={() => onNav('library')}>Question Library</strong> and click <strong>Resume Audit</strong> to review and approve questions.
                                             </p>
                                         </div>
                                     </div>
@@ -967,19 +967,6 @@ visit.status === 'GEOFENCED' ? 'bg-amber-100 text-amber-700' : 'bg-amber-100 tex
                                                 <div className="flex items-center justify-between mb-1">
                                                     <span className="text-xs font-bold text-socrates-dark truncate pr-2 max-w-[300px]">{mod.title} module creator {mod.creator_name || mod.created_by || 'Super Admin'}</span>
                                                     <div className="flex items-center gap-1.5">
-                                                        {/* Glowing trainer-only difficulty badge */}
-                                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border shadow-[0_0_6px_rgba(var(--badge-glow))] ${
-                                                            mod.difficulty === 'Easy' 
-                                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                                                                : mod.difficulty === 'Hard' 
-                                                                    ? 'bg-rose-50 text-rose-700 border-rose-200' 
-                                                                    : 'bg-blue-50 text-blue-700 border-blue-200'
-                                                        }`}
-                                                        style={{
-                                                            '--badge-glow': mod.difficulty === 'Easy' ? '16,185,129,0.15' : mod.difficulty === 'Hard' ? '244,63,94,0.15' : '59,130,246,0.15'
-                                                        }}>
-                                                            {mod.difficulty || 'Medium'}
-                                                        </span>
                                                         <span className="text-[10px] font-bold text-purple-700 bg-purple-100/50 px-2 py-0.5 rounded-full">{mod.approved_count}/{mod.questions_count} Qs</span>
                                                     </div>
                                                 </div>
@@ -2413,17 +2400,11 @@ filterOptions.zones.map((z, idx) => <option key={idx} value={z}>{z}</option>)
         const LibraryView = ({user}) => {
             const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
             const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';
-            const [status, setStatus] = useState('idle'); // idle, loading, generating, review
+            const [status, setStatus] = useState('idle'); // idle, review
             const [modules, setModules] = useState([]);
-            const [title, setTitle] = useState('');
-            const [qCount, setQCount] = useState(15);
-            const [selectedFile, setSelectedFile] = useState(null);
             const [trainers, setTrainers] = useState([]);
 
 const [assignedAuditor, setAssignedAuditor] = useState('');
-            const [difficulty, setDifficulty] = useState('Medium');
-            const [reviewDifficulty, setReviewDifficulty] = useState('Medium');
-            const [genLanguage, setGenLanguage] = useState('en');
             const [pastedText, setPastedText] = useState('');
 
             // Exam Security & Timing Controls (FlexiQuiz Benchmarked)
@@ -2434,9 +2415,7 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
             const [shuffleOpt, setShuffleOpt] = useState(1);
 
             // Manual Question Paper Builder States
-            const [generatorMode, setGeneratorMode] = useState('ai'); // 'ai' or 'manual'
             const [manualTitle, setManualTitle] = useState('');
-            const [manualDifficulty, setManualDifficulty] = useState('Medium');
             const [manualQuestions, setManualQuestions] = useState([
                 { question_text: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_index: 0, approved: 1 }
             ]);
@@ -2480,7 +2459,6 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                     title: manualTitle.trim(),
                     trainer_id: user?.id || 'ADMIN',
                     audited_by: assignedAuditor || user?.name || 'Super Admin',
-                    difficulty: manualDifficulty,
                     time_limit_minutes: timeLimit,
                     pass_percentage: passPct,
                     enable_anti_cheat: antiCheat,
@@ -2623,102 +2601,10 @@ const [assignedAuditor, setAssignedAuditor] = useState('');
                 e.target.value = ''; // Reset input
             };
 
-            const startGenerator = () => {
-                if(!title) return alert("Please enter a Module Title.");
-                if(!selectedFile && !pastedText.trim()) return alert("Please upload a training PDF or paste training text first.");
-                if(selectedFile && !selectedFile.name.toLowerCase().endsWith('.pdf')) return alert("Please upload a valid PDF file (.pdf).");
-                if(selectedFile && selectedFile.size > 15 * 1024 * 1024) return alert("PDF file is too large (max 15 MB).");
-
-                setStatus('loading');
-                const formData = new FormData();
-                formData.append('title', title);
-                formData.append('count', qCount);
-                formData.append('trainer_id', user?.id || 'ADMIN');
-                formData.append('difficulty', difficulty);
-                formData.append('language', genLanguage);
-                if (selectedFile) {
-                    formData.append('file', selectedFile);
-                }
-                if (pastedText) {
-                    formData.append('text', pastedText);
-                }
-
-                fetch('/api/modules/generate', {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(async res => {
-                    let body;
-                    try {
-                        body = await res.json();
-                    } catch (e) {
-                        // Non-JSON response (e.g. nginx 413 HTML page) — report the
-                        // real HTTP status instead of a generic network error.
-                        throw { notJson: true, status: res.status };
-                    }
-                    if (!res.ok || (body && body.status === 'error')) {
-                        if (body && body.status === 'error') throw { apiMessage: body.message || 'Generation failed' };
-                        throw { status: res.status };
-                    }
-                    return body;
-                })
-                .then(data => {
-                    if (data.status === 'success') {
-                        // Open the Auditor panel with generated draft questions
-                        setReviewModuleId(null);
-                        setReviewTitle(data.title);
-                        setReviewDifficulty(data.difficulty || 'Medium');
-                        // Map each question safely with fallbacks to avoid JS TypeError
-                        const mappedQs = (data.questions || []).map(q => {
-                            const opts = Array.isArray(q.options) && q.options.length >= 4 
-                                ? q.options 
-                                : [q.option_a || "Option A", q.option_b || "Option B", q.option_c || "Option C", q.option_d || "Option D"];
-                            return {
-                                question_text: q.question || q.question_text || "Socratic Policy Question",
-                                option_a: opts[0] || "Option A",
-                                option_b: opts[1] || "Option B",
-                                option_c: opts[2] || "Option C",
-                                option_d: opts[3] || "Option D",
-                                correct_index: q.correctIndex !== undefined ? q.correctIndex : (q.correct_index !== undefined ? q.correct_index : 0),
-                                approved: 0,
-                                translations: q.translations || {}
-                            };
-                        });
-                        setReviewQuestions(mappedQs);
-                        setActiveEditIdx(null);
-                        setStatus('review');
-                        setTitle('');
-                        setSelectedFile(null);
-                        setPastedText('');
-                    } else {
-                        alert("AI Generation failed: " + data.message);
-                        setStatus('idle');
-                    }
-                })
-                .catch(err => {
-                    console.error("AI generator failure:", err);
-                    let errMsg;
-                    if (err && err.apiMessage) {
-                        errMsg = "AI Generation failed: " + err.apiMessage;
-                    } else if (err && err.status === 413) {
-                        errMsg = "File is too large for the server (max ~20 MB). Please upload a smaller PDF.";
-                    } else if (err && err.status >= 500) {
-                        errMsg = "Server error (" + err.status + "). Please try again in a moment.";
-                    } else if (err && err.notJson) {
-                        errMsg = "Server returned an unexpected response (" + err.status + "). Please try again.";
-                    } else {
-                        errMsg = "Network error while contacting the AI generator. Please try again.";
-                    }
-                    alert(errMsg);
-                    setStatus('idle');
-                });
-            };
-
             const handleResumeAudit = (mod) => {
                 setActiveEditIdx(null);
                 setReviewModuleId(mod.id);
                 setReviewTitle(mod.title);
-                setReviewDifficulty(mod.difficulty || 'Medium');
                 if (mod.source_text) setPastedText(mod.source_text);
                 // Map from database questions structure back to auditor draft
                 const mappedQs = (Array.isArray(mod.questions) ? mod.questions : []).map(q => ({
@@ -2761,7 +2647,6 @@ const toggleQuestionApproval = (idx) => {
                     trainer_id: user?.id || 'ADMIN',
                     audited_by: assignedAuditor || 'Awaiting Audit',
                     module_id: reviewModuleId,
-                    difficulty: reviewDifficulty,
                     source_text: pastedText,
                     time_limit_minutes: timeLimit,
                     pass_percentage: passPct,
@@ -2955,20 +2840,6 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                 <div className="p-5 border-t border-slate-200 bg-slate-50 flex justify-between items-center rounded-b-2xl">
                                     <button onClick={() => setStatus('idle')} className="btn-outline">Cancel</button>
 
-                                    {/* Socratic Difficulty selector in auditor console */}
-                                    <div className="flex items-center gap-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Difficulty:</label>
-                                        <select 
-                                            value={reviewDifficulty} 
-                                            onChange={(e) => setReviewDifficulty(e.target.value)} 
-                                            className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 focus:outline-none focus:border-socrates-primary shadow-sm"
-                                        >
-                                            <option value="Easy">Easy (Low Complexity)</option>
-                                            <option value="Medium">Medium (Standard Policy)</option>
-                                            <option value="Hard">Hard (Exceptions/Deviations)</option>
-                                        </select>
-                                    </div>
-
                                     <div className="flex gap-3">
                                         <button 
                                             onClick={() => commitModuleToDb(false)} 
@@ -2990,190 +2861,8 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                         </div>
                     )}
 
-                    {/* GENERATOR SETUP */}
+                    {/* MANUAL QUESTION PAPER BUILDER */}
                     <div className="card p-4 sm:p-8">
-                        {/* MODE TAB SWITCHER */}
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-200 pb-5 mb-6 gap-4">
-                            <div className="flex bg-slate-100 p-1.5 rounded-2xl gap-1.5 border border-slate-200">
-                                <button 
-                                    onClick={() => setGeneratorMode('ai')} 
-                                    className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${generatorMode === 'ai' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'}`}
-                                >
-                                    <i className="fas fa-magic"></i> AI Socratic Generator
-                                </button>
-                                <button 
-                                    onClick={() => setGeneratorMode('manual')} 
-                                    className={`px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-2 ${generatorMode === 'manual' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'}`}
-                                >
-                                    <i className="fas fa-pen-nib"></i> Manual Paper Builder
-                                </button>
-                            </div>
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                                {generatorMode === 'ai' ? 'Automated Policy MCQ Extractor' : 'Custom Question Paper Constructor'}
-                            </span>
-                        </div>
-
-                        {generatorMode === 'ai' ? (
-                            <div>
-                                <div className="flex items-center gap-3 mb-2">
-                                    <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center shadow-sm border border-purple-100"><i className="fas fa-magic text-xl"></i></div>
-                                    <h3 className="font-bold text-xl text-socrates-dark tracking-tight">AI Module Generator</h3>
-                                </div>
-                                <p className="text-sm text-slate-500 mb-8 leading-relaxed">Upload a training program PDF or paste text policy. The system will extract it and generate customized MCQs.</p>
-
-                        {status === 'loading' ? (
-                            <div className="py-20 text-center space-y-4">
-                                <div className="w-16 h-16 border-4 border-socrates-primary border-t-transparent rounded-full fa-spin mx-auto"></div>
-                                <h4 className="font-bold text-base text-slate-800 animate-pulse">Socrates AI is generating Socratic questions...</h4>
-                                <p className="text-xs text-slate-400 max-w-xs mx-auto">Analyzing policy clauses, generating multiple options, and mapping correct answer structures.</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Module Title</label>
-                                        <input 
-                                            type="text" 
-                                            value={title} 
-                                            onChange={(e)=>setTitle(e.target.value)} 
-                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100" 
-                                            placeholder="e.g. KYC Updates" 
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Assign Auditor (Checker)</label>
-                                        <select 
-                                            value={assignedAuditor} 
-                                            onChange={(e) => setAssignedAuditor(e.target.value)} 
-                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
-                                        >
-                                            <option value="">Awaiting Audit</option>
-                                            {(trainers || []).filter(t => t && (t.id || t.trainer_id)).map(t => (
-                                                <option key={t.id || t.trainer_id} value={t.name}>{t.name} ({t.id || t.trainer_id})</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Difficulty Level</label>
-
-<select 
-                                            value={difficulty} 
-                                            onChange={(e) => setDifficulty(e.target.value)} 
-                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
-                                        >
-                                            <option value="Easy">Easy (Low Complexity)</option>
-                                            <option value="Medium">Medium (Standard Policy)</option>
-                                            <option value="Hard">Hard (Exceptions/Deviations)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Exam Time Limit</label>
-                                        <select 
-                                            value={timeLimit} 
-                                            onChange={(e) => setTimeLimit(parseInt(e.target.value))} 
-                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
-                                        >
-                                            <option value="5">5 Minutes (Speed Quiz)</option>
-                                            <option value="10">10 Minutes</option>
-                                            <option value="15">15 Minutes (Standard)</option>
-                                            <option value="30">30 Minutes (Comprehensive)</option>
-                                            <option value="60">60 Minutes (Full Exam)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Passing Threshold (%)</label>
-                                        <select 
-                                            value={passPct} 
-                                            onChange={(e) => setPassPct(parseInt(e.target.value))} 
-                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
-                                        >
-                                            <option value="50">50% Pass Cutoff</option>
-                                            <option value="60">60% Pass Cutoff</option>
-                                            <option value="70">70% Standard Certification</option>
-                                            <option value="80">80% High Proficiency</option>
-                                            <option value="90">90% Master Class</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Anti-Cheat & Proctoring</label>
-                                        <select 
-                                            value={antiCheat} 
-                                            onChange={(e) => setAntiCheat(parseInt(e.target.value))} 
-                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
-                                        >
-                                            <option value="1">🔒 Strict Anti-Cheat (Tab Switch Detection)</option>
-                                            <option value="0">🔓 Standard Mode (Flexible)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Number of Questions</label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="50"
-                                            value={qCount}
-                                            onChange={(e) => setQCount(Math.min(50, Math.max(1, parseInt(e.target.value) || 15)))}
-                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
-                                            placeholder="e.g. 14 or 15"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Translation Language</label>
-                                        <select 
-                                            value={genLanguage} 
-                                            onChange={(e) => setGenLanguage(e.target.value)} 
-                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-socrates-primary focus:ring-2 focus:ring-blue-100"
-                                        >
-                                            <option value="en">English Only (Super Fast)</option>
-                                            <option value="all">All 9 Languages (Slow)</option>
-                                            <option value="hindi">Hindi</option>
-                                            <option value="hinglish">Hinglish</option>
-                                            <option value="punjabi">Punjabi</option>
-                                            <option value="bengali">Bengali</option>
-                                            <option value="marathi">Marathi</option>
-                                            <option value="telugu">Telugu</option>
-                                            <option value="tamil">Tamil</option>
-                                            <option value="gujarati">Gujarati</option>
-                                            <option value="kannada">Kannada</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Upload Training PDF</label>
-                                        <div className="relative">
-                                            <input 
-                                                type="file" 
-                                                accept=".pdf"
-                                                onChange={(e) => setSelectedFile(e.target.files[0])}
-                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
-                                            />
-
-<div className="input-field bg-slate-50 shadow-sm border-slate-300 py-2.5 px-4 text-center hover:bg-slate-100 transition-colors flex items-center justify-center gap-2 cursor-pointer overflow-hidden text-ellipsis whitespace-nowrap">
-                                                <i className="fas fa-file-pdf text-red-500 text-sm"></i>
-                                                <span className="text-xs font-semibold text-slate-600 truncate">
-                                                    {selectedFile ? selectedFile.name : "Choose PDF..."}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="relative">
-                                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                                    <div className="relative flex justify-center text-xs"><span className="bg-white px-2 text-slate-400 font-bold uppercase">OR</span></div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Paste Training Material</label>
-                                    <textarea value={pastedText} onChange={(e) => setPastedText(e.target.value)} className="input-field h-24 resize-none" placeholder="Paste policy changes here..."></textarea>
-                                </div>
-
-                                <button onClick={startGenerator} className="w-full btn-primary py-3 flex items-center justify-center gap-2 text-base shadow-md mt-2">
-                                    <i className="fas fa-robot"></i> Auto-Generate Test
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                ) : (
                             /* MANUAL QUESTION PAPER BUILDER */
                             <div className="space-y-6 animate-fade-in">
                                 <div className="flex items-center gap-3 mb-2">
@@ -3184,7 +2873,7 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 p-5 rounded-2xl border border-slate-200">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 p-5 rounded-2xl border border-slate-200">
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Question Paper Title *</label>
                                         <input 
@@ -3208,16 +2897,46 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                             ))}
                                         </select>
                                     </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-slate-50 p-5 rounded-2xl border border-slate-200">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Difficulty Level</label>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Exam Time Limit</label>
                                         <select 
-                                            value={manualDifficulty} 
-                                            onChange={(e) => setManualDifficulty(e.target.value)} 
+                                            value={timeLimit} 
+                                            onChange={(e) => setTimeLimit(parseInt(e.target.value))} 
                                             className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-amber-500"
                                         >
-                                            <option value="Easy">Easy (Basic Concepts)</option>
-                                            <option value="Medium">Medium (Standard Policy)</option>
-                                            <option value="Hard">Hard (Advanced Exceptions)</option>
+                                            <option value="5">5 Minutes (Speed Quiz)</option>
+                                            <option value="10">10 Minutes</option>
+                                            <option value="15">15 Minutes (Standard)</option>
+                                            <option value="30">30 Minutes (Comprehensive)</option>
+                                            <option value="60">60 Minutes (Full Exam)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Passing Threshold (%)</label>
+                                        <select 
+                                            value={passPct} 
+                                            onChange={(e) => setPassPct(parseInt(e.target.value))} 
+                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-amber-500"
+                                        >
+                                            <option value="50">50% Pass Cutoff</option>
+                                            <option value="60">60% Pass Cutoff</option>
+                                            <option value="70">70% Standard Certification</option>
+                                            <option value="80">80% High Proficiency</option>
+                                            <option value="90">90% Master Class</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Anti-Cheat & Proctoring</label>
+                                        <select 
+                                            value={antiCheat} 
+                                            onChange={(e) => setAntiCheat(parseInt(e.target.value))} 
+                                            className="input-field bg-white shadow-sm border-slate-300 py-2.5 text-xs font-semibold text-socrates-dark focus:border-amber-500"
+                                        >
+                                            <option value="1">🔒 Strict Anti-Cheat (Tab Switch Detection)</option>
+                                            <option value="0">🔓 Standard Mode (Flexible)</option>
                                         </select>
                                     </div>
                                 </div>
@@ -3305,7 +3024,6 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                             });
                                             if (bad) return alert('Please complete the question text and ALL 4 options for every question before auditing.');
                                             setReviewTitle(manualTitle.trim());
-                                            setReviewDifficulty(manualDifficulty);
                                             setReviewQuestions(manualQuestions);
                                             setStatus('review');
                                         }}
@@ -3321,7 +3039,6 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                     </button>
                                 </div>
                             </div>
-                        )}
                     </div>
 
                     {/* MANAGE LIBRARY MODULES */}
@@ -3378,20 +3095,6 @@ onChange={(e) => updateQuestionField(idx, `option_${ch}`, e.target.value)}
                                                     }`}>
                                                         <i className={`fas ${isReady ? 'fa-user-check' : 'fa-user-shield'} text-[9px]`}></i>
                                                         {isReady ? `Audited by: ${mod.audited_by || 'Super Admin'}` : `Auditor: ${mod.audited_by || 'Awaiting Audit'}`}
-                                                    </span>
-                                                    {/* Glowing trainer-only difficulty badge */}
-                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border shadow-[0_0_8px_rgba(var(--badge-glow))] ${
-                                                        mod.difficulty === 'Easy' 
-                                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
-                                                            : mod.difficulty === 'Hard' 
-                                                                ? 'bg-rose-50 text-rose-700 border-rose-200' 
-                                                                : 'bg-blue-50 text-blue-700 border-blue-200'
-                                                    }`}
-                                                    style={{
-                                                        '--badge-glow': mod.difficulty === 'Easy' ? '16,185,129,0.15' : mod.difficulty === 'Hard' ? '244,63,94,0.15' : '59,130,246,0.15'
-                                                    }}>
-                                                        <i className="fas fa-signal text-[9px]"></i>
-                                                        {mod.difficulty || 'Medium'}
                                                     </span>
                                                 </div>
                                             </div>
