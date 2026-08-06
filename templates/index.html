@@ -248,6 +248,8 @@
             const questionRef = useRef(activeQuestion);
             const qIdxRef = useRef(activeQIdx);
             const subRef = useRef(hasSubmittedCurrent);
+            // Tracks the last test phase seen so pre->post transitions reset counters.
+            const phaseRef = useRef(null);
 
             useEffect(() => { viewRef.current = view; }, [view]);
             useEffect(() => { questionRef.current = activeQuestion; }, [activeQuestion]);
@@ -265,6 +267,16 @@
                     if (data.view) {
                         if ((cView === 'pretest' || cView === 'posttest') && !cHasSub && cQuestion && !data.sync) setUnattemptedCount(prev => prev + 1);
                         setView(data.view);
+                    }
+
+                    // New test phase (pre->post, or via lock): reset client counters so the
+                    // post-test never mixes pre-test counts into scores/certificates.
+                    if (data.view === 'pretest' || data.view === 'posttest') {
+                        if (phaseRef.current && phaseRef.current !== data.view) {
+                            setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0);
+                            setTotalQuestions(0); setHasSubmittedCurrent(false);
+                        }
+                        phaseRef.current = data.view;
                     }
 
                     const isNewQ = (data.question_idx !== undefined && data.question_idx !== cQIdx) || 
@@ -331,6 +343,9 @@
                         setSecurityLock(false);
                         localStorage.removeItem('socrates_correctCount');
                         localStorage.removeItem('socrates_activeQIdx');
+                    }
+                    if (data.command === 'show_results') {
+                        setView('result');
                     }
                 });
 
@@ -818,6 +833,10 @@
                             <div className="text-3xl font-black text-white font-outfit">{s.v}</div>
                         </div>
                     ))}
+                </div>
+                <div className="w-full flex justify-between items-center bg-white/5 rounded-2xl px-5 py-4 border border-white/5">
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Score</span>
+                    <span className="font-outfit font-black text-xl text-white">{counts.correctCount}/{counts.totalQuestions || '—'} · {counts.totalQuestions ? Math.round((counts.correctCount / counts.totalQuestions) * 100) : 0}%</span>
                 </div>
                 {passed === false ? (
                     <div className="w-full p-4 rounded-2xl border-2 border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2">

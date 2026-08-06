@@ -2661,11 +2661,19 @@ def submit_assessment():
         tab_switch_count = int(data.get('tab_switch_count', 0) or 0)
         time_taken_seconds = int(data.get('time_taken_seconds', 0) or 0)
         
-        # Compute score from correct/wrong counts when provided
+        # Compute score from the authoritative 1-mark model:
+        # percentage = correct marks / total questions shown.
+        # Fall back to accuracy only when total_questions is absent.
         computed_score = None
         if correct_count is not None or wrong_count is not None:
+            total_qs = int(data.get('total_questions') or 0)
             answered = int(correct_count or 0) + int(wrong_count or 0)
-            computed_score = round((int(correct_count or 0) / answered) * 100, 1) if answered > 0 else 0.0
+            if total_qs > 0:
+                computed_score = round((int(correct_count or 0) / total_qs) * 100, 1)
+            elif answered > 0:
+                computed_score = round((int(correct_count or 0) / answered) * 100, 1)
+            else:
+                computed_score = 0.0
         
         # Backward-compat: accept direct pre_test_score / post_test_score values when present
         pre_test_score = data.get('pre_test_score')

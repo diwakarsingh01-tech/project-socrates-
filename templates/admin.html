@@ -7180,6 +7180,7 @@ return {
             };
 
             const triggerFinalPodium = () => socket.emit('trainer_command', { pin: sessionId, command: 'show_podium' });
+            const triggerShowResults = () => socket.emit('trainer_command', { pin: sessionId, command: 'show_results' });
 
             return (
                 <div className="flex flex-col h-full max-w-7xl mx-auto w-full bg-slate-50 overflow-hidden lg:rounded-3xl lg:shadow-2xl border border-slate-200 animate-fade-in font-outfit">
@@ -7472,6 +7473,7 @@ return {
                                             </button>
                                         ))}
                                         <button onClick={triggerFinalPodium} className="w-full mt-4 p-4 bg-gradient-to-r from-amber-500 to-orange-500 rounded-2xl text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-amber-200 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"><i className="fas fa-crown"></i> Launch Podium</button>
+                                        <button onClick={triggerShowResults} className="w-full mt-2 p-4 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl text-white font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-200 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3"><i className="fas fa-flag-checkered"></i> Show Results</button>
                                     </div>
                                 </div>
 
@@ -7512,6 +7514,7 @@ return {
                             <button onClick={() => pushView('training')} className={`flex-1 flex flex-col items-center py-2 rounded-2xl ${stage === 'training' ? 'text-amber-500 bg-amber-50' : 'text-slate-400'}`}><i className="fas fa-lock mb-1 text-sm"></i><span className="text-[8px] font-black uppercase tracking-widest">Lock</span></button>
                             <button onClick={() => pushView('posttest')} className={`flex-1 flex flex-col items-center py-2 rounded-2xl ${stage === 'posttest' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-400'}`}><i className="fas fa-bolt mb-1 text-sm"></i><span className="text-[8px] font-black uppercase tracking-widest">Post-Test</span></button>
                             <button onClick={triggerFinalPodium} className="flex-1 flex flex-col items-center py-2 rounded-2xl text-amber-600 bg-amber-50 border border-amber-200 shadow-sm"><i className="fas fa-crown mb-1 text-sm"></i><span className="text-[8px] font-black uppercase tracking-widest">Podium</span></button>
+                            <button onClick={triggerShowResults} className="flex-1 flex flex-col items-center py-2 rounded-2xl text-emerald-600 bg-emerald-50 border border-emerald-200 shadow-sm"><i className="fas fa-flag-checkered mb-1 text-sm"></i><span className="text-[8px] font-black uppercase tracking-widest">Results</span></button>
                         </div>
                     </div>
                 </div>
