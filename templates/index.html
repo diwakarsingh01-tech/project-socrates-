@@ -436,6 +436,7 @@
                             <Result 
                                 preScore={preTestScore} postScore={postTestScore} counts={{correctCount, wrongCount, unattemptedCount, totalQuestions}}
                                 certId={certificateId} passed={passedStatus}
+                                empId={empId} pin={pin} moduleTitle={activeModuleTitle} postTestDone={postTestScore !== null}
                                 onFinish={() => {
                                     setView('dashboard'); setCorrectCount(0); setWrongCount(0); setUnattemptedCount(0); setTotalQuestions(0);
                                     setHasSubmittedCurrent(false);
@@ -631,9 +632,6 @@
             const [submitted, setSubmitted] = useState(false);
             const [tabSwitchCount, setTabSwitchCount] = useState(0);
             const [scoreInfo, setScoreInfo] = useState(null);
-            const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
-            const [understanding, setUnderstanding] = useState('Fully Clear');
-            const [manpowerSaved, setManpowerSaved] = useState('Yes, much faster!');
 
             const fmtTime = (s) => {
                 const sec = Math.max(0, Math.floor(s || 0));
@@ -708,7 +706,7 @@
                 return () => socket.off('score_confirmation');
             }, []);
 
-            useEffect(() => { setSelected(null); setSubmitted(false); setScoreInfo(null); setFeedbackSubmitted(false); }, [question]);
+            useEffect(() => { setSelected(null); setSubmitted(false); setScoreInfo(null); }, [question]);
 
             const submitAnswer = () => {
                 if(selected === null || submitted || locked) return;
@@ -770,17 +768,11 @@
                                         )}
                                     </div>
                                 )}
-                                {type === 'Post-Test' && (
+                                {type === 'Post-Test' && scoreInfo && (
                                     <div className="w-full pt-8 border-t border-white/5 animate-fade-in">
-                                        {feedbackSubmitted ? <div className="bg-emerald-500/10 border border-emerald-500/20 p-6 rounded-3xl text-emerald-400 font-black text-sm uppercase tracking-widest shadow-inner"><i className="fas fa-heart mr-2"></i> Feedback Received</div> : (
-                                            <div className="space-y-6 text-left">
-                                                <h5 className="font-outfit font-black text-white uppercase tracking-widest text-xs border-l-4 border-amber-500 pl-3">Session Feedback</h5>
-                                                <div className="grid grid-cols-3 gap-3">{['Fully Clear', 'Partially', 'Need Help'].map(l => (
-                                                    <button key={l} onClick={() => setUnderstanding(l)} className={`p-4 rounded-2xl text-[10px] font-black border-2 transition-all ${understanding===l?'border-amber-500 bg-amber-500/10 text-amber-400':'border-white/5 bg-white/5 text-slate-400 hover:bg-white/10'}`}>{l.toUpperCase()}</button>
-                                                ))}</div>
-                                                <button onClick={() => { setFeedbackSubmitted(true); fetch('/api/feedback/submit', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({emp_code:empId, session_id:pin, rating:5, understanding, manpower_saved:manpowerSaved, comments:''}) }); }} className="w-full btn-primary h-14 text-sm tracking-widest">SUBMIT FEEDBACK <i className="fas fa-check-circle ml-2"></i></button>
-                                            </div>
-                                        )}
+                                        <div className="bg-white/5 rounded-3xl p-6 border border-white/5 text-center">
+                                            <p className="text-xs font-black text-slate-300 uppercase tracking-widest"><i className="fas fa-star text-amber-400 mr-2"></i>Post-Test Complete — your session feedback form appears on the results screen.</p>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -833,7 +825,100 @@
             </div>
         );
 
-        const Result = ({preScore, postScore, counts, certId, passed, onFinish}) => (
+        const Feedback = ({ empId, pin, moduleTitle, onSubmitted }) => {
+            const QUESTIONS = [
+                { key: 'q_overall', label: 'Overall satisfaction with this session', icon: 'fa-face-smile' },
+                { key: 'q_clarity', label: "Trainer's clarity & communication", icon: 'fa-comments' },
+                { key: 'q_knowledge', label: "Trainer's subject knowledge", icon: 'fa-graduation-cap' },
+                { key: 'q_relevance', label: 'Relevance of content to your job', icon: 'fa-briefcase' },
+                { key: 'q_pace', label: 'Pace of the session', icon: 'fa-gauge-high' },
+            ];
+            const [ratings, setRatings] = useState({});
+            const [liked, setLiked] = useState('');
+            const [improve, setImprove] = useState('');
+            const [submitted, setSubmitted] = useState(null);
+            const [saving, setSaving] = useState(false);
+            const [dismissed, setDismissed] = useState(false);
+
+            // Refresh-proof: if this trainee already rated this session, don't re-show the form.
+            useEffect(() => {
+                fetch(`/api/feedback/status?emp_code=${encodeURIComponent(empId)}&session_id=${encodeURIComponent(pin)}`)
+                    .then(r => r.json())
+                    .then(d => setSubmitted(!!d.submitted))
+                    .catch(() => setSubmitted(false));
+            }, [empId, pin]);
+
+            if (dismissed) return null;
+
+            const submit = () => {
+                if (!ratings.q_overall || saving) return;
+                setSaving(true);
+                fetch('/api/feedback/submit', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ emp_code: empId, session_id: pin, ...ratings, liked, improve, comments: '' })
+                })
+                    .then(r => r.json())
+                    .then(() => { setSubmitted(true); if (onSubmitted) onSubmitted(); })
+                    .catch(() => setSaving(false));
+            };
+
+            const stars = (key) => (
+                <div className="flex items-center gap-1.5">
+                    {[1,2,3,4,5].map(v => (
+                        <button key={v} onClick={() => setRatings(prev => ({ ...prev, [key]: v }))} className={`text-xl sm:text-2xl transition-all active:scale-90 ${(ratings[key] || 0) >= v ? 'text-amber-400 drop-shadow' : 'text-slate-600 hover:text-slate-400'}`}>
+                            <i className="fas fa-star"></i>
+                        </button>
+                    ))}
+                    <span className="text-[10px] font-black text-slate-500 ml-1 uppercase tracking-widest">{ratings[key] ? `${ratings[key]}/5` : 'Tap to rate'}</span>
+                </div>
+            );
+
+            return (
+                <div className="w-full bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6 animate-fade-in text-left">
+                    {submitted ? (
+                        <div className="flex flex-col items-center text-center gap-3 py-6">
+                            <div className="w-16 h-16 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-3xl text-emerald-400"><i className="fas fa-heart"></i></div>
+                            <h4 className="font-outfit font-black text-lg text-white uppercase tracking-widest">Feedback Received</h4>
+                            <p className="text-xs text-slate-400 font-bold">Thank you for rating this session — your input helps improve training quality.</p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h4 className="font-outfit font-black text-white uppercase tracking-widest text-sm border-l-4 border-amber-500 pl-3">Rate Your Training Session</h4>
+                                    <p className="text-[11px] text-slate-400 font-bold mt-2">{moduleTitle || 'Live Module'} — your honest feedback is valued.</p>
+                                </div>
+                                <button onClick={() => setDismissed(true)} className="text-[10px] font-black text-slate-500 hover:text-slate-300 uppercase tracking-widest shrink-0"><i className="fas fa-times mr-1"></i>Skip</button>
+                            </div>
+                            <div className="space-y-4">
+                                {QUESTIONS.map(q => (
+                                    <div key={q.key} className="bg-slate-900/40 rounded-2xl p-4 border border-white/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                        <span className="text-[12px] font-bold text-slate-200 flex items-center gap-2.5"><i className={`fas ${q.icon} text-amber-400 w-4 text-center`}></i>{q.label}</span>
+                                        {stars(q.key)}
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">What did you like most? <span className="text-slate-600 normal-case">(optional)</span></label>
+                                    <textarea value={liked} onChange={e => setLiked(e.target.value)} rows="2" placeholder="Best part of the session..." className="w-full bg-slate-900/40 border border-white/10 rounded-2xl p-4 text-[13px] font-bold text-white placeholder:text-slate-600 focus:border-amber-500/40 focus:outline-none transition-all resize-none"></textarea>
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">What can be improved? <span className="text-slate-600 normal-case">(optional)</span></label>
+                                    <textarea value={improve} onChange={e => setImprove(e.target.value)} rows="2" placeholder="Suggestions for improvement..." className="w-full bg-slate-900/40 border border-white/10 rounded-2xl p-4 text-[13px] font-bold text-white placeholder:text-slate-600 focus:border-amber-500/40 focus:outline-none transition-all resize-none"></textarea>
+                                </div>
+                            </div>
+                            <button onClick={submit} disabled={!ratings.q_overall || saving} className={`w-full h-14 rounded-2xl font-black text-sm tracking-widest transition-all ${ratings.q_overall && !saving ? 'btn-primary shadow-xl shadow-amber-500/25' : 'bg-white/5 text-slate-600 border border-white/5 cursor-not-allowed'}`}>
+                                {saving ? <span className="flex items-center justify-center gap-2"><i className="fas fa-circle-notch fa-spin"></i> SUBMITTING...</span> : 'SUBMIT FEEDBACK'}
+                            </button>
+                            {!ratings.q_overall && <p className="text-[10px] text-slate-500 font-bold text-center -mt-2">Rate the overall session to submit</p>}
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+        const Result = ({preScore, postScore, counts, certId, passed, onFinish, empId, pin, moduleTitle, postTestDone}) => (
             <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-10 animate-fade-in">
                 <div className="w-28 h-28 bg-gradient-to-tr from-amber-500 to-yellow-400 text-[#090D16] rounded-[40px] flex items-center justify-center text-5xl shadow-2xl shadow-amber-500/20 animate-bounce"><i className="fas fa-trophy"></i></div>
                 <div className="space-y-2">
@@ -856,6 +941,7 @@
                     <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Score</span>
                     <span className="font-outfit font-black text-xl text-white">{counts.correctCount}/{counts.totalQuestions || '—'} · {counts.totalQuestions ? Math.round((counts.correctCount / counts.totalQuestions) * 100) : 0}%</span>
                 </div>
+                {postTestDone && <Feedback empId={empId} pin={pin} moduleTitle={moduleTitle} />}
                 {passed === false ? (
                     <div className="w-full p-4 rounded-2xl border-2 border-rose-500/30 bg-rose-500/10 text-rose-300 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2">
                         <i className="fas fa-times-circle"></i> Certificate Not Awarded — score below passing threshold

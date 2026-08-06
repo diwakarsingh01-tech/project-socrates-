@@ -295,6 +295,30 @@ def init_db():
         comments TEXT,
         created_at TEXT
     )''')
+
+    # Standardized post-test feedback (module-wise, one response per trainee
+    # per session). Each session stores its own ratings so historical feedback
+    # is preserved and aggregate trainer ratings are real, not defaults.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS feedback_responses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        emp_code TEXT,
+        trainer_id TEXT,
+        module_id INTEGER,
+        session_id TEXT,
+        q_overall INTEGER,
+        q_clarity INTEGER,
+        q_knowledge INTEGER,
+        q_relevance INTEGER,
+        q_pace INTEGER,
+        liked TEXT,
+        improve TEXT,
+        comments TEXT,
+        created_at TEXT,
+        UNIQUE(emp_code, session_id, module_id),
+        FOREIGN KEY(emp_code) REFERENCES employees(emp_code),
+        FOREIGN KEY(module_id) REFERENCES modules(id)
+    )''')
     
     # AI Refresher Campaigns (trainees flagged below 60% for mandatory retraining)
     cursor.execute('''
@@ -4069,15 +4093,10 @@ def trainers_performance():
         ).fetchone()['g'] or 0
 
         fb = conn.execute("""
-            SELECT AVG(rating) AS avg_rating,
-                   AVG(CASE UPPER(TRIM(understanding))
-                           WHEN 'FULLY CLEAR' THEN 100 WHEN 'PARTIALLY' THEN 60 WHEN 'NEED HELP' THEN 30 ELSE NULL END) AS clarity,
-                   AVG(CASE WHEN UPPER(TRIM(manpower_saved)) LIKE 'YES%' OR UPPER(TRIM(manpower_saved)) LIKE '%FASTER%'
-                                 OR UPPER(TRIM(manpower_saved)) LIKE '%SAVES%' OR UPPER(TRIM(manpower_saved)) LIKE '%SAVED%' THEN 100
-                            WHEN UPPER(TRIM(manpower_saved)) LIKE 'SOMEWHAT%' OR UPPER(TRIM(manpower_saved)) LIKE '%PARTIALLY%' THEN 60
-                            WHEN UPPER(TRIM(manpower_saved)) LIKE 'NO%' OR UPPER(TRIM(manpower_saved)) LIKE '%NOT%' THEN 30
-                            ELSE NULL END) AS nps
-            FROM session_feedback
+            SELECT AVG(q_overall) AS avg_rating,
+                   AVG(q_clarity) * 20 AS clarity,
+                   AVG(q_knowledge) * 20 AS nps
+            FROM feedback_responses
         """).fetchone()
 
         result = []
@@ -4098,16 +4117,11 @@ def trainers_performance():
                 if end_date:
                     gq += " AND completed_at <= ?"; gp.append(end_date + " 23:59")
                 growth = conn.execute(gq, gp).fetchone()['g'] or platform_growth
-                fq = """SELECT AVG(f.rating) AS avg_rating,
-                                AVG(CASE UPPER(TRIM(f.understanding))
-                                        WHEN 'FULLY CLEAR' THEN 100 WHEN 'PARTIALLY' THEN 60 WHEN 'NEED HELP' THEN 30 ELSE NULL END) AS clarity,
-                                AVG(CASE WHEN UPPER(TRIM(f.manpower_saved)) LIKE 'YES%' OR UPPER(TRIM(f.manpower_saved)) LIKE '%FASTER%'
-                                              OR UPPER(TRIM(f.manpower_saved)) LIKE '%SAVES%' OR UPPER(TRIM(f.manpower_saved)) LIKE '%SAVED%' THEN 100
-                                         WHEN UPPER(TRIM(f.manpower_saved)) LIKE 'SOMEWHAT%' OR UPPER(TRIM(f.manpower_saved)) LIKE '%PARTIALLY%' THEN 60
-                                         WHEN UPPER(TRIM(f.manpower_saved)) LIKE 'NO%' OR UPPER(TRIM(f.manpower_saved)) LIKE '%NOT%' THEN 30
-                                         ELSE NULL END) AS nps
-                         FROM session_feedback f
-                         WHERE f.session_id IN (SELECT session_id FROM training_sessions WHERE UPPER(TRIM(trainer_id))=UPPER(TRIM(?)))"""
+                fq = """SELECT AVG(f.q_overall) AS avg_rating,
+                                AVG(f.q_clarity) * 20 AS clarity,
+                                AVG(f.q_knowledge) * 20 AS nps
+                         FROM feedback_responses f
+                         WHERE f.trainer_id = ?"""
                 fb_row = conn.execute(fq, [tid]).fetchone()
             else:
                 s_count = 0
@@ -4118,9 +4132,9 @@ def trainers_performance():
                 "trainer_id": tid,
                 "name": t['name'] or tid,
                 "sessions_count": s_count,
-                "avg_rating": round(fb_row['avg_rating'] or 0, 1) if fb_row else 0,
-                "clarity_index": round(fb_row['clarity'] or 0, 0) if fb_row else 0,
-                "nps": round(fb_row['nps'] or 0, 0) if fb_row else 0,
+                "avg_rating": round(fb_row['avg_rating'], 1) if fb_row and fb_row['avg_rating'] is not None else None,
+                "clarity_index": round(fb_row['clarity'], 0) if fb_row and fb_row['clarity'] is not None else None,
+                "nps": round(fb_row['nps'], 0) if fb_row and fb_row['nps'] is not None else None,
                 "growth_delta": round(growth or 0, 1)
             })
         conn.close()
@@ -4167,28 +4181,161 @@ def push_refresher_campaign():
 
 @app.route('/api/feedback/submit', methods=['POST'])
 def submit_feedback():
+    """Standardized post-test feedback: 5 rating questions (1-5) + optional text.
+    Trainer/module are resolved server-side from the live session row so the
+    client never picks who to rate. One response per trainee per session."""
     data = request.json or {}
-    emp_code = str(data.get('emp_code', '')).upper()
-    session_id = str(data.get('session_id', ''))
-    rating = int(data.get('rating', 5) or 0)
-    understanding = str(data.get('understanding', ''))
-    manpower_saved = str(data.get('manpower_saved', ''))
-    comments = str(data.get('comments', ''))
+    emp_code = str(data.get('emp_code', '')).upper().strip()
+    session_id = str(data.get('session_id', '')).strip()
+    if not emp_code or not session_id:
+        return jsonify({"status": "error", "message": "emp_code and session_id are required."}), 400
     # Master roster gate: only roster members can submit session feedback.
     if not _roster_emp(emp_code):
         return jsonify({"status": "error", "message": f"Employee '{emp_code}' not found in the master roster. Please contact your administrator."}), 400
+
+    qs = {}
+    for k in ('q_overall', 'q_clarity', 'q_knowledge', 'q_relevance', 'q_pace'):
+        try:
+            v = int(data.get(k) or 0)
+        except (TypeError, ValueError):
+            v = 0
+        qs[k] = max(1, min(5, v)) if v else None
+    if qs['q_overall'] is None:
+        return jsonify({"status": "error", "message": "Overall rating (q_overall) is required."}), 400
+    liked = str(data.get('liked', ''))[:500]
+    improve = str(data.get('improve', ''))[:500]
+    comments = str(data.get('comments', ''))[:1000]
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
     conn = get_db_connection()
     try:
+        # Resolve trainer/module from the live session row (the client cannot
+        # and should not decide who gets the rating).
+        ts = conn.execute(
+            "SELECT trainer_id, module_id FROM training_sessions WHERE session_id=?",
+            (session_id,)
+        ).fetchone()
+        trainer_id = ts['trainer_id'] if ts else None
+        module_id = ts['module_id'] if ts else None
+        try:
+            module_id = int(module_id) if module_id not in (None, '') else None
+        except (TypeError, ValueError):
+            module_id = None
+        # One response per trainee per session — the business rule. Explicit
+        # pre-check because SQLite UNIQUE treats NULL module_id as distinct,
+        # which would let duplicate submissions through when sessions have no
+        # module bound yet.
+        existing = conn.execute(
+            "SELECT 1 FROM feedback_responses WHERE emp_code=? AND session_id=? LIMIT 1",
+            (emp_code, session_id)
+        ).fetchone()
+        if existing:
+            conn.close()
+            return jsonify({"status": "already", "message": "Feedback already recorded for this session. Thank you!"})
         conn.execute(
-            "INSERT INTO session_feedback (emp_code, session_id, rating, understanding, manpower_saved, comments, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (emp_code, session_id, rating, understanding, manpower_saved, comments, datetime.datetime.now().strftime("%Y-%m-%d %H:%M"))
+            "INSERT INTO feedback_responses (emp_code, trainer_id, module_id, session_id, "
+            "q_overall, q_clarity, q_knowledge, q_relevance, q_pace, liked, improve, comments, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (emp_code, trainer_id, module_id, session_id, qs['q_overall'], qs['q_clarity'],
+             qs['q_knowledge'], qs['q_relevance'], qs['q_pace'], liked, improve, comments, now)
         )
         conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"status": "already", "message": "Feedback already recorded for this session. Thank you!"})
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": f"Failed to save feedback: {str(e)}"}), 500
     conn.close()
-    return jsonify({"status": "success", "message": "Feedback submitted successfully!"})
+    return jsonify({"status": "success", "message": "Feedback received! Thank you for rating this session."})
+
+@app.route('/api/feedback/status', methods=['GET'])
+def feedback_status():
+    """Whether this trainee already submitted feedback for this session — lets
+    the client avoid re-showing the form after a refresh."""
+    emp_code = str(request.args.get('emp_code', '')).upper().strip()
+    session_id = str(request.args.get('session_id', '')).strip()
+    if not emp_code or not session_id:
+        return jsonify({"status": "error", "message": "emp_code and session_id required"}), 400
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT 1 FROM feedback_responses WHERE emp_code=? AND session_id=? LIMIT 1",
+        (emp_code, session_id)
+    ).fetchone()
+    conn.close()
+    return jsonify({"submitted": bool(row)})
+
+@app.route('/api/feedback/detail', methods=['GET'])
+def feedback_detail():
+    """Admin/trainer drill-down: raw feedback rows (with comments) plus a
+    module-wise rating summary, filterable by trainer / module / date range."""
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    trainer_id = request.args.get('trainer_id', '').strip()
+    module_id = request.args.get('module_id', '').strip()
+    start_date = request.args.get('start_date', '').strip()
+    end_date = request.args.get('end_date', '').strip()
+
+    conn = get_db_connection()
+    try:
+        # --- module-wise summary (filtered by trainer, optionally module/date) ---
+        swhere, sparams = [], []
+        if trainer_id:
+            swhere.append("f.trainer_id=?"); sparams.append(trainer_id)
+        if module_id:
+            swhere.append("f.module_id=?"); sparams.append(module_id)
+        if start_date:
+            swhere.append("f.created_at>=?"); sparams.append(start_date)
+        if end_date:
+            swhere.append("f.created_at<=?"); sparams.append(end_date + " 23:59")
+        swsql = (" WHERE " + " AND ".join(swhere)) if swhere else ""
+        summary = conn.execute(f"""
+            SELECT f.module_id, COALESCE(m.title, 'Unknown Module') AS module_title,
+                   COUNT(*) AS responses,
+                   ROUND(AVG(f.q_overall), 2) AS avg_rating,
+                   ROUND(AVG(f.q_clarity), 2) AS avg_clarity,
+                   ROUND(AVG(f.q_knowledge), 2) AS avg_knowledge,
+                   ROUND(AVG(f.q_relevance), 2) AS avg_relevance,
+                   ROUND(AVG(f.q_pace), 2) AS avg_pace
+            FROM feedback_responses f
+            LEFT JOIN modules m ON f.module_id = m.id
+            {swsql}
+            GROUP BY f.module_id
+            ORDER BY responses DESC
+        """, sparams).fetchall()
+
+        # --- raw rows (trainer + optional module/date filter) ---
+        rwhere, rparams = [], []
+        if trainer_id:
+            rwhere.append("f.trainer_id=?"); rparams.append(trainer_id)
+        if module_id:
+            rwhere.append("f.module_id=?"); rparams.append(module_id)
+        if start_date:
+            rwhere.append("f.created_at>=?"); rparams.append(start_date)
+        if end_date:
+            rwhere.append("f.created_at<=?"); rparams.append(end_date + " 23:59")
+        rwsql = (" WHERE " + " AND ".join(rwhere)) if rwhere else ""
+        rows = conn.execute(f"""
+            SELECT f.id, f.emp_code, e.emp_name, e.branch_name, f.session_id,
+                   f.module_id, COALESCE(m.title, '') AS module_title,
+                   f.q_overall, f.q_clarity, f.q_knowledge, f.q_relevance, f.q_pace,
+                   f.liked, f.improve, f.comments, f.created_at
+            FROM feedback_responses f
+            LEFT JOIN employees e ON f.emp_code = e.emp_code
+            LEFT JOIN modules m ON f.module_id = m.id
+            {rwsql}
+            ORDER BY f.id DESC
+            LIMIT 300
+        """, rparams).fetchall()
+        return jsonify({
+            "module_summary": [dict(r) for r in summary],
+            "rows": [dict(r) for r in rows]
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        conn.close()
 
 # --- WEBSOCKET EVENT LISTENERS (Flask-SocketIO) & GAMIFICATION STATE ---
 import time

@@ -5404,6 +5404,21 @@ message: data.message,
             const [trainersPerf, setTrainersPerf] = useState([]);
             const [loadingTrainers, setLoadingTrainers] = useState(false);
 
+            // Trainer feedback drill-down modal (module-wise summary + comments)
+            const [feedbackModal, setFeedbackModal] = useState(null);
+            const [feedbackData, setFeedbackData] = useState(null);
+            const [feedbackLoading, setFeedbackLoading] = useState(false);
+
+            const openFeedback = (trainer) => {
+                setFeedbackModal(trainer);
+                setFeedbackData(null);
+                setFeedbackLoading(true);
+                fetch(`/api/feedback/detail?trainer_id=${encodeURIComponent(trainer.trainer_id)}`)
+                    .then(res => res.json())
+                    .then(data => { setFeedbackData(data); setFeedbackLoading(false); })
+                    .catch(() => { setFeedbackData({ rows: [], module_summary: [] }); setFeedbackLoading(false); });
+            };
+
             // Phase 10: Historical training & test tracking
             const [historyData, setHistoryData] = useState(null);
             const [histAgent, setHistAgent] = useState('');
@@ -5687,7 +5702,7 @@ if (selectedZone) filtersUsed.push(`Zone: ${selectedZone}`);
                 // Format trainer comparative matrix
                 let trainerPerfStr = "";
                 if (trainersPerf && trainersPerf.length > 0) {
-                    trainerPerfStr = trainersPerf.map(t => `   • ${t.name} (${t.trainer_id}) | Star Rating: ${t.rating}★ | NPS: ${t.nps}% | Growth Delta: +${t.growth}%`).join("\n");
+                    trainerPerfStr = trainersPerf.map(t => `   • ${t.name} (${t.trainer_id}) | Star Rating: ${t.avg_rating ?? '—'}★ | Clarity: ${t.clarity_index ?? '—'}% | Growth Delta: +${t.growth_delta}%`).join("\n");
                 } else {
                     trainerPerfStr = "   • No trainer logs recorded in current period.";
                 }
@@ -6905,6 +6920,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                         )}
 
                         {tab === 'trainer' && (
+                            <>
                             <div className="animate-fade-in space-y-6">
                                 <div className="flex flex-wrap justify-between items-end mb-4 gap-4">
                                     <div>
@@ -6924,19 +6940,20 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                                     <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Learning Growth Delta ($\Delta$)</th>
                                                     <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Concept Clarity Index</th>
                                                     <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Time-Saving NPS</th>
+                                                    <th className="px-6 py-4 font-bold uppercase tracking-wider text-[9px] text-center">Feedback</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {loadingTrainers ? (
                                                     <tr>
-                                                        <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
+                                                        <td colSpan="7" className="px-6 py-10 text-center text-slate-400 font-medium">
                                                             <i className="fas fa-spinner fa-spin text-xl text-slate-200 mr-2"></i>
                                                             Loading Socratic trainer metrics...
                                                         </td>
                                                     </tr>
                                                 ) : trainersPerf.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan="6" className="px-6 py-10 text-center text-slate-400 font-medium">
+                                                        <td colSpan="7" className="px-6 py-10 text-center text-slate-400 font-medium">
                                                             No sessions logged yet — trainer metrics will appear once live sessions and feedback forms are recorded.
                                                         </td>
                                                     </tr>
@@ -6955,14 +6972,18 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                                             </td>
                                                             <td className="px-6 py-4 font-bold text-slate-700 text-center">{trainer.sessions_count}</td>
                                                             <td className="px-6 py-4 text-center">
-                                                                <div className="flex flex-col items-center gap-0.5">
-                                                                    <span className="font-extrabold text-amber-600 flex items-center gap-1">
-                                                                        {trainer.avg_rating} <i className="fas fa-star text-amber-400"></i>
-                                                                    </span>
-                                                                    <span className="text-[9px] text-slate-400">
-                                                                        {trainer.avg_rating >= 4.5 ? '🏆 Outstanding' : trainer.avg_rating >= 4.0 ? '✨ Great' : '📈 Needs Work'}
-                                                                    </span>
-                                                                </div>
+                                                                {trainer.avg_rating != null ? (
+                                                                    <div className="flex flex-col items-center gap-0.5">
+                                                                        <span className="font-extrabold text-amber-600 flex items-center gap-1">
+                                                                            {trainer.avg_rating} <i className="fas fa-star text-amber-400"></i>
+                                                                        </span>
+                                                                        <span className="text-[9px] text-slate-400">
+                                                                            {trainer.avg_rating >= 4.5 ? '🏆 Outstanding' : trainer.avg_rating >= 4.0 ? '✨ Great' : '📈 Needs Work'}
+                                                                        </span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-[9px] text-slate-400 font-bold">No feedback yet</span>
+                                                                )}
                                                             </td>
                                                             <td className="px-6 py-4 text-center">
                                                                 <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold ${
@@ -6974,22 +6995,34 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                                                 </span>
                                                             </td>
                                                             <td className="px-6 py-4 text-center">
-                                                                <div className="flex flex-col items-center gap-1">
-                                                                    <span className="font-bold text-slate-700">{trainer.clarity_index}%</span>
-                                                                    <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                                                                        <div style={{ width: `${trainer.clarity_index}%` }} className="h-full bg-emerald-500 rounded-full"></div>
+                                                                {trainer.clarity_index != null ? (
+                                                                    <div className="flex flex-col items-center gap-1">
+                                                                        <span className="font-bold text-slate-700">{trainer.clarity_index}%</span>
+                                                                        <div className="h-1.5 w-16 bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                                                                            <div style={{ width: `${trainer.clarity_index}%` }} className="h-full bg-emerald-500 rounded-full"></div>
+                                                                        </div>
                                                                     </div>
-                                                                </div>
+                                                                ) : (
+                                                                    <span className="text-[9px] text-slate-300 font-bold">—</span>
+                                                                )}
                                                             </td>
                                                             <td className="px-6 py-4 text-center">
-                                                                <span className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold ${
-                                                                    trainer.nps >= 80 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                                                    trainer.nps >= 60 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                                                                    'bg-rose-50 text-rose-600 border border-rose-100'
-                                                                }`}>
-                                                                    {trainer.nps}% Saved Time
-
-</span>
+                                                                {trainer.nps != null ? (
+                                                                    <span className={`px-2.5 py-0.5 rounded text-[10px] font-extrabold ${
+                                                                        trainer.nps >= 80 ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
+                                                                        trainer.nps >= 60 ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                                                                        'bg-rose-50 text-rose-600 border border-rose-100'
+                                                                    }`}>
+                                                                        {trainer.nps}% Saved Time
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[9px] text-slate-300 font-bold">—</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center">
+                                                                <button onClick={() => openFeedback(trainer)} className="px-3 py-1.5 rounded-lg text-[9px] font-extrabold uppercase tracking-wider bg-slate-900 text-white hover:bg-slate-700 transition-all active:scale-95">
+                                                                    <i className="fas fa-star mr-1"></i>View
+                                                                </button>
                                                             </td>
                                                         </tr>
                                                     ))
@@ -6999,6 +7032,76 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                     </div>
                                 </div>
                             </div>
+
+                            {feedbackModal && (
+                                <div className="fixed inset-0 z-[200] flex items-start justify-center p-4 sm:p-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto" onClick={() => setFeedbackModal(null)}>
+                                    <div className="w-full max-w-3xl bg-white rounded-3xl shadow-2xl my-8 overflow-hidden animate-fade-in" onClick={e => e.stopPropagation()}>
+                                        <div className="px-6 py-5 bg-slate-900 text-white flex items-center justify-between">
+                                            <div>
+                                                <h3 className="font-extrabold text-sm">Trainee Feedback — {feedbackModal.name}</h3>
+                                                <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider">{feedbackModal.trainer_id} · post-test session feedback</p>
+                                            </div>
+                                            <button onClick={() => setFeedbackModal(null)} className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"><i className="fas fa-times"></i></button>
+                                        </div>
+                                        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                                            {feedbackLoading ? (
+                                                <div className="flex items-center justify-center py-12"><i className="fas fa-spinner fa-spin text-2xl text-slate-300"></i></div>
+                                            ) : (
+                                                <>
+                                                    {feedbackData?.module_summary?.length ? (
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                            {feedbackData.module_summary.map(m => (
+                                                                <div key={m.module_id || 'na'} className="border border-slate-200 rounded-2xl p-5 space-y-2 bg-slate-50/50">
+                                                                    <div className="flex justify-between items-start gap-2">
+                                                                        <span className="font-extrabold text-xs text-socrates-dark">{m.module_title}</span>
+                                                                        <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[9px] font-extrabold border border-amber-100">{m.responses} responses</span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-xl font-black text-amber-600">{m.avg_rating}</span><i className="fas fa-star text-amber-400 text-sm"></i>
+                                                                        <span className="text-[9px] text-slate-400 font-bold ml-auto">Clarity {m.avg_clarity} · Knowledge {m.avg_knowledge}</span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="border border-dashed border-slate-200 rounded-2xl p-8 text-center">
+                                                            <i className="fas fa-star text-slate-200 text-3xl mb-3"></i>
+                                                            <p className="text-slate-400 font-bold text-sm">No feedback responses recorded for this trainer yet.</p>
+                                                            <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest mt-1">Ratings appear once trainees submit the post-test feedback form.</p>
+                                                        </div>
+                                                    )}
+                                                    {feedbackData?.rows?.length ? (
+                                                        <div className="space-y-3">
+                                                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Recent Responses</h4>
+                                                            {feedbackData.rows.slice(0, 20).map(r => (
+                                                                <div key={r.id} className="border border-slate-200 rounded-2xl p-4 space-y-2">
+                                                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                                                        <span className="font-extrabold text-xs text-socrates-dark">{r.emp_name || r.emp_code} <span className="text-slate-400 font-bold">· {r.branch_name || '—'}</span></span>
+                                                                        <span className="flex items-center gap-1">
+                                                                            {[1,2,3,4,5].map(v => <i key={v} className={`fas fa-star text-[10px] ${r.q_overall >= v ? 'text-amber-400' : 'text-slate-200'}`}></i>)}
+                                                                            <span className="text-[9px] text-slate-400 font-bold ml-1">{r.created_at}</span>
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="text-[10px] text-slate-500 font-bold flex flex-wrap gap-x-4 gap-y-1">
+                                                                        <span>Clarity {r.q_clarity}/5</span><span>Knowledge {r.q_knowledge}/5</span><span>Relevance {r.q_relevance}/5</span><span>Pace {r.q_pace}/5</span>
+                                                                    </div>
+                                                                    {(r.liked || r.improve) && (
+                                                                        <div className="text-[11px] text-slate-600 font-semibold space-y-1 bg-white rounded-xl p-3 border border-slate-100">
+                                                                            {r.liked && <p><span className="text-emerald-600 font-extrabold">Liked: </span>{r.liked}</p>}
+                                                                            {r.improve && <p><span className="text-rose-500 font-extrabold">Improve: </span>{r.improve}</p>}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : null}
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            </>
                         )}
                         {tab === 'live' && (
                             <div className="animate-fade-in space-y-6">
