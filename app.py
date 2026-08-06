@@ -328,6 +328,14 @@ def init_db():
         cursor.execute("ALTER TABLE visits ADD COLUMN mom_type TEXT")
     if 'mom_fields' not in visit_cols:
         cursor.execute("ALTER TABLE visits ADD COLUMN mom_fields TEXT")
+
+    # Migration: approval lock — approved itineraries are immutable until revoked.
+    if 'approved' not in visit_cols:
+        cursor.execute("ALTER TABLE visits ADD COLUMN approved INTEGER DEFAULT 0")
+    if 'approved_by' not in visit_cols:
+        cursor.execute("ALTER TABLE visits ADD COLUMN approved_by TEXT")
+    if 'approved_at' not in visit_cols:
+        cursor.execute("ALTER TABLE visits ADD COLUMN approved_at TEXT")
     
     # Per-question live-test attempts (1-mark model, append-only per attempt).
     # One row per (session, trainee, question) — enables skipped/late tracking,
@@ -1482,8 +1490,126 @@ def plan_visit():
     return jsonify({"status": "success", "message": "Visit planned successfully!", "visit_id": cur.lastrowid})
 
 
+@app.route('/api/visits/<int:visit_id>', methods=['PUT'])
+def update_visit(visit_id):
+    """Edit a planned itinerary. Approved visits are immutable — must be revoked first."""
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Not logged in."}), 401
+
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit not found."}), 404
+
+    # Approval lock: once approved, the itinerary cannot be changed.
+    if int(visit['approved'] or 0) == 1:
+        conn.close()
+        return jsonify({"status": "error", "message": "This itinerary is approved and locked. Revoke approval (Super Admin) before making changes."}), 403
+
+    # Access control: Super Admin / Leader may edit any visit; trainers only their own.
+    is_global = _is_global_role(user.get('role', ''))
+    if not is_global and str(user.get('trainer_id', '')).upper().strip() != str(visit['trainer_id'] or '').upper().strip():
+        conn.close()
+        return jsonify({"status": "error", "message": "You can only edit your own itineraries."}), 403
+
+    data = request.json or {}
+    branch_name = str(data.get('branch_name', '')).strip()
+    planned_date = str(data.get('planned_date', '')).strip()
+    if not branch_name or not planned_date:
+        conn.close()
+        return jsonify({"status": "error", "message": "Branch and planned date are required."}), 400
+
+    trainer_id, trainer_name = _trainer_id_and_name(str(data.get('trainer_id', '')).strip())
+    info = _resolve_branch_info(branch_name)
+    # Master roster gate: same rule as planning — branch must exist in the roster.
+    if info['zone'] is None or info['division'] is None:
+        conn.close()
+        return jsonify({"status": "error", "message": f"Branch '{branch_name}' not found in the master roster. Please pick a branch from the list (Business Unit → Zone → Division → Branch)."}), 400
+
+    purpose = str(data.get('purpose', '')).strip()
+    meeting_agenda = str(data.get('meeting_agenda', '')).strip() or purpose
+    meeting_with = str(data.get('meeting_with', '')).strip()
+    travel_mode = str(data.get('travel_mode', '')).strip()
+    travel_from = str(data.get('travel_from', '')).strip()
+    travel_to = str(data.get('travel_to', '')).strip()
+    overnight_stay = str(data.get('overnight_stay', '')).strip()
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    conn.execute("""
+        UPDATE visits SET trainer_id=?, trainer_name=?, zone=?, division=?, branch_name=?, branch_code=?, business_unit=?,
+                            planned_date=?, end_date=?, meeting_agenda=?, meeting_with=?, purpose=?, key_contacts=?, details=?,
+                            travel_mode=?, travel_from=?, travel_to=?, overnight_stay=?, updated_at=?
+        WHERE id=?
+    """, (
+        trainer_id or visit['trainer_id'], trainer_name or visit['trainer_name'],
+        info['zone'], info['division'], info['branch_name'], info['branch_code'], info['business_unit'],
+        planned_date, str(data.get('end_date', '')).strip() or planned_date,
+        meeting_agenda, meeting_with, purpose,
+        str(data.get('key_contacts', '')).strip(), str(data.get('details', '')).strip(),
+        travel_mode, travel_from, travel_to, overnight_stay,
+        now, visit_id
+    ))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Itinerary updated successfully!"})
+
+
+@app.route('/api/visits/<int:visit_id>/approve', methods=['POST'])
+def approve_visit(visit_id):
+    """Approve & lock an itinerary. Only Super Admin or Leader can approve."""
+    user = _session_user()
+    if not user or not _is_global_role(user.get('role', '')):
+        return jsonify({"status": "error", "message": "Only Super Admin or Leader can approve itineraries."}), 403
+
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit not found."}), 404
+    if int(visit['approved'] or 0) == 1:
+        conn.close()
+        return jsonify({"status": "error", "message": "This itinerary is already approved and locked."}), 400
+
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+    actor = str(user.get('name') or user.get('trainer_id') or 'Admin')
+    conn.execute("UPDATE visits SET approved=1, approved_by=?, approved_at=? WHERE id=?", (actor, now, visit_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": f"Itinerary approved & locked by {actor}."})
+
+
+@app.route('/api/visits/<int:visit_id>/revoke', methods=['POST'])
+def revoke_visit(visit_id):
+    """Revoke approval to re-open an itinerary for editing. Super Admin only."""
+    user = _session_user()
+    if not user or not _is_global_role(user.get('role', '')):
+        return jsonify({"status": "error", "message": "Only Super Admin or Leader can revoke approval."}), 403
+
+    conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit not found."}), 404
+    if int(visit['approved'] or 0) == 0:
+        conn.close()
+        return jsonify({"status": "error", "message": "This itinerary is not approved."}), 400
+
+    conn.execute("UPDATE visits SET approved=0, approved_by=NULL, approved_at=NULL WHERE id=?", (visit_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Approval revoked — itinerary is editable again."})
+
+
+
 @app.route('/api/visits/upload', methods=['POST'])
 def upload_visits():
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Not logged in."}), 401
+    is_global = _is_global_role(user.get('role', ''))
+    session_tid = str(user.get('trainer_id', '')).upper().strip()
     if 'file' not in request.files:
         return jsonify({"status": "error", "message": "No file part"}), 400
     file = request.files['file']
@@ -1543,6 +1669,15 @@ def upload_visits():
                 if not tid and not tname:
                     errors.append(f"Row {row_idx}: missing trainer name/id — skipped.")
                     continue
+
+                # Access control: non-global (trainer) users can only upload their own rows.
+                if not is_global:
+                    if session_tid and tid and tid != session_tid:
+                        errors.append(f"Row {row_idx}: you can only upload visits for trainer {session_tid} — skipped.")
+                        continue
+                    if session_tid:
+                        tid = session_tid
+                        tname = str(user.get('name') or '').strip().upper()
 
                 # Resolve trainer id by name if needed
                 if not tid:
@@ -1651,6 +1786,17 @@ def visit_checkin():
         conn.close()
         return jsonify({"status": "error", "message": "Visit already verified."}), 400
 
+    # Access control: only the owning trainer (or a global role) can check in.
+    user = _session_user()
+    if user and not _is_global_role(user.get('role', '')) \
+            and str(user.get('trainer_id', '')).upper().strip() != str(visit['trainer_id'] or '').upper().strip():
+        conn.close()
+        return jsonify({"status": "error", "message": "You can only check in to your own itineraries."}), 403
+    # Approval lock: approved itineraries are immutable.
+    if int(visit['approved'] or 0) == 1:
+        conn.close()
+        return jsonify({"status": "error", "message": "This itinerary is approved and locked."}), 403
+
     # Count co-present training sessions at the same branch on the visit date.
     co_presence = conn.execute(
         "SELECT COUNT(*) AS c FROM training_sessions WHERE UPPER(TRIM(branch_name))=UPPER(TRIM(?)) AND date=?",
@@ -1754,11 +1900,24 @@ def save_visit_mom(visit_id):
         mom_fields = {}
     mom_notes = str(data.get('mom_notes', '')).strip()
 
+    # Access control: only the owning trainer (or a global role) may write the MoM.
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Not logged in."}), 401
+
     conn = get_db_connection()
     visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
     if not visit:
         conn.close()
         return jsonify({"status": "error", "message": "Visit not found."}), 404
+    if not _is_global_role(user.get('role', '')) \
+            and str(user.get('trainer_id', '')).upper().strip() != str(visit['trainer_id'] or '').upper().strip():
+        conn.close()
+        return jsonify({"status": "error", "message": "You can only edit MoM for your own itineraries."}), 403
+    # Approval lock: approved itineraries are immutable.
+    if int(visit['approved'] or 0) == 1:
+        conn.close()
+        return jsonify({"status": "error", "message": "This itinerary is approved and locked. Revoke approval to edit the MoM."}), 403
 
     # Legacy path: free-text notes without a type.
     if mom_type not in ('Training', 'Business'):
@@ -1879,6 +2038,14 @@ def delete_visit(visit_id):
     if not user or not _is_global_role(user.get('role', '')):
         return jsonify({"status": "error", "message": "Only Super Admin or Leader can cancel itineraries."}), 403
     conn = get_db_connection()
+    visit = conn.execute("SELECT * FROM visits WHERE id=?", (visit_id,)).fetchone()
+    if not visit:
+        conn.close()
+        return jsonify({"status": "error", "message": "Visit not found."}), 404
+    # Approval lock: approved itineraries cannot be deleted — revoke first.
+    if int(visit['approved'] or 0) == 1:
+        conn.close()
+        return jsonify({"status": "error", "message": "This itinerary is approved and locked. Revoke approval before deleting."}), 403
     conn.execute("DELETE FROM visits WHERE id=?", (visit_id,))
     conn.commit()
     conn.close()
