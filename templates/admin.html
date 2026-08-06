@@ -4955,8 +4955,26 @@ message: data.message,
                                                     <option value="Flight">Flight</option>
                                                     <option value="Other">Other</option>
                                                 </select>
-                                                <input type="text" value={travelFrom} onChange={e => setTravelFrom(e.target.value)} placeholder="Travel From" className="input-field bg-white font-bold text-xs" />
-                                                <input type="text" value={travelTo} onChange={e => setTravelTo(e.target.value)} placeholder="Travel To" className="input-field bg-white font-bold text-xs" />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="space-y-1.5">
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Travel From</label>
+                                                    <SmartSelect
+                                                        value={travelFrom}
+                                                        onChange={v => setTravelFrom(v || '')}
+                                                        options={(rosterMeta.branches_meta || []).map(br => ({ value: br.name, label: `${br.name} (${br.division})` }))}
+                                                        placeholder="-- Select Branch --"
+                                                    />
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Travel To</label>
+                                                    <SmartSelect
+                                                        value={travelTo}
+                                                        onChange={v => setTravelTo(v || '')}
+                                                        options={(rosterMeta.branches_meta || []).map(br => ({ value: br.name, label: `${br.name} (${br.division})` }))}
+                                                        placeholder="-- Select Branch --"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
