@@ -427,6 +427,7 @@ background: rgba(217,119,6,0.1);
                     case 'analytics': return <AnalyticsView user={activeTrainer} />;
                     case 'access_mgmt': return <AccessMgmtView user={activeTrainer} />;
                     case 'travel_hub': return <TravelHubView user={activeTrainer} />;
+                    case 'training': return <TrainingMgmtView user={activeTrainer} />;
                     default: return <AdminDashboard onNav={setView} user={activeTrainer} dbDiag={dbDiag} />;
                 }
             };
@@ -676,6 +677,7 @@ background: rgba(217,119,6,0.1);
                             <div onClick={() => setView('roster')} className={`sidebar-link ${view==='roster'?'active':''}`}><i className="fas fa-users-cog w-5"></i> Master Roster</div>
                             <div onClick={() => setView('analytics')} className={`sidebar-link ${view==='analytics'?'active':''}`}><i className="fas fa-chart-pie w-5"></i> Analytics Hub</div>
                             <div onClick={() => setView('travel_hub')} className={`sidebar-link ${view==='travel_hub'?'active':''}`}><i className="fas fa-map-marked-alt w-5"></i> Travel Hub</div>
+                            <div onClick={() => setView('training')} className={`sidebar-link ${view==='training'?'active':''}`}><i className="fas fa-graduation-cap w-5"></i> Training Cycles</div>
 
                             {(isSuperAdmin || isLeader) && (
                                 <div onClick={() => setView('access_mgmt')} className={`sidebar-link ${view==='access_mgmt'?'active':''} mt-6 border-t border-white/5 pt-6`}><i className="fas fa-user-shield w-5 text-amber-500"></i> Access Control</div>
@@ -839,6 +841,7 @@ background: rgba(217,119,6,0.1);
                                     <div onClick={() => { setView('roster'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='roster'?'active':''}`}><i className="fas fa-users-cog w-5 text-center text-base"></i> Employee Roster</div>
                                     <div onClick={() => { setView('analytics'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='analytics'?'active':''}`}><i className="fas fa-chart-pie w-5 text-center text-base"></i> Analytics Hub</div>
                                     <div onClick={() => { setView('travel_hub'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='travel_hub'?'active':''}`}><i className="fas fa-map-marked-alt w-5 text-center text-base"></i> Field Travel Hub</div>
+                                    <div onClick={() => { setView('training'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='training'?'active':''}`}><i className="fas fa-graduation-cap w-5 text-center text-base"></i> Training Cycles</div>
 
                                     {(isSuperAdmin || isLeader) && (
                                         <div onClick={() => { setView('access_mgmt'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer mt-4 border-t border-white/5 pt-4 ${view==='access_mgmt'?'active':''}`}><i className="fas fa-user-shield w-5 text-center text-base text-amber-500"></i> Access Control</div>
@@ -7575,6 +7578,697 @@ className={`h-full rounded-full bg-gradient-to-r ${
             );
         };
 
+
+        const TrainingMgmtView = ({ user }) => {
+            const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
+            const [tab, setTab] = useState('overview'); // overview | assign | cycles | materials | reminders
+
+            // ---- Overview ----
+            const [overview, setOverview] = useState(null);
+            const [recent, setRecent] = useState([]);
+
+            // ---- Cascade roster filters (BU -> Zone -> Division -> Branch) ----
+            const [rosterMeta, setRosterMeta] = useState({ business_units: [], zones_meta: [], divisions_meta: [], branches_meta: [] });
+            const [selBu, setSelBu] = useState('');
+            const [selZone, setSelZone] = useState('');
+            const [selDivision, setSelDivision] = useState('');
+            const [selBranch, setSelBranch] = useState('');
+
+            // ---- Assign tab ----
+            const [empQuery, setEmpQuery] = useState('');
+            const [empResults, setEmpResults] = useState([]);
+            const [pickedEmp, setPickedEmp] = useState(null);
+            const [suggest, setSuggest] = useState(null);
+            const [suggestLoading, setSuggestLoading] = useState(false);
+            const [mode, setMode] = useState('FULL');
+            const [modules, setModules] = useState([]);
+            const [moduleId, setModuleId] = useState('');
+            const [startDate, setStartDate] = useState(new Date().toISOString().substring(0, 10));
+            const [notes, setNotes] = useState('');
+            const [materialsByStage, setMaterialsByStage] = useState({});
+            const [matPick, setMatPick] = useState({});
+            const [customStages, setCustomStages] = useState([{ stage: 'CUSTOM', date: '', material_id: '' }]);
+            const [assignBusy, setAssignBusy] = useState(false);
+            const [assignMsg, setAssignMsg] = useState('');
+
+            // ---- Cycles tab ----
+            const [cycles, setCycles] = useState([]);
+            const [cyclesLoading, setCyclesLoading] = useState(false);
+            const [cyStatus, setCyStatus] = useState('');
+            const [cyQ, setCyQ] = useState('');
+            const [detailCycle, setDetailCycle] = useState(null);
+            const [detailLoading, setDetailLoading] = useState(false);
+
+            // ---- Materials tab ----
+            const [materials, setMaterials] = useState([]);
+            const [matFilter, setMatFilter] = useState('');
+            const [showMatModal, setShowMatModal] = useState(false);
+            const [matForm, setMatForm] = useState({ id: null, title: '', stage: 'DAY 0', topic: '', version: '1.0', applicable_teams: '', applicable_roles: '', module_id: '', content: '' });
+            const [uploadBusy, setUploadBusy] = useState(false);
+            const [matMsg, setMatMsg] = useState('');
+
+            // ---- Reminders ----
+            const [reminders, setReminders] = useState(null);
+
+            const STAGE_LABELS = { 'DAY 0': 'Day 0 · Orientation', 'DAY 6': 'Day 6 · Follow-up', 'DAY 21': 'Day 21 · Refresher', 'REFRESHER': 'Refresher', 'CUSTOM': 'Custom' };
+            const stageLabel = (s) => STAGE_LABELS[s] || s;
+            const statusColor = (st) => ({ ACTIVE: 'bg-emerald-100 text-emerald-700', COMPLETED: 'bg-sky-100 text-sky-700', CANCELLED: 'bg-slate-100 text-slate-500', SUPERSEDED: 'bg-orange-100 text-orange-700' }[st] || 'bg-slate-100 text-slate-600');
+
+            const loadRosterMeta = () => {
+                fetch('/api/roster/filters').then(r => r.json()).then(d => {
+                    setRosterMeta({ business_units: d.business_units || [], zones_meta: d.zones_meta || [], divisions_meta: d.divisions_meta || [], branches_meta: d.branches_meta || [] });
+                }).catch(() => {});
+            };
+            const uniq = (arr) => [...new Set(arr.filter(Boolean))];
+            const filteredZones = () => uniq((rosterMeta.zones_meta || []).filter(z => !selBu || (z.business_unit || '').toUpperCase() === selBu.toUpperCase()).map(z => z.name));
+            const filteredDivisions = () => uniq((rosterMeta.divisions_meta || []).filter(d => !selZone || (d.zone || '').toUpperCase() === selZone.toUpperCase()).map(d => d.name));
+            const filteredBranches = () => uniq((rosterMeta.branches_meta || []).filter(b => (!selZone || (b.zone || '').toUpperCase() === selZone.toUpperCase()) && (!selDivision || (b.division || '').toUpperCase() === selDivision.toUpperCase())).map(b => b.name));
+
+            const loadOverview = () => {
+                fetch('/api/training/overview').then(r => r.json()).then(d => {
+                    if (d.status === 'success') { setOverview(d); setRecent(d.recent || []); }
+                }).catch(() => {});
+            };
+
+            const loadModules = () => {
+                fetch('/api/modules').then(r => r.json()).then(list => setModules(Array.isArray(list) ? list : [])).catch(() => {});
+            };
+
+            const searchEmployees = (q = empQuery) => {
+                if (!q.trim()) { setEmpResults([]); return; }
+                const params = new URLSearchParams({ q: q.trim() });
+                if (selBu) params.set('bu', selBu);
+                if (selZone) params.set('zone', selZone);
+                if (selDivision) params.set('division', selDivision);
+                if (selBranch) params.set('branch', selBranch);
+                fetch('/api/training/employees?' + params.toString()).then(r => r.json()).then(d => {
+                    setEmpResults(d.status === 'success' ? (d.employees || []) : []);
+                }).catch(() => setEmpResults([]));
+            };
+
+            const pickEmployee = (emp) => {
+                setPickedEmp(emp);
+                setEmpResults([]);
+                setSuggest(null);
+                setMatPick({});
+                setMode('FULL');
+                setSuggestLoading(true);
+                fetch('/api/training/suggest/' + encodeURIComponent(emp.emp_code) + (moduleId ? ('?module_id=' + moduleId) : ''))
+                    .then(r => r.json())
+                    .then(d => {
+                        setSuggestLoading(false);
+                        if (d.status === 'success') {
+                            setSuggest(d);
+                            setMode(d.mode || 'FULL');
+                            setMaterialsByStage(d.materials_by_stage || {});
+                        } else setSuggest(null);
+                    })
+                    .catch(() => { setSuggestLoading(false); setSuggest(null); });
+            };
+
+            const doAssign = () => {
+                if (!pickedEmp) { setAssignMsg('Select an employee first.'); return; }
+                setAssignBusy(true); setAssignMsg('');
+                const payload = { emp_code: pickedEmp.emp_code, module_id: moduleId ? parseInt(moduleId) : null, mode, start_date: startDate, notes };
+                if (mode !== 'CONTINUE') payload.materials = matPick;
+                if (mode === 'CUSTOM') payload.custom_stages = customStages.filter(cs => cs.stage.trim());
+                fetch('/api/training/assign', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+                    .then(r => r.json())
+                    .then(d => {
+                        setAssignBusy(false);
+                        setAssignMsg((d.status === 'success' ? '✓ ' : '✗ ') + (d.message || JSON.stringify(d)));
+                        if (d.status === 'success') { setPickedEmp(null); setSuggest(null); setEmpQuery(''); setMatPick({}); loadOverview(); loadCycles(); }
+                    })
+                    .catch(() => { setAssignBusy(false); setAssignMsg('✗ Network error while assigning.'); });
+            };
+
+            const loadCycles = () => {
+                setCyclesLoading(true);
+                const params = new URLSearchParams();
+                if (cyStatus) params.set('status', cyStatus);
+                if (cyQ) params.set('q', cyQ);
+                if (selZone) params.set('zone', selZone);
+                if (selDivision) params.set('division', selDivision);
+                if (selBranch) params.set('branch', selBranch);
+                if (selBu) params.set('bu', selBu);
+                fetch('/api/training/cycles?' + params.toString()).then(r => r.json()).then(d => {
+                    setCycles(d.status === 'success' ? (d.cycles || []) : []);
+                    setCyclesLoading(false);
+                }).catch(() => setCyclesLoading(false));
+            };
+
+            const openCycleDetail = (id) => {
+                setDetailLoading(true); setDetailCycle(null);
+                fetch('/api/training/cycles/' + id).then(r => r.json()).then(d => {
+                    setDetailLoading(false);
+                    if (d.status === 'success') setDetailCycle(d.cycle);
+                }).catch(() => setDetailLoading(false));
+            };
+
+            const stageAction = (action, id, stage, body = {}) => {
+                fetch('/api/training/cycles/' + id + '/stages/' + encodeURIComponent(stage) + '/' + action, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.status === 'success') { if (detailCycle) openCycleDetail(detailCycle.id); loadCycles(); loadOverview(); }
+                    }).catch(() => {});
+            };
+            const restartCycle = (id) => {
+                if (!window.confirm('Start a NEW cycle for this employee? The old cycle will be preserved as SUPERSEDED (history stays intact).')) return;
+                fetch('/api/training/cycles/' + id + '/restart', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+                    .then(r => r.json()).then(d => { loadCycles(); loadOverview(); openCycleDetail(id); }).catch(() => {});
+            };
+            const cancelCycle = (id) => {
+                if (!window.confirm('Cancel this training cycle?')) return;
+                fetch('/api/training/cycles/' + id + '/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+                    .then(r => r.json()).then(d => { loadCycles(); loadOverview(); if (detailCycle) openCycleDetail(detailCycle.id); }).catch(() => {});
+            };
+
+            const loadMaterials = () => {
+                const params = new URLSearchParams();
+                if (matFilter) params.set('stage', matFilter);
+                fetch('/api/training/materials?' + params.toString()).then(r => r.json()).then(d => {
+                    setMaterials(d.status === 'success' ? (d.materials || []) : []);
+                }).catch(() => {});
+            };
+
+            const saveMaterial = () => {
+                if (!matForm.title.trim()) { setMatMsg('Title is required.'); return; }
+                setMatMsg('');
+                const body = { ...matForm, module_id: matForm.module_id ? parseInt(matForm.module_id) : null };
+                const url = matForm.id ? '/api/training/materials/' + matForm.id : '/api/training/materials';
+                const method = matForm.id ? 'PUT' : 'POST';
+                fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.status === 'success') { setShowMatModal(false); loadMaterials(); loadOverview(); }
+                        else setMatMsg(d.message || 'Save failed');
+                    })
+                    .catch(() => setMatMsg('Network error while saving.'));
+            };
+
+            const deactivateMaterial = (id) => {
+                if (!window.confirm('Deactivate this material? Old training cycles keep their link (history is preserved).')) return;
+                fetch('/api/training/materials/' + id, { method: 'DELETE' }).then(r => r.json()).then(d => loadMaterials()).catch(() => {});
+            };
+
+            const uploadMaterialFile = (e) => {
+                const file = e.target.files[0];
+                if (!file || !matForm.id) return;
+                setUploadBusy(true); setMatMsg('');
+                const fd = new FormData();
+                fd.append('file', file);
+                fetch('/api/training/materials/' + matForm.id + '/upload', { method: 'POST', body: fd })
+                    .then(r => r.json())
+                    .then(d => {
+                        setUploadBusy(false);
+                        setMatMsg(d.status === 'success' ? '✓ File attached: ' + d.file_path : (d.message || 'Upload failed'));
+                        loadMaterials();
+                    })
+                    .catch(() => { setUploadBusy(false); setMatMsg('✗ Upload failed.'); });
+            };
+
+            const loadReminders = () => {
+                fetch('/api/training/reminders').then(r => r.json()).then(d => {
+                    setReminders(d.status === 'success' ? d : null);
+                }).catch(() => {});
+            };
+
+            useEffect(() => { loadRosterMeta(); loadOverview(); loadModules(); loadCycles(); loadMaterials(); loadReminders(); }, []);
+            useEffect(() => { if (tab === 'reminders') loadReminders(); if (tab === 'materials') loadMaterials(); if (tab === 'cycles') loadCycles(); }, [tab]);
+
+            const cascadeSelect = (e, setter, kind) => {
+                const v = e.target.value;
+                setter(v);
+                if (kind === 'bu') { setSelZone(''); setSelDivision(''); setSelBranch(''); }
+                if (kind === 'zone') { setSelDivision(''); setSelBranch(''); }
+                if (kind === 'division') { setSelBranch(''); }
+            };
+
+            const tabs = [
+                { id: 'overview', label: 'Overview', icon: 'gauge-high' },
+                { id: 'assign', label: 'Assign Training', icon: 'user-plus' },
+                { id: 'cycles', label: 'Cycles', icon: 'rotate' },
+                { id: 'materials', label: 'Materials', icon: 'folder-open' },
+                { id: 'reminders', label: 'Reminders', icon: 'bell' },
+            ];
+
+            const StatCard = ({ label, value, color, icon, sub }) => (
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{label}</div>
+                            <div className={`text-2xl font-black mt-1 ${color || 'text-slate-800'}`}>{value}</div>
+                            {sub ? <div className="text-[10px] text-slate-400 mt-0.5">{sub}</div> : null}
+                        </div>
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-yellow-600 text-[#090D16] flex items-center justify-center shadow-md"><i className={`fas fa-${icon}`}></i></div>
+                    </div>
+                </div>
+            );
+
+            const empLine = (e) => `${e.emp_name || ''} (${e.emp_code || ''})${e.branch_name ? ' · ' + e.branch_name : ''}`;
+
+            return (
+                <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h2 className="text-xl font-extrabold text-slate-800 font-outfit">Training Cycle Manager</h2>
+                            <p className="text-xs text-slate-500">Day 0 → Day 6 → Day 21 cycles, materials, history &amp; reminders</p>
+                        </div>
+                        <button onClick={() => { setTab('assign'); }} className="bg-gradient-to-r from-amber-500 to-yellow-600 text-[#090D16] text-xs font-extrabold px-4 py-2.5 rounded-xl shadow-md hover:shadow-lg hover:opacity-90 transition-all"><i className="fas fa-plus mr-1.5"></i>New Assignment</button>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex gap-2 overflow-x-auto pb-1">
+                        {tabs.map(t => (
+                            <button key={t.id} onClick={() => setTab(t.id)} className={`shrink-0 text-xs font-extrabold px-4 py-2 rounded-xl transition-all ${tab === t.id ? 'bg-[#090D16] text-amber-400 shadow-md' : 'bg-white border border-slate-200 text-slate-500 hover:border-amber-300'}`}><i className={`fas fa-${t.icon} mr-1.5`}></i>{t.label}</button>
+                        ))}
+                    </div>
+
+                    {/* BU -> Zone -> Division -> Branch cascade */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <div>
+                                <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Business Unit</label>
+                                <select value={selBu} onChange={(e) => cascadeSelect(e, setSelBu, 'bu')} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-slate-50">
+                                    <option value="">All BU</option>
+                                    {[...new Set((rosterMeta.business_units || []).map(x => x).filter(Boolean))].map(b => <option key={b} value={b}>{b}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Zone</label>
+                                <select value={selZone} onChange={(e) => cascadeSelect(e, setSelZone, 'zone')} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-slate-50">
+                                    <option value="">All Zones</option>
+                                    {filteredZones().map(z => <option key={z} value={z}>{z}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Division</label>
+                                <select value={selDivision} onChange={(e) => cascadeSelect(e, setSelDivision, 'division')} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-slate-50">
+                                    <option value="">All Divisions</option>
+                                    {filteredDivisions().map(d => <option key={d} value={d}>{d}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Branch</label>
+                                <select value={selBranch} onChange={(e) => cascadeSelect(e, setSelBranch, 'branch')} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-slate-50">
+                                    <option value="">All Branches</option>
+                                    {filteredBranches().map(b => <option key={b} value={b}>{b}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    {tab === 'overview' && (
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+                                <StatCard label="Active Cycles" value={overview?.active ?? '—'} color="text-emerald-600" icon="circle-play" />
+                                <StatCard label="Completed" value={overview?.completed ?? '—'} color="text-sky-600" icon="circle-check" />
+                                <StatCard label="Due Today" value={overview?.due_today ?? '—'} color="text-amber-600" icon="clock" />
+                                <StatCard label="Due in 7 Days" value={overview?.due_week ?? '—'} color="text-indigo-600" icon="calendar-day" />
+                                <StatCard label="Overdue" value={overview?.overdue ?? '—'} color={(overview?.overdue || 0) > 0 ? 'text-red-600' : 'text-slate-600'} icon="triangle-exclamation" />
+                                <StatCard label="Materials" value={overview?.materials ?? '—'} color="text-fuchsia-600" icon="folder-open" />
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                                    <h3 className="text-sm font-extrabold text-slate-700">Recent Training Cycles</h3>
+                                    <button onClick={() => setTab('cycles')} className="text-[10px] font-extrabold text-amber-600 hover:text-amber-800 uppercase tracking-wider">View All &rarr;</button>
+                                </div>
+                                {recent.length === 0 ? (
+                                    <div className="p-8 text-center text-xs text-slate-400">No training cycles assigned yet. Go to <button className="text-amber-600 font-extrabold underline" onClick={() => setTab('assign')}>Assign Training</button> to start the Day 0 / Day 6 / Day 21 journey.</div>
+                                ) : (
+                                    <div className="divide-y divide-slate-50">
+                                        {recent.map(c => (
+                                            <div key={c.id} className="px-4 py-3 flex items-center justify-between gap-2 hover:bg-slate-50 cursor-pointer" onClick={() => { setTab('cycles'); openCycleDetail(c.id); }}>
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-extrabold text-slate-700 truncate">{c.emp_name || c.emp_code} <span className="text-slate-400 font-bold">· {c.cycle_code}</span></div>
+                                                    <div className="text-[10px] text-slate-400">{c.module_title || 'No module'} · started {c.start_date}</div>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${statusColor(c.status)}`}>{c.status}</span>
+                                                    <span className="text-[9px] font-extrabold text-slate-400">{c.completed_stages}/{c.total_stages} stages</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'assign' && (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3">
+                                <h3 className="text-sm font-extrabold text-slate-700"><i className="fas fa-user-magnifying-glass mr-1.5 text-amber-500"></i>1 · Find Employee (Master Roster)</h3>
+                                <div className="flex gap-2">
+                                    <input value={empQuery} onChange={(e) => setEmpQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') searchEmployees(); }} placeholder="Search by name or employee code…" className="flex-1 text-xs font-semibold border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                                    <button onClick={() => searchEmployees()} className="bg-[#090D16] text-amber-400 text-xs font-extrabold px-4 rounded-xl hover:opacity-90 transition-all"><i className="fas fa-magnifying-glass"></i></button>
+                                </div>
+                                {empResults.length > 0 && (
+                                    <div className="max-h-56 overflow-y-auto border border-slate-100 rounded-xl divide-y divide-slate-50">
+                                        {empResults.map(e => (
+                                            <div key={e.emp_code} onClick={() => pickEmployee(e)} className="px-3 py-2.5 hover:bg-amber-50 cursor-pointer flex items-center justify-between gap-2">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-extrabold text-slate-700 truncate">{e.emp_name || e.emp_code}</div>
+                                                    <div className="text-[10px] text-slate-400 truncate">{e.branch_name || '—'}{e.zone ? ' · ' + e.zone : ''}{e.division ? ' · ' + e.division : ''}</div>
+                                                </div>
+                                                <i className="fas fa-chevron-right text-[10px] text-slate-300 shrink-0"></i>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {pickedEmp && (
+                                    <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5">
+                                        <div className="min-w-0">
+                                            <div className="text-xs font-extrabold text-emerald-800 truncate">{pickedEmp.emp_name} <span className="text-emerald-500">({pickedEmp.emp_code})</span></div>
+                                            <div className="text-[10px] text-emerald-600 truncate">{pickedEmp.branch_name || '—'} · {pickedEmp.division || '—'} · {pickedEmp.zone || '—'}</div>
+                                        </div>
+                                        <button onClick={() => { setPickedEmp(null); setSuggest(null); }} className="text-emerald-700 text-xs font-extrabold hover:underline shrink-0"><i className="fas fa-xmark mr-1"></i>Clear</button>
+                                    </div>
+                                )}
+                                <div>
+                                    <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Training Module</label>
+                                    <select value={moduleId} onChange={(e) => { setModuleId(e.target.value); if (pickedEmp) pickEmployee(pickedEmp); }} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-slate-50">
+                                        <option value="">Select module…</option>
+                                        {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3">
+                                <h3 className="text-sm font-extrabold text-slate-700"><i className="fas fa-wand-magic-sparkles mr-1.5 text-amber-500"></i>2 · Training Plan</h3>
+                                {!pickedEmp ? (
+                                    <div className="p-6 text-center text-xs text-slate-400 border-2 border-dashed border-slate-100 rounded-xl">Select an employee to get a smart training suggestion based on their past history.</div>
+                                ) : suggestLoading ? (
+                                    <div className="p-6 text-center text-xs text-slate-400 animate-pulse">Analyzing training history…</div>
+                                ) : (
+                                    <>
+                                        {suggest && (
+                                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+                                                <div className="text-[9px] font-extrabold uppercase tracking-widest text-amber-600">Smart Suggestion</div>
+                                                <div className="text-xs font-bold text-amber-900 mt-1">{suggest.reason}</div>
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full ${suggest.mode === 'FULL' ? 'bg-emerald-600 text-white' : suggest.mode === 'CONTINUE' ? 'bg-sky-600 text-white' : 'bg-violet-600 text-white'}`}>{suggest.mode}</span>
+                                                    {suggest.next_stage ? <span className="text-[10px] font-bold text-slate-500">Next: {stageLabel(suggest.next_stage.stage)} · {suggest.next_stage.stage_date}</span> : null}
+                                                </div>
+                                            </div>
+                                        )}
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Mode</label>
+                                            <div className="grid grid-cols-2 gap-2 mt-1">
+                                                {[['FULL', 'Full Cycle (Day 0/6/21)'], ['CONTINUE', 'Continue Existing'], ['REFRESHER', 'Refresher Only'], ['CUSTOM', 'Custom Plan']].map(([m, label]) => (
+                                                    <button key={m} onClick={() => setMode(m)} className={`text-[10px] font-extrabold px-3 py-2 rounded-xl border transition-all ${mode === m ? 'bg-[#090D16] text-amber-400 border-[#090D16] shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:border-amber-300'}`}>{label}</button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {(mode === 'FULL' || mode === 'REFRESHER') && (
+                                            <div>
+                                                <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Start Date</label>
+                                                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-slate-50" />
+                                            </div>
+                                        )}
+                                        {mode === 'CUSTOM' && (
+                                            <div className="space-y-2">
+                                                {customStages.map((cs, i) => (
+                                                    <div key={i} className="grid grid-cols-3 gap-2 items-end">
+                                                        <input placeholder="Stage name" value={cs.stage} onChange={(e) => { const arr = [...customStages]; arr[i].stage = e.target.value; setCustomStages(arr); }} className="text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
+                                                        <input type="date" value={cs.date} onChange={(e) => { const arr = [...customStages]; arr[i].date = e.target.value; setCustomStages(arr); }} className="text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
+                                                        <button onClick={() => setCustomStages(customStages.filter((_, j) => j !== i))} className="text-[10px] font-extrabold text-red-500 hover:underline"><i className="fas fa-trash mr-1"></i>Remove</button>
+                                                    </div>
+                                                ))}
+                                                <button onClick={() => setCustomStages([...customStages, { stage: 'CUSTOM', date: '', material_id: '' }])} className="text-[10px] font-extrabold text-amber-600 hover:underline"><i className="fas fa-plus mr-1"></i>Add custom stage</button>
+                                            </div>
+                                        )}
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Material per Stage (optional)</label>
+                                            {Object.keys(materialsByStage).length === 0 ? (
+                                                <div className="text-[10px] text-slate-400 mt-1">No materials created yet for this plan. Add them under the <button className="text-amber-600 font-extrabold underline" onClick={() => setTab('materials')}>Materials</button> tab.</div>
+                                            ) : (
+                                                <div className="space-y-1.5 mt-1">
+                                                    {Object.keys(materialsByStage).sort().map(st => (
+                                                        <div key={st} className="flex items-center gap-2">
+                                                            <span className="w-20 text-[10px] font-extrabold text-slate-500">{stageLabel(st)}</span>
+                                                            <select value={matPick[st] || ''} onChange={(e) => setMatPick({ ...matPick, [st]: e.target.value })} className="flex-1 text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-1.5 focus:outline-none bg-slate-50">
+                                                                <option value="">No material</option>
+                                                                {(materialsByStage[st] || []).map(m => <option key={m.id} value={m.id}>{m.title} (v{m.version})</option>)}
+                                                            </select>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Notes</label>
+                                            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional note for this assignment…" className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
+                                        </div>
+                                        <button onClick={doAssign} disabled={assignBusy} className="w-full bg-gradient-to-r from-amber-500 to-yellow-600 text-[#090D16] text-xs font-extrabold py-3 rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50">
+                                            {assignBusy ? <><i className="fas fa-spinner fa-spin mr-1.5"></i>Assigning…</> : <><i className="fas fa-check mr-1.5"></i>Assign Training</>}
+                                        </button>
+                                    </>
+                                )}
+                                {assignMsg && (
+                                    <div className={`mt-3 text-xs font-extrabold px-3 py-2.5 rounded-xl border ${assignMsg.startsWith('✓') ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-600 border-red-200'}`}>{assignMsg}</div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'cycles' && (
+                        <div className="space-y-3">
+                            <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-sm flex flex-wrap items-center gap-2">
+                                <input value={cyQ} onChange={(e) => setCyQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') loadCycles(); }} placeholder="Search employee / cycle code…" className="flex-1 min-w-[160px] text-xs font-semibold border border-slate-200 rounded-xl px-3 py-2 focus:outline-none" />
+                                <select value={cyStatus} onChange={(e) => { setCyStatus(e.target.value); }} className="text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 bg-slate-50">
+                                    <option value="">All statuses</option>
+                                    {['ACTIVE', 'COMPLETED', 'CANCELLED', 'SUPERSEDED'].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <button onClick={() => { loadCycles(); }} className="bg-[#090D16] text-amber-400 text-xs font-extrabold px-4 py-2 rounded-xl"><i className="fas fa-filter mr-1"></i>Apply</button>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                                {cyclesLoading ? (
+                                    <div className="p-10 text-center text-xs text-slate-400 animate-pulse">Loading cycles…</div>
+                                ) : cycles.length === 0 ? (
+                                    <div className="p-10 text-center text-xs text-slate-400">No training cycles found for the selected filters.</div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left">
+                                            <thead className="bg-slate-50 text-[9px] uppercase tracking-widest text-slate-400 font-extrabold">
+                                                <tr>
+                                                    <th className="px-3 py-2.5">Employee</th>
+                                                    <th className="px-3 py-2.5">Cycle</th>
+                                                    <th className="px-3 py-2.5">Module</th>
+                                                    <th className="px-3 py-2.5">Branch</th>
+                                                    <th className="px-3 py-2.5">Started</th>
+                                                    <th className="px-3 py-2.5">Stages</th>
+                                                    <th className="px-3 py-2.5">Status</th>
+                                                    <th className="px-3 py-2.5"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {cycles.map(c => (
+                                                    <tr key={c.id} className="hover:bg-amber-50/40 cursor-pointer" onClick={() => openCycleDetail(c.id)}>
+                                                        <td className="px-3 py-2.5">
+                                                            <div className="text-xs font-extrabold text-slate-700">{c.emp_name || c.emp_code}</div>
+                                                            <div className="text-[9px] text-slate-400">{c.zone || '—'} · {c.division || '—'}</div>
+                                                        </td>
+                                                        <td className="px-3 py-2.5 text-[10px] font-bold text-slate-500">{c.cycle_code}<div className="text-[9px] text-slate-400">{c.mode}</div></td>
+                                                        <td className="px-3 py-2.5 text-[10px] font-semibold text-slate-500 max-w-[160px] truncate">{c.module_title || '—'}</td>
+                                                        <td className="px-3 py-2.5 text-[10px] text-slate-500">{c.branch_name || '—'}</td>
+                                                        <td className="px-3 py-2.5 text-[10px] text-slate-500">{c.start_date}</td>
+                                                        <td className="px-3 py-2.5 text-[10px] font-extrabold text-slate-500">{c.completed_stages}/{c.total_stages}</td>
+                                                        <td className="px-3 py-2.5"><span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${statusColor(c.status)}`}>{c.status}</span></td>
+                                                        <td className="px-3 py-2.5 text-right"><i className="fas fa-chevron-right text-[10px] text-slate-300"></i></td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'materials' && (
+                        <div className="space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                                <select value={matFilter} onChange={(e) => { setMatFilter(e.target.value); }} className="text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 bg-slate-50">
+                                    <option value="">All stages</option>
+                                    {['DAY 0', 'DAY 6', 'DAY 21', 'REFRESHER', 'ADVANCED', 'CUSTOM'].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <button onClick={() => { setMatForm({ id: null, title: '', stage: 'DAY 0', topic: '', version: '1.0', applicable_teams: '', applicable_roles: '', module_id: '', content: '' }); setMatMsg(''); setShowMatModal(true); }} className="bg-gradient-to-r from-amber-500 to-yellow-600 text-[#090D16] text-xs font-extrabold px-4 py-2 rounded-xl shadow-md hover:shadow-lg"><i className="fas fa-plus mr-1.5"></i>New Material</button>
+                            </div>
+                            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                                {materials.length === 0 ? (
+                                    <div className="p-10 text-center text-xs text-slate-400">No training materials yet. Create the Day 0 / Day 6 / Day 21 kits first.</div>
+                                ) : (
+                                    <div className="divide-y divide-slate-50">
+                                        {materials.map(m => (
+                                            <div key={m.id} className="px-4 py-3 flex items-center justify-between gap-2 hover:bg-slate-50">
+                                                <div className="min-w-0">
+                                                    <div className="text-xs font-extrabold text-slate-700 truncate">{m.title} {!m.active && <span className="text-[8px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full ml-1">INACTIVE</span>}</div>
+                                                    <div className="text-[10px] text-slate-400">{stageLabel(m.stage)} · v{m.version || '1.0'}{m.applicable_teams ? ' · Teams: ' + m.applicable_teams : ''}{m.file_path ? ' · file attached' : ''}</div>
+                                                </div>
+                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                    <button onClick={() => { setMatForm({ id: m.id, title: m.title, stage: m.stage, topic: m.topic || '', version: m.version || '1.0', applicable_teams: m.applicable_teams || '', applicable_roles: m.applicable_roles || '', module_id: m.module_id || '', content: m.content || '' }); setMatMsg(''); setShowMatModal(true); }} className="text-[10px] font-extrabold text-sky-600 hover:underline"><i className="fas fa-pen mr-1"></i>Edit</button>
+                                                    {m.active ? <button onClick={() => deactivateMaterial(m.id)} className="text-[10px] font-extrabold text-red-500 hover:underline"><i className="fas fa-toggle-off mr-1"></i>Deactivate</button> : null}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {tab === 'reminders' && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            {[{ key: 'due_today', title: 'Due Today', color: 'bg-amber-100 text-amber-700', icon: 'clock' }, { key: 'upcoming', title: 'Next 3 Days', color: 'bg-sky-100 text-sky-700', icon: 'calendar-day' }, { key: 'overdue', title: 'Overdue', color: 'bg-red-100 text-red-700', icon: 'triangle-exclamation' }].map(sec => (
+                                <div key={sec.key} className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                                    <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+                                        <i className={`fas fa-${sec.icon} text-xs`}></i>
+                                        <span className="text-sm font-extrabold text-slate-700">{sec.title}</span>
+                                        <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${sec.color}`}>{((reminders || {})[sec.key] || []).length}</span>
+                                    </div>
+                                    <div className="divide-y divide-slate-50 max-h-80 overflow-y-auto">
+                                        {!reminders ? <div className="p-6 text-center text-xs text-slate-400 animate-pulse">Loading…</div> :
+                                        (reminders[sec.key] || []).length === 0 ? <div className="p-6 text-center text-xs text-slate-400">Nothing here 👍</div> :
+                                        reminders[sec.key].map((r, i) => (
+                                            <div key={i} className="px-4 py-3">
+                                                <div className="text-xs font-extrabold text-slate-700 truncate">{r.emp_name || r.emp_code}</div>
+                                                <div className="text-[10px] text-slate-400">{stageLabel(r.stage)} · {r.stage_date} · {r.module_title || 'No module'}</div>
+                                                <div className="text-[9px] text-slate-400">{r.branch_name || '—'}{r.zone ? ' · ' + r.zone : ''}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Cycle detail modal */}
+                    {detailCycle && (
+                        <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={() => setDetailCycle(null)}>
+                            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-fade-in-up" onClick={(e) => e.stopPropagation()}>
+                                <div className="px-5 py-4 bg-[#090D16] flex items-center justify-between">
+                                    <div>
+                                        <div className="text-white font-extrabold text-sm">{detailCycle.employee?.emp_name || detailCycle.emp_code} <span className="text-amber-400">· {detailCycle.cycle_code}</span></div>
+                                        <div className="text-[10px] text-slate-400">{detailCycle.employee?.branch_name || '—'} · {detailCycle.employee?.zone || '—'} · {detailCycle.employee?.division || '—'} · {detailCycle.employee?.business_unit || '—'}</div>
+                                    </div>
+                                    <button onClick={() => setDetailCycle(null)} className="w-8 h-8 rounded-full bg-white/10 text-slate-300 hover:bg-white/20 flex items-center justify-center"><i className="fas fa-xmark text-xs"></i></button>
+                                </div>
+                                <div className="p-5 space-y-3 max-h-[70vh] overflow-y-auto">
+                                    <div className="flex flex-wrap gap-2">
+                                        <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full ${statusColor(detailCycle.status)}`}>{detailCycle.status}</span>
+                                        <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">{detailCycle.mode} mode</span>
+                                        {detailCycle.module_title ? <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-indigo-100 text-indigo-700">{detailCycle.module_title}</span> : null}
+                                        <span className="text-[10px] font-extrabold px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">Trainer: {detailCycle.trainer_name || '—'}</span>
+                                    </div>
+                                    {detailLoading ? <div className="p-6 text-center text-xs text-slate-400 animate-pulse">Loading stages…</div> : (
+                                        <div className="space-y-2">
+                                            {(detailCycle.stages || []).map(st => (
+                                                <div key={st.id} className="border border-slate-200 rounded-2xl p-3">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-extrabold ${st.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' : st.overdue ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{st.status === 'COMPLETED' ? '✓' : (st.overdue ? '!' : (st.stage === 'DAY 0' ? '0' : st.stage === 'DAY 6' ? '6' : st.stage === 'DAY 21' ? '21' : '•'))}</span>
+                                                            <div>
+                                                                <div className="text-xs font-extrabold text-slate-700">{stageLabel(st.stage)}</div>
+                                                                <div className="text-[10px] text-slate-400">{st.stage_date}{st.overdue ? ' · OVERDUE' : ''}{st.completed_at ? ' · done ' + st.completed_at : ''}</div>
+                                                            </div>
+                                                        </div>
+                                                        <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${st.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{st.status}</span>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                        <div className="flex-1 min-w-[140px]">
+                                                            {st.material_title ? (
+                                                                <div className="text-[10px] font-semibold text-slate-500"><i className="fas fa-paperclip mr-1 text-amber-500"></i>{st.material_title} <span className="text-slate-300">(v{st.material_version})</span>{st.material_file ? <a className="text-sky-600 font-extrabold underline ml-1" href={'/api/training/material-file/' + st.material_id}>download</a> : null}</div>
+                                                            ) : <div className="text-[10px] text-slate-300">No material attached</div>}
+                                                        </div>
+                                                        {st.status !== 'COMPLETED' && (
+                                                            <button onClick={() => stageAction('complete', detailCycle.id, st.stage)} className="text-[9px] font-extrabold bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg hover:bg-emerald-700"><i className="fas fa-check mr-1"></i>Mark Complete</button>
+                                                        )}
+                                                        {st.status === 'COMPLETED' && (
+                                                            <button onClick={() => { const m = window.prompt('Enter material ID to attach to this stage:'); if (m) stageAction('material', detailCycle.id, st.stage, { material_id: parseInt(m) }); }} className="text-[9px] font-extrabold bg-sky-100 text-sky-700 px-2.5 py-1.5 rounded-lg hover:bg-sky-200"><i className="fas fa-paperclip mr-1"></i>Change Material</button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+                                        <button onClick={() => restartCycle(detailCycle.id)} className="text-[10px] font-extrabold bg-indigo-600 text-white px-3 py-2 rounded-xl hover:bg-indigo-700"><i className="fas fa-rotate-right mr-1"></i>Restart Cycle (New Day 0)</button>
+                                        {detailCycle.status !== 'CANCELLED' && <button onClick={() => cancelCycle(detailCycle.id)} className="text-[10px] font-extrabold bg-red-50 text-red-600 px-3 py-2 rounded-xl hover:bg-red-100"><i className="fas fa-ban mr-1"></i>Cancel Cycle</button>}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Material create/edit modal */}
+                    {showMatModal && (
+                        <div className="fixed inset-0 z-[70] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" onClick={() => setShowMatModal(false)}>
+                            <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-fade-in-up" onClick={(e) => e.stopPropagation()}>
+                                <div className="px-5 py-4 bg-[#090D16] flex items-center justify-between">
+                                    <div className="text-white font-extrabold text-sm">{matForm.id ? 'Edit Material' : 'New Training Material'}</div>
+                                    <button onClick={() => setShowMatModal(false)} className="w-8 h-8 rounded-full bg-white/10 text-slate-300 hover:bg-white/20 flex items-center justify-center"><i className="fas fa-xmark text-xs"></i></button>
+                                </div>
+                                <div className="p-5 space-y-3 max-h-[70vh] overflow-y-auto">
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div className="col-span-2">
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Title *</label>
+                                            <input value={matForm.title} onChange={(e) => setMatForm({ ...matForm, title: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Stage</label>
+                                            <select value={matForm.stage} onChange={(e) => setMatForm({ ...matForm, stage: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 bg-slate-50">
+                                                {['DAY 0', 'DAY 6', 'DAY 21', 'REFRESHER', 'ADVANCED', 'CUSTOM'].map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Version</label>
+                                            <input value={matForm.version} onChange={(e) => setMatForm({ ...matForm, version: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Topic</label>
+                                            <input value={matForm.topic} onChange={(e) => setMatForm({ ...matForm, topic: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Module</label>
+                                            <select value={matForm.module_id} onChange={(e) => setMatForm({ ...matForm, module_id: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 bg-slate-50">
+                                                <option value="">None</option>
+                                                {modules.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Applicable Teams</label>
+                                            <input value={matForm.applicable_teams} onChange={(e) => setMatForm({ ...matForm, applicable_teams: e.target.value })} placeholder="e.g. TW, CV" className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Applicable Roles</label>
+                                            <input value={matForm.applicable_roles} onChange={(e) => setMatForm({ ...matForm, applicable_roles: e.target.value })} placeholder="e.g. PL EXE" className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Content / Summary</label>
+                                            <textarea value={matForm.content} onChange={(e) => setMatForm({ ...matForm, content: e.target.value })} rows="3" className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" placeholder="Short summary or full lesson text…"></textarea>
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Attach File</label>
+                                            {matForm.id ? (
+                                                <div className="flex items-center gap-2">
+                                                    <label className="flex-1 text-center text-[10px] font-extrabold bg-slate-100 border border-dashed border-slate-300 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-amber-50 hover:border-amber-300 transition-all">
+                                                        <i className="fas fa-upload mr-1.5"></i>{uploadBusy ? 'Uploading…' : 'Choose PDF / DOC / PPT…'}
+                                                        <input type="file" className="hidden" onChange={uploadMaterialFile} accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt" />
+                                                    </label>
+                                                </div>
+                                            ) : <div className="text-[10px] text-slate-400">Save the material first, then attach the file.</div>}
+                                        </div>
+                                    </div>
+                                    {matMsg && <div className="text-[11px] font-bold text-slate-600">{matMsg}</div>}
+                                    <button onClick={saveMaterial} className="w-full bg-gradient-to-r from-amber-500 to-yellow-600 text-[#090D16] text-xs font-extrabold py-3 rounded-xl shadow-md hover:shadow-lg transition-all"><i className="fas fa-save mr-1.5"></i>{matForm.id ? 'Update Material' : 'Save Material'}</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
                         const LiveSession = ({onClose, user}) => {
             const isSuperAdmin = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'superadmin';
             const isLeader = user?.role?.toLowerCase()?.replace(/\s/g, '') === 'leader';

@@ -435,7 +435,7 @@
 
             const renderContent = () => {
                 switch(view) {
-                    case 'dashboard': return <Dashboard empDetails={empDetails} assignmentDay={activeAssignmentDay} moduleTitle={activeModuleTitle} />;
+                    case 'dashboard': return <Dashboard empDetails={empDetails} assignmentDay={activeAssignmentDay} moduleTitle={activeModuleTitle} empId={empId} />;
                     case 'pretest': 
                     case 'posttest': 
                         return (
@@ -456,7 +456,7 @@
                                 }}
                             />
                         );
-                    case 'training': return <Training assignmentDay={activeAssignmentDay} />;
+                    case 'training': return <Training assignmentDay={activeAssignmentDay} empId={empId} pin={pin} />;
                     case 'result': 
                         return (
                             <Result 
@@ -620,7 +620,22 @@
             );
         };
 
-        const Dashboard = ({ empDetails, assignmentDay, moduleTitle }) => (
+        const Dashboard = ({ empDetails, assignmentDay, moduleTitle, empId }) => {
+            const [nextStage, setNextStage] = useState(null);
+            useEffect(() => {
+                if (!empId) return;
+                fetch(`/api/training/my-assignments?emp_code=${encodeURIComponent(empId)}`)
+                    .then(r => r.json())
+                    .then(d => {
+                        const c = d && d.cycles && d.cycles[0];
+                        if (c && c.next_stage) setNextStage({ ...c.next_stage, cycle_code: c.cycle_code, module_title: c.module_title });
+                        else setNextStage(null);
+                    })
+                    .catch(() => setNextStage(null));
+            }, [empId]);
+            const STAGE_LABELS = { 'DAY 0': 'Day 0 · Orientation', 'DAY 6': 'Day 6 · Follow-up', 'DAY 21': 'Day 21 · Refresher', 'REFRESHER': 'Refresher', 'CUSTOM': 'Custom' };
+            const stageLabel = (s) => STAGE_LABELS[s] || s;
+            return (
             <div className="animate-fade-in flex flex-col gap-6 mt-2">
                 <div className="text-center md:text-left bg-white/5 backdrop-blur-xl p-6 sm:p-8 rounded-3xl sm:rounded-[32px] border border-white/5 shadow-xl space-y-4">
                     <div className="w-16 h-16 sm:w-20 sm:h-20 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-2xl sm:rounded-3xl flex items-center justify-center text-2xl sm:text-3xl mx-auto md:mx-0 shadow-inner"><i className="fas fa-id-badge"></i></div>
@@ -632,6 +647,14 @@
                         <p className="text-xs text-slate-300 font-bold leading-relaxed">Stay tuned to the main screen. Your Socratic Trainer will begin the live module shortly.</p>
                     </div>
                 </div>
+                {nextStage && (
+                    <div className="bg-gradient-to-br from-sky-500/10 via-sky-500/5 to-transparent border-l-8 sm:border-l-[12px] border-sky-500 rounded-[2rem] p-6 sm:p-8 shadow-xl border border-white/5 relative overflow-hidden flex flex-col justify-center min-h-[130px]">
+                        <div className="absolute -top-4 -right-4 opacity-[0.03] rotate-12 text-[100px] text-sky-500"><i className="fas fa-calendar-check"></i></div>
+                        <span className="text-[9px] sm:text-[10px] font-black text-sky-400 bg-sky-500/10 border border-sky-500/20 w-fit px-3 py-1.5 rounded-full uppercase tracking-widest mb-3"><i className="fas fa-graduation-cap mr-1"></i>Your Training Cycle</span>
+                        <h4 className="font-outfit font-black text-lg sm:text-xl text-white">{nextStage.module_title || 'Training Module'} <span className="text-sky-400">· {nextStage.cycle_code}</span></h4>
+                        <p className="text-xs text-slate-300 mt-2 font-bold flex flex-wrap items-center gap-2">Next milestone: <span className="text-white font-black">{stageLabel(nextStage.stage)}</span> on <span className={`font-black ${nextStage.overdue ? 'text-rose-400' : 'text-amber-400'}`}>{nextStage.stage_date}{nextStage.overdue ? ' · OVERDUE' : ''}</span></p>
+                    </div>
+                )}
                 <div className="bg-gradient-to-br from-amber-500/10 via-amber-500/5 to-transparent border-l-8 sm:border-l-[12px] border-amber-500 rounded-[2rem] p-6 sm:p-8 shadow-xl border border-white/5 relative overflow-hidden flex flex-col justify-center min-h-[160px] sm:min-h-[180px]">
                     <div className="absolute -top-4 -right-4 opacity-[0.03] rotate-12 text-[100px] sm:text-[120px] text-amber-500"><i className="fas fa-book-open"></i></div>
                     <span className="text-[9px] sm:text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 w-fit px-3 py-1.5 rounded-full uppercase tracking-widest mb-3 sm:mb-4">Live Module Status</span>
@@ -640,7 +663,8 @@
                     <p className="text-xs text-slate-300 mt-2 font-bold flex items-center gap-2"><span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span> Live Session Connected — trainer will start the assessment shortly</p>
                 </div>
             </div>
-        );
+            );
+        };
 
         const Confetti = () => {
             const colors = ['#d97706', '#f59e0b', '#10b981', '#fbbf24', '#f59e0b', '#f8fafc'];
@@ -836,20 +860,91 @@
             );
         };
 
-        const Training = ({assignmentDay}) => (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-8 animate-fade-in">
-                <div className="w-24 h-24 bg-amber-50 text-slate-950 rounded-[32px] flex items-center justify-center text-4xl shadow-2xl shadow-amber-500/30 animate-pulse"><i className="fas fa-chalkboard-teacher"></i></div>
-                <div className="space-y-2">
-                    <h2 className="font-outfit font-black text-3xl text-white uppercase tracking-tighter">Gap Analysis</h2>
-                    <p className="text-slate-400 font-bold text-xs uppercase tracking-[0.2em]">Live Training Phase</p>
+        const Training = ({assignmentDay, empId, pin}) => {
+            const [plan, setPlan] = useState(null);
+            const [loading, setLoading] = useState(true);
+            const STAGE_LABELS = { 'DAY 0': 'Day 0 · Orientation', 'DAY 6': 'Day 6 · Follow-up', 'DAY 21': 'Day 21 · Refresher', 'REFRESHER': 'Refresher', 'CUSTOM': 'Custom' };
+            const stageLabel = (s) => STAGE_LABELS[s] || s;
+            useEffect(() => {
+                setLoading(true);
+                fetch(`/api/training/my-assignments?emp_code=${encodeURIComponent(empId || '')}`)
+                    .then(r => r.json())
+                    .then(d => { setPlan(d); setLoading(false); })
+                    .catch(() => setLoading(false));
+            }, [empId]);
+            const cycle = (plan && plan.cycles && plan.cycles[0]) || null;
+            const today = new Date().toISOString().substring(0, 10);
+            return (
+                <div className="flex-1 flex flex-col items-center p-6 sm:p-8 animate-fade-in w-full max-w-3xl mx-auto space-y-6 overflow-y-auto no-scrollbar">
+                    <div className="text-center space-y-2">
+                        <div className="w-20 h-20 bg-amber-50 text-slate-950 rounded-[32px] flex items-center justify-center text-3xl shadow-2xl shadow-amber-500/30 mx-auto"><i className="fas fa-chalkboard-teacher"></i></div>
+                        <h2 className="font-outfit font-black text-2xl sm:text-3xl text-white uppercase tracking-tighter">Training Phase</h2>
+                        <p className="text-slate-400 font-bold text-xs uppercase tracking-[0.2em]">Live Training Cycle</p>
+                    </div>
+                    {loading ? (
+                        <div className="bg-white/5 backdrop-blur-xl w-full p-10 border border-white/5 shadow-2xl rounded-[2rem] flex flex-col items-center gap-3 animate-pulse">
+                            <i className="fas fa-circle-notch fa-spin text-amber-400 text-xl"></i>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Loading your training plan…</p>
+                        </div>
+                    ) : !cycle ? (
+                        <div className="bg-white/5 backdrop-blur-xl w-full p-8 border border-white/5 shadow-2xl rounded-[2rem] text-center space-y-4">
+                            <i className="fas fa-calendar-xmark text-4xl text-slate-500"></i>
+                            <h4 className="font-black text-white uppercase tracking-widest text-sm">No Training Plan Assigned Yet</h4>
+                            <p className="text-xs text-slate-400 font-bold leading-relaxed">Your trainer has not assigned a Day 0 / Day 6 / Day 21 training cycle for you yet. Please connect with your trainer.</p>
+                        </div>
+                    ) : (
+                        <>
+                            <div className="bg-white/5 backdrop-blur-xl w-full p-6 sm:p-8 border border-white/5 shadow-2xl rounded-[2rem] text-left space-y-5">
+                                <div className="flex items-start justify-between gap-3 flex-wrap">
+                                    <div className="space-y-1">
+                                        <div className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full w-fit uppercase tracking-widest">Active Cycle · {cycle.cycle_code}</div>
+                                        <h3 className="font-outfit font-black text-lg text-white">{cycle.module_title || 'Training Module'}</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Started {cycle.start_date} · {cycle.mode} mode · Trainer: {cycle.trainer_name || '—'}</p>
+                                    </div>
+                                    <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20 uppercase tracking-widest shrink-0">{cycle.completed_count}/{cycle.total_stages} Stages Done</span>
+                                </div>
+                                <div className="space-y-3">
+                                    {(cycle.stages || []).map(st => {
+                                        const overdue = st.status === 'ASSIGNED' && st.stage_date && st.stage_date < today;
+                                        const isNext = !!cycle.next_stage && cycle.next_stage.id === st.id;
+                                        return (
+                                            <div key={st.id} className={`rounded-2xl p-4 border transition-all ${st.status === 'COMPLETED' ? 'bg-emerald-500/5 border-emerald-500/20' : overdue ? 'bg-rose-500/5 border-rose-500/30' : 'bg-slate-900/40 border-white/10'} ${isNext ? 'ring-2 ring-amber-500/40' : ''}`}>
+                                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm font-black shrink-0 ${st.status === 'COMPLETED' ? 'bg-emerald-500/20 text-emerald-400' : overdue ? 'bg-rose-500/20 text-rose-400' : 'bg-white/10 text-amber-400'}`}>
+                                                            {st.status === 'COMPLETED' ? <i className="fas fa-check"></i> : st.stage === 'DAY 0' ? '0' : st.stage === 'DAY 6' ? '6' : st.stage === 'DAY 21' ? '21' : <i className="fas fa-star text-[10px]"></i>}
+                                                        </div>
+                                                        <div>
+                                                            <div className="text-sm font-black text-white">{stageLabel(st.stage)} {isNext && <span className="text-[8px] font-black text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full uppercase tracking-widest ml-1 align-middle">Up Next</span>}</div>
+                                                            <div className="text-[10px] font-bold text-slate-400">{st.status === 'COMPLETED' ? `Completed ${st.completed_at || ''}` : `Due ${st.stage_date || '—'}${overdue ? ' · OVERDUE' : ''}`}</div>
+                                                        </div>
+                                                    </div>
+                                                    <span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ${st.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/10 text-slate-300'}`}>{st.status}</span>
+                                                </div>
+                                                {st.material_file ? (
+                                                    <a href={`/api/training/material-file/${st.material_id}?emp_code=${encodeURIComponent(empId || '')}`} target="_blank" rel="noopener noreferrer" className="mt-3 flex items-center gap-2 text-[11px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-xl w-fit hover:bg-amber-500/20 transition-all text-decoration-none">
+                                                        <i className="fas fa-file-pdf"></i> {st.material_title || 'Download Material'} <span className="text-slate-500">v{st.material_version}</span>
+                                                    </a>
+                                                ) : st.material_title ? (
+                                                    <div className="mt-3 text-[11px] font-bold text-slate-300"><i className="fas fa-paperclip text-amber-400 mr-1.5"></i>{st.material_title} <span className="text-slate-500">v{st.material_version}</span></div>
+                                                ) : null}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {cycle.next_stage && (
+                                    <div className="bg-white/5 rounded-2xl p-4 border border-white/5 flex items-center gap-3">
+                                        <i className="fas fa-bullhorn text-amber-400"></i>
+                                        <p className="text-[11px] font-bold text-slate-300">Next milestone: <span className="text-white font-black">{stageLabel(cycle.next_stage.stage)}</span> on <span className="text-white font-black">{cycle.next_stage.stage_date || '—'}</span>. Complete it with your trainer to continue the cycle.</p>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3 text-[10px] font-black text-slate-400 uppercase tracking-widest"><i className="fas fa-circle-notch fa-spin"></i> Awaiting Next Protocol</div>
+                        </>
+                    )}
                 </div>
-                <div className="bg-white/5 backdrop-blur-xl w-full p-8 border border-white/5 shadow-2xl rounded-[2rem] text-left space-y-4">
-                    <div className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-full w-fit uppercase tracking-widest">Key Takeaway</div>
-                    <p className="text-base text-slate-200 font-bold leading-relaxed">{assignmentDay === 'zero day' ? "Max LTV 85%. 90% only for CIBIL > 750." : assignmentDay === 'six days' ? "Min CIBIL 750 for 90% LTV." : "ITR strictly mandatory for loans > ₹2L."}</p>
-                </div>
-                <div className="flex items-center gap-3 text-[10px] font-black text-slate-400 uppercase tracking-widest"><i className="fas fa-circle-notch fa-spin"></i> Awaiting Next Protocol</div>
-            </div>
-        );
+            );
+        };
 
         const Feedback = ({ empId, pin, moduleTitle, onSubmitted }) => {
             const QUESTIONS = [

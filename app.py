@@ -15,7 +15,7 @@ def sanitize_llm_text(text):
     text = re.sub(r' +', ' ', text).strip()
     return text
 
-from flask import Flask, request, jsonify, render_template, session, Response
+from flask import Flask, request, jsonify, render_template, session, Response, send_from_directory
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import sqlite3
 import os
@@ -319,6 +319,64 @@ def init_db():
         FOREIGN KEY(emp_code) REFERENCES employees(emp_code),
         FOREIGN KEY(module_id) REFERENCES modules(id)
     )''')
+
+    # ---- TRAINING CYCLE MANAGEMENT (Day 0 / Day 6 / Day 21) ----
+    # Versioned training materials (documents/lessons) tagged by stage, team & role.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS training_materials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        topic TEXT,
+        version TEXT DEFAULT '1.0',
+        applicable_teams TEXT,
+        applicable_roles TEXT,
+        module_id INTEGER,
+        content TEXT,
+        file_path TEXT,
+        created_by TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        active INTEGER DEFAULT 1
+    )''')
+
+    # One row per training OCCURRENCE (append-only: a new training always INSERTs,
+    # never overwrites a previous cycle, so the employee's full journey is kept).
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS training_cycles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle_code TEXT UNIQUE,
+        emp_code TEXT NOT NULL,
+        module_id INTEGER,
+        trainer_id TEXT,
+        start_date TEXT NOT NULL,
+        mode TEXT DEFAULT 'FULL',
+        status TEXT DEFAULT 'ACTIVE',
+        notes TEXT,
+        created_by TEXT,
+        created_at TEXT
+    )''')
+
+    # Scheduled milestones inside a cycle (DAY 0 / DAY 6 / DAY 21 / REFRESHER / CUSTOM).
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS training_cycle_stages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cycle_id INTEGER NOT NULL,
+        stage TEXT NOT NULL,
+        stage_date TEXT,
+        material_id INTEGER,
+        status TEXT DEFAULT 'ASSIGNED',
+        completed_at TEXT,
+        assessment_session_id TEXT,
+        notes TEXT,
+        UNIQUE(cycle_id, stage)
+    )''')
+
+    # Indexes for the training cycle queries (overview, history, reminders).
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_training_cycles_emp ON training_cycles(emp_code)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_training_cycle_stages_cycle ON training_cycle_stages(cycle_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_training_materials_stage ON training_materials(stage, active)")
+
     
     # AI Refresher Campaigns (trainees flagged below 60% for mandatory retraining)
     cursor.execute('''
@@ -4249,6 +4307,703 @@ def analytics_session(pin):
         return jsonify({"status": "error", "message": str(e)}), 500
     finally:
         conn.close()
+
+
+# ============================================================================
+# TRAINING CYCLE MANAGEMENT (Day 0 / Day 6 / Day 21, materials, history)
+# ============================================================================
+
+def _training_stage_dates(start_date):
+    """Return {'DAY 0': start, 'DAY 6': start+6, 'DAY 21': start+21} as calendar dates."""
+    d = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
+    return {
+        'DAY 0': d.strftime("%Y-%m-%d"),
+        'DAY 6': (d + datetime.timedelta(days=6)).strftime("%Y-%m-%d"),
+        'DAY 21': (d + datetime.timedelta(days=21)).strftime("%Y-%m-%d"),
+    }
+
+
+def _next_cycle_code(conn):
+    row = conn.execute("SELECT COALESCE(MAX(id),0) AS m FROM training_cycles").fetchone()
+    return "CYC-{}-{:04d}".format(datetime.date.today().year, (row['m'] or 0) + 1)
+
+
+def _emp_dict(conn, emp_code):
+    r = conn.execute("SELECT * FROM employees WHERE UPPER(emp_code)=UPPER(?)", (emp_code,)).fetchone()
+    return dict(r) if r else None
+
+
+def _stage_dict(conn, st):
+    d = dict(st)
+    if st['material_id']:
+        m = conn.execute("SELECT title, version, file_path FROM training_materials WHERE id=?", (st['material_id'],)).fetchone()
+        d['material_title'] = m['title'] if m else None
+        d['material_version'] = m['version'] if m else None
+        d['material_file'] = m['file_path'] if m else None
+    else:
+        d['material_title'] = None
+        d['material_version'] = None
+        d['material_file'] = None
+    d['overdue'] = bool(st['stage_date'] and st['status'] == 'ASSIGNED' and st['stage_date'] < datetime.date.today().strftime("%Y-%m-%d"))
+    return d
+
+
+def _cycle_dict(conn, cycle_id):
+    c = conn.execute("SELECT * FROM training_cycles WHERE id=?", (cycle_id,)).fetchone()
+    if not c:
+        return None
+    d = dict(c)
+    emp = _emp_dict(conn, c['emp_code'])
+    d['employee'] = {
+        'emp_code': c['emp_code'],
+        'emp_name': (emp or {}).get('emp_name') or c['emp_code'],
+        'zone': (emp or {}).get('zone') or '',
+        'division': (emp or {}).get('division') or '',
+        'branch_name': (emp or {}).get('branch_name') or '',
+        'business_unit': (emp or {}).get('business_unit') or '',
+    }
+    t = conn.execute("SELECT title FROM modules WHERE id=?", (c['module_id'],)).fetchone()
+    d['module_title'] = t['title'] if t else None
+    tr = conn.execute("SELECT name FROM trainers WHERE UPPER(trainer_id)=UPPER(?)", (c['trainer_id'],)).fetchone() if c['trainer_id'] else None
+    d['trainer_name'] = tr['name'] if tr else c['trainer_id']
+    stages = conn.execute("SELECT * FROM training_cycle_stages WHERE cycle_id=? ORDER BY stage_date, id", (cycle_id,)).fetchall()
+    d['stages'] = [_stage_dict(conn, s) for s in stages]
+    d['completed_count'] = sum(1 for s in d['stages'] if s['status'] == 'COMPLETED')
+    d['total_stages'] = len(d['stages'])
+    return d
+
+
+@app.route('/api/training/overview', methods=['GET'])
+def training_overview():
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        today = datetime.date.today().strftime("%Y-%m-%d")
+        week_end = (datetime.date.today() + datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+        def cnt(sql, params=()):
+            return conn.execute(sql, params).fetchone()['c']
+        total_cycles = cnt("SELECT COUNT(*) AS c FROM training_cycles")
+        active = cnt("SELECT COUNT(*) AS c FROM training_cycles WHERE status='ACTIVE'")
+        completed = cnt("SELECT COUNT(*) AS c FROM training_cycles WHERE status='COMPLETED'")
+        due_today = cnt("SELECT COUNT(*) AS c FROM training_cycle_stages WHERE status='ASSIGNED' AND stage_date=?", (today,))
+        due_week = cnt("SELECT COUNT(*) AS c FROM training_cycle_stages WHERE status='ASSIGNED' AND stage_date BETWEEN ? AND ?", (today, week_end))
+        overdue = cnt("SELECT COUNT(*) AS c FROM training_cycle_stages WHERE status='ASSIGNED' AND stage_date < ?", (today,))
+        materials = cnt("SELECT COUNT(*) AS c FROM training_materials WHERE active=1")
+        recent = conn.execute("""
+            SELECT c.id, c.cycle_code, c.emp_code, c.mode, c.status, c.start_date,
+                   e.emp_name, m.title AS module_title
+            FROM training_cycles c
+            LEFT JOIN employees e ON UPPER(e.emp_code)=UPPER(c.emp_code)
+            LEFT JOIN modules m ON m.id=c.module_id
+            ORDER BY c.id DESC LIMIT 8
+        """).fetchall()
+        recent_list = []
+        for r in recent:
+            item = dict(r)
+            item['completed_stages'] = conn.execute(
+                "SELECT COUNT(*) AS c FROM training_cycle_stages WHERE cycle_id=? AND status='COMPLETED'", (r['id'],)).fetchone()['c']
+            item['total_stages'] = conn.execute(
+                "SELECT COUNT(*) AS c FROM training_cycle_stages WHERE cycle_id=?", (r['id'],)).fetchone()['c']
+            recent_list.append(item)
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "total_cycles": total_cycles, "active": active, "completed": completed,
+            "due_today": due_today, "due_week": due_week, "overdue": overdue,
+            "materials": materials, "recent": recent_list,
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/employees', methods=['GET'])
+def training_employees():
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        q = request.args.get('q', '').strip()
+        zone = request.args.get('zone', '').strip()
+        division = request.args.get('division', '').strip()
+        branch = request.args.get('branch', '').strip()
+        bu = request.args.get('bu', '').strip()
+        sql = "SELECT emp_code, emp_name, zone, division, branch_name, business_unit, role, product_name FROM employees WHERE 1=1"
+        params = []
+        if q:
+            sql += " AND (emp_code LIKE ? OR emp_name LIKE ?)"
+            like = '%' + q + '%'
+            params += [like, like]
+        if zone:
+            sql += " AND TRIM(zone)=?"
+            params.append(zone)
+        if division:
+            sql += " AND TRIM(division)=?"
+            params.append(division)
+        if branch:
+            sql += " AND TRIM(branch_name)=?"
+            params.append(branch)
+        if bu:
+            sql += " AND TRIM(business_unit)=?"
+            params.append(bu)
+        sql += " ORDER BY emp_name LIMIT 50"
+        rows = conn.execute(sql, params).fetchall()
+        conn.close()
+        return jsonify({"status": "success", "employees": [dict(r) for r in rows]})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/history/<emp_code>', methods=['GET'])
+def training_history(emp_code):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        emp = _emp_dict(conn, emp_code)
+        cycles = conn.execute("SELECT id FROM training_cycles WHERE UPPER(emp_code)=UPPER(?) ORDER BY id DESC", (emp_code,)).fetchall()
+        cycle_list = [_cycle_dict(conn, c['id']) for c in cycles]
+        conn.close()
+        return jsonify({"status": "success", "employee": emp, "cycles": cycle_list})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/suggest/<emp_code>', methods=['GET'])
+def training_suggest(emp_code):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        emp = _emp_dict(conn, emp_code)
+        if not emp:
+            conn.close()
+            return jsonify({"status": "error", "message": "Employee not found in master roster"}), 404
+        latest = conn.execute("SELECT * FROM training_cycles WHERE UPPER(emp_code)=UPPER(?) ORDER BY id DESC LIMIT 1", (emp_code,)).fetchone()
+        mode = 'FULL'
+        reason = 'No previous training cycle found. Start a fresh Day 0 → Day 6 → Day 21 cycle.'
+        next_stage = None
+        stages_needed = {'DAY 0', 'DAY 6', 'DAY 21'}
+        if latest:
+            pending = conn.execute("""
+                SELECT * FROM training_cycle_stages WHERE cycle_id=? AND status='ASSIGNED'
+                ORDER BY stage_date, id LIMIT 1
+            """, (latest['id'],)).fetchone()
+            if latest['status'] == 'ACTIVE' and pending:
+                mode = 'CONTINUE'
+                reason = 'Existing cycle {} has pending stage {}. Continue the cycle instead of restarting.'.format(latest['cycle_code'], pending['stage'])
+                next_stage = _stage_dict(conn, pending)
+                stages_needed = {pending['stage']}
+            else:
+                mode = 'REFRESHER'
+                reason = 'Previous cycle {} is {}. Assign a refresher (revision) stage.'.format(latest['cycle_code'], latest['status'])
+                stages_needed = {'REFRESHER'}
+        mat_rows = conn.execute("SELECT * FROM training_materials WHERE active=1 ORDER BY stage, updated_at DESC").fetchall()
+        materials_by_stage = {}
+        for m in mat_rows:
+            if m['stage'] in stages_needed:
+                materials_by_stage.setdefault(m['stage'], []).append(dict(m))
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "employee": emp,
+            "mode": mode,
+            "reason": reason,
+            "next_stage": next_stage,
+            "stages": sorted(stages_needed),
+            "materials_by_stage": materials_by_stage,
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/materials', methods=['GET', 'POST'])
+def training_materials_route():
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        if request.method == 'GET':
+            stage = request.args.get('stage', '').strip()
+            team = request.args.get('team', '').strip()
+            role = request.args.get('role', '').strip()
+            active = request.args.get('active', '')
+            sql = "SELECT * FROM training_materials WHERE 1=1"
+            params = []
+            if stage:
+                sql += " AND stage=?"
+                params.append(stage)
+            if team:
+                sql += " AND (applicable_teams LIKE ? OR applicable_teams IS NULL)"
+                params.append('%' + team + '%')
+            if role:
+                sql += " AND (applicable_roles LIKE ? OR applicable_roles IS NULL)"
+                params.append('%' + role + '%')
+            if active in ('1', '0'):
+                sql += " AND active=?"
+                params.append(int(active))
+            sql += " ORDER BY stage, updated_at DESC, id DESC"
+            rows = conn.execute(sql, params).fetchall()
+            conn.close()
+            return jsonify({"status": "success", "materials": [dict(r) for r in rows]})
+        else:
+            data = request.json or {}
+            title = (data.get('title') or '').strip()
+            if not title:
+                conn.close()
+                return jsonify({"status": "error", "message": "Title is required"}), 400
+            stage = (data.get('stage') or 'DAY 0').strip()
+            now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cur = conn.execute("""
+                INSERT INTO training_materials (title, stage, topic, version, applicable_teams, applicable_roles, module_id, content, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                title, stage, (data.get('topic') or '').strip(),
+                (data.get('version') or '1.0').strip(),
+                (data.get('applicable_teams') or '').strip(),
+                (data.get('applicable_roles') or '').strip(),
+                data.get('module_id'), (data.get('content') or '').strip(),
+                user.get('trainer_id') or 'ADMIN', now, now,
+            ))
+            conn.commit()
+            mid = cur.lastrowid
+            conn.close()
+            return jsonify({"status": "success", "material": {"id": mid}}), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/materials/<int:material_id>', methods=['PUT', 'DELETE'])
+def training_material_item(material_id):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        m = conn.execute("SELECT * FROM training_materials WHERE id=?", (material_id,)).fetchone()
+        if not m:
+            conn.close()
+            return jsonify({"status": "error", "message": "Material not found"}), 404
+        if request.method == 'DELETE':
+            # History protection: soft-deactivate so old cycles keep their material link.
+            conn.execute("UPDATE training_materials SET active=0, updated_at=? WHERE id=?",
+                         (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), material_id))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "success", "message": "Material deactivated"})
+        data = request.json or {}
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("""
+            UPDATE training_materials SET title=?, stage=?, topic=?, version=?, applicable_teams=?, applicable_roles=?, module_id=?, content=?, updated_at=?
+            WHERE id=?
+        """, (
+            (data.get('title') or m['title']).strip(),
+            (data.get('stage') or m['stage']).strip(),
+            (data.get('topic') if 'topic' in data else m['topic'] or '').strip(),
+            (data.get('version') or m['version'] or '1.0').strip(),
+            (data.get('applicable_teams') if 'applicable_teams' in data else m['applicable_teams'] or '').strip(),
+            (data.get('applicable_roles') if 'applicable_roles' in data else m['applicable_roles'] or '').strip(),
+            data.get('module_id') if 'module_id' in data else m['module_id'],
+            (data.get('content') if 'content' in data else m['content'] or '').strip(),
+            now, material_id,
+        ))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Material updated"})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/materials/<int:material_id>/upload', methods=['POST'])
+def training_material_upload(material_id):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        m = conn.execute("SELECT * FROM training_materials WHERE id=?", (material_id,)).fetchone()
+        if not m:
+            conn.close()
+            return jsonify({"status": "error", "message": "Material not found"}), 404
+        file = request.files.get('file')
+        if not file or not file.filename:
+            conn.close()
+            return jsonify({"status": "error", "message": "No file uploaded"}), 400
+        filename = secure_filename(file.filename)
+        if not filename:
+            conn.close()
+            return jsonify({"status": "error", "message": "Invalid file name"}), 400
+        rel_dir = 'training'
+        abs_dir = os.path.join(app.config['UPLOAD_FOLDER'], rel_dir)
+        os.makedirs(abs_dir, exist_ok=True)
+        rel_path = os.path.join(rel_dir, filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], rel_path))
+        conn.execute("UPDATE training_materials SET file_path=?, updated_at=? WHERE id=?",
+                     (rel_path, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), material_id))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "File uploaded", "file_path": rel_path})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/material-file/<int:material_id>', methods=['GET'])
+def training_material_file(material_id):
+    conn = get_db_connection()
+    m = conn.execute("SELECT file_path FROM training_materials WHERE id=?", (material_id,)).fetchone()
+    if not m or not m['file_path']:
+        conn.close()
+        return jsonify({"status": "error", "message": "No file attached"}), 404
+    emp_code = request.args.get('emp_code', '').strip()
+    user = _session_user()
+    if not user:
+        # Student access: allowed only when the material is linked to a stage of their ACTIVE cycle.
+        if not emp_code:
+            conn.close()
+            return jsonify({"status": "error", "message": "Login required"}), 401
+        hit = conn.execute("""
+            SELECT s.id FROM training_cycle_stages s
+            JOIN training_cycles c ON c.id=s.cycle_id
+            WHERE c.status='ACTIVE' AND UPPER(c.emp_code)=UPPER(?) AND s.material_id=?
+            LIMIT 1
+        """, (emp_code, material_id)).fetchone()
+        conn.close()
+        if not hit:
+            return jsonify({"status": "error", "message": "Not authorized for this material"}), 403
+    else:
+        conn.close()
+    rel = m['file_path'].replace('\\', '/')
+    safe = os.path.basename(rel)
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'training'), safe, as_attachment=True)
+
+
+@app.route('/api/training/assign', methods=['POST'])
+def training_assign():
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    data = request.json or {}
+    emp_code = (data.get('emp_code') or '').strip()
+    module_id = data.get('module_id')
+    mode = (data.get('mode') or 'FULL').upper()
+    start_date = (data.get('start_date') or '').strip() or datetime.date.today().strftime("%Y-%m-%d")
+    trainer_id = (data.get('trainer_id') or user.get('trainer_id') or 'ADMIN').strip()
+    notes = (data.get('notes') or '').strip()
+    conn = get_db_connection()
+    try:
+        if not emp_code:
+            conn.close()
+            return jsonify({"status": "error", "message": "Employee code is required"}), 400
+        emp = _emp_dict(conn, emp_code)
+        if not emp:
+            conn.close()
+            return jsonify({"status": "error", "message": "Employee not found in master roster: " + emp_code}), 404
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        materials = data.get('materials') if isinstance(data.get('materials'), dict) else {}
+
+        def mat_id(stage):
+            return materials.get(stage)
+
+        if mode == 'CONTINUE':
+            latest = conn.execute("SELECT * FROM training_cycles WHERE UPPER(emp_code)=UPPER(?) AND status='ACTIVE' ORDER BY id DESC LIMIT 1", (emp_code,)).fetchone()
+            if not latest:
+                conn.close()
+                return jsonify({"status": "error", "message": "No active cycle to continue. Use FULL to start a new cycle."}), 400
+            pending = conn.execute("SELECT * FROM training_cycle_stages WHERE cycle_id=? AND status='ASSIGNED' ORDER BY stage_date, id LIMIT 1", (latest['id'],)).fetchone()
+            if not pending:
+                conn.close()
+                return jsonify({"status": "error", "message": "Latest active cycle has no pending stage. Use REFRESHER to assign a revision."}), 400
+            conn.execute("UPDATE training_cycle_stages SET material_id=? WHERE id=?", (mat_id(pending['stage']), pending['id']))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "success", "message": "Continued cycle " + latest['cycle_code'], "cycle_id": latest['id'], "stage": pending['stage']})
+
+        def insert_cycle(cmode, cstart, cnotes):
+            code = _next_cycle_code(conn)
+            cur = conn.execute("""
+                INSERT INTO training_cycles (cycle_code, emp_code, module_id, trainer_id, start_date, mode, status, notes, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+            """, (code, emp_code, module_id, trainer_id, cstart, cmode, cnotes, user.get('trainer_id') or 'ADMIN', now))
+            return cur.lastrowid
+
+        cycle_id = None
+        if mode == 'REFRESHER':
+            cycle_id = insert_cycle('REFRESHER', datetime.date.today().strftime("%Y-%m-%d"), notes or 'Refresher training')
+            conn.execute("INSERT INTO training_cycle_stages (cycle_id, stage, stage_date, material_id) VALUES (?, 'REFRESHER', ?, ?)",
+                         (cycle_id, start_date, mat_id('REFRESHER')))
+        elif mode == 'CUSTOM':
+            cycle_id = insert_cycle('CUSTOM', start_date, notes or 'Custom training plan')
+            for cs in (data.get('custom_stages') or []):
+                stage = (cs.get('stage') or '').strip() or 'CUSTOM'
+                conn.execute("INSERT INTO training_cycle_stages (cycle_id, stage, stage_date, material_id) VALUES (?, ?, ?, ?)",
+                             (cycle_id, stage, cs.get('date') or start_date, cs.get('material_id')))
+        else:  # FULL
+            cycle_id = insert_cycle('FULL', start_date, notes or 'Full Day 0 → Day 6 → Day 21 cycle')
+            dates = _training_stage_dates(start_date)
+            for st, sd in dates.items():
+                conn.execute("INSERT INTO training_cycle_stages (cycle_id, stage, stage_date, material_id) VALUES (?, ?, ?, ?)",
+                             (cycle_id, st, sd, mat_id(st)))
+        conn.commit()
+        detail = _cycle_dict(conn, cycle_id)
+        conn.close()
+        return jsonify({"status": "success", "message": "Training assigned", "cycle": detail}), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/cycles', methods=['GET'])
+def training_cycles_list():
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        status = request.args.get('status', '').strip()
+        q = request.args.get('q', '').strip()
+        zone = request.args.get('zone', '').strip()
+        division = request.args.get('division', '').strip()
+        branch = request.args.get('branch', '').strip()
+        bu = request.args.get('bu', '').strip()
+        sql = """
+            SELECT c.*, e.emp_name, e.zone, e.division, e.branch_name, e.business_unit, m.title AS module_title
+            FROM training_cycles c
+            LEFT JOIN employees e ON UPPER(e.emp_code)=UPPER(c.emp_code)
+            LEFT JOIN modules m ON m.id=c.module_id
+            WHERE 1=1
+        """
+        params = []
+        if status:
+            sql += " AND c.status=?"
+            params.append(status)
+        if q:
+            sql += " AND (c.emp_code LIKE ? OR c.cycle_code LIKE ? OR e.emp_name LIKE ?)"
+            like = '%' + q + '%'
+            params += [like, like, like]
+        if zone:
+            sql += " AND TRIM(e.zone)=?"
+            params.append(zone)
+        if division:
+            sql += " AND TRIM(e.division)=?"
+            params.append(division)
+        if branch:
+            sql += " AND TRIM(e.branch_name)=?"
+            params.append(branch)
+        if bu:
+            sql += " AND TRIM(e.business_unit)=?"
+            params.append(bu)
+        sql += " ORDER BY c.id DESC LIMIT 200"
+        rows = conn.execute(sql, params).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d['total_stages'] = conn.execute("SELECT COUNT(*) AS c FROM training_cycle_stages WHERE cycle_id=?", (r['id'],)).fetchone()['c']
+            d['completed_stages'] = conn.execute("SELECT COUNT(*) AS c FROM training_cycle_stages WHERE cycle_id=? AND status='COMPLETED'", (r['id'],)).fetchone()['c']
+            out.append(d)
+        conn.close()
+        return jsonify({"status": "success", "cycles": out})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/cycles/<int:cycle_id>', methods=['GET'])
+def training_cycle_detail(cycle_id):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        c = _cycle_dict(conn, cycle_id)
+        conn.close()
+        if not c:
+            return jsonify({"status": "error", "message": "Cycle not found"}), 404
+        return jsonify({"status": "success", "cycle": c})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/cycles/<int:cycle_id>/restart', methods=['POST'])
+def training_cycle_restart(cycle_id):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    data = request.json or {}
+    conn = get_db_connection()
+    try:
+        c = conn.execute("SELECT * FROM training_cycles WHERE id=?", (cycle_id,)).fetchone()
+        if not c:
+            conn.close()
+            return jsonify({"status": "error", "message": "Cycle not found"}), 404
+        # Preserve history: mark old cycle superseded, then start a fresh FULL cycle.
+        conn.execute("UPDATE training_cycles SET status='SUPERSEDED' WHERE id=?", (cycle_id,))
+        start_date = (data.get('start_date') or '').strip() or datetime.date.today().strftime("%Y-%m-%d")
+        code = _next_cycle_code(conn)
+        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cur = conn.execute("""
+            INSERT INTO training_cycles (cycle_code, emp_code, module_id, trainer_id, start_date, mode, status, notes, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, 'FULL', 'ACTIVE', ?, ?, ?)
+        """, (code, c['emp_code'], c['module_id'], c['trainer_id'], start_date,
+              'Restarted from ' + c['cycle_code'], user.get('trainer_id') or 'ADMIN', now))
+        new_id = cur.lastrowid
+        dates = _training_stage_dates(start_date)
+        # Carry over the previous cycle's material links so the new cycle is not
+        # left empty — the trainer can still override per stage afterwards.
+        old_stages = {s['stage']: s['material_id'] for s in
+                      conn.execute("SELECT stage, material_id FROM training_cycle_stages WHERE cycle_id=?", (cycle_id,)).fetchall()}
+        for st, sd in dates.items():
+            conn.execute("INSERT INTO training_cycle_stages (cycle_id, stage, stage_date, material_id) VALUES (?, ?, ?, ?)",
+                         (new_id, st, sd, old_stages.get(st)))
+        conn.commit()
+        detail = _cycle_dict(conn, new_id)
+        conn.close()
+        return jsonify({"status": "success", "message": "New cycle started; old cycle preserved as SUPERSEDED", "cycle": detail}), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/cycles/<int:cycle_id>/stages/<stage>/complete', methods=['POST'])
+def training_stage_complete(cycle_id, stage):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    data = request.json or {}
+    conn = get_db_connection()
+    try:
+        st = conn.execute("SELECT * FROM training_cycle_stages WHERE cycle_id=? AND stage=?", (cycle_id, stage)).fetchone()
+        if not st:
+            conn.close()
+            return jsonify({"status": "error", "message": "Stage not found"}), 404
+        conn.execute("UPDATE training_cycle_stages SET status='COMPLETED', completed_at=?, notes=? WHERE id=?",
+                     (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), data.get('notes') or st['notes'], st['id']))
+        left = conn.execute("SELECT COUNT(*) AS c FROM training_cycle_stages WHERE cycle_id=? AND status!='COMPLETED'", (cycle_id,)).fetchone()['c']
+        if left == 0:
+            conn.execute("UPDATE training_cycles SET status='COMPLETED' WHERE id=?", (cycle_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Stage completed"})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/cycles/<int:cycle_id>/stages/<stage>/material', methods=['POST'])
+def training_stage_material(cycle_id, stage):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    data = request.json or {}
+    conn = get_db_connection()
+    try:
+        st = conn.execute("SELECT * FROM training_cycle_stages WHERE cycle_id=? AND stage=?", (cycle_id, stage)).fetchone()
+        if not st:
+            conn.close()
+            return jsonify({"status": "error", "message": "Stage not found"}), 404
+        conn.execute("UPDATE training_cycle_stages SET material_id=? WHERE id=?", (data.get('material_id'), st['id']))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Material updated for stage " + stage})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/cycles/<int:cycle_id>/cancel', methods=['POST'])
+def training_cycle_cancel(cycle_id):
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        c = conn.execute("SELECT * FROM training_cycles WHERE id=?", (cycle_id,)).fetchone()
+        if not c:
+            conn.close()
+            return jsonify({"status": "error", "message": "Cycle not found"}), 404
+        conn.execute("UPDATE training_cycles SET status='CANCELLED' WHERE id=?", (cycle_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "success", "message": "Cycle cancelled"})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/reminders', methods=['GET'])
+def training_reminders():
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    conn = get_db_connection()
+    try:
+        today = datetime.date.today()
+        today_s = today.strftime("%Y-%m-%d")
+        up_end = (today + datetime.timedelta(days=3)).strftime("%Y-%m-%d")
+        rows = conn.execute("""
+            SELECT s.*, c.cycle_code, c.emp_code, c.module_id, c.start_date, c.mode AS cycle_mode,
+                   e.emp_name, e.branch_name, e.zone, e.division, e.business_unit, m.title AS module_title
+            FROM training_cycle_stages s
+            JOIN training_cycles c ON c.id=s.cycle_id
+            LEFT JOIN employees e ON UPPER(e.emp_code)=UPPER(c.emp_code)
+            LEFT JOIN modules m ON m.id=c.module_id
+            WHERE s.status='ASSIGNED' AND s.stage_date IS NOT NULL
+        """).fetchall()
+        due_today, upcoming, overdue = [], [], []
+        for r in rows:
+            d = dict(r)
+            d['days_diff'] = (datetime.datetime.strptime(r['stage_date'], "%Y-%m-%d").date() - today).days
+            if r['stage_date'] == today_s:
+                due_today.append(d)
+            elif today_s < r['stage_date'] <= up_end:
+                upcoming.append(d)
+            elif r['stage_date'] < today_s:
+                overdue.append(d)
+        conn.close()
+        return jsonify({
+            "status": "success",
+            "due_today": sorted(due_today, key=lambda x: x['days_diff']),
+            "upcoming": sorted(upcoming, key=lambda x: x['days_diff']),
+            "overdue": sorted(overdue, key=lambda x: x['days_diff']),
+        })
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/my-assignments', methods=['GET'])
+def training_my_assignments():
+    emp_code = request.args.get('emp_code', '').strip()
+    conn = get_db_connection()
+    try:
+        if not emp_code:
+            conn.close()
+            return jsonify({"status": "success", "employee": None, "cycles": []})
+        emp = _emp_dict(conn, emp_code)
+        cycles = conn.execute("SELECT id FROM training_cycles WHERE UPPER(emp_code)=UPPER(?) AND status='ACTIVE' ORDER BY id DESC", (emp_code,)).fetchall()
+        cycle_list = []
+        for c in cycles:
+            d = _cycle_dict(conn, c['id'])
+            if d:
+                d['next_stage'] = next((s for s in d['stages'] if s['status'] == 'ASSIGNED'), None)
+                cycle_list.append(d)
+        conn.close()
+        return jsonify({"status": "success", "employee": emp, "cycles": cycle_list})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/trainers/performance', methods=['GET'])
 def trainers_performance():
