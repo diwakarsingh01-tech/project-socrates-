@@ -428,6 +428,7 @@ background: rgba(217,119,6,0.1);
                     case 'access_mgmt': return <AccessMgmtView user={activeTrainer} />;
                     case 'travel_hub': return <TravelHubView user={activeTrainer} />;
                     case 'training': return <TrainingMgmtView user={activeTrainer} />;
+                    case 'audit': return <AuditLogView user={activeTrainer} />;
                     default: return <AdminDashboard onNav={setView} user={activeTrainer} dbDiag={dbDiag} />;
                 }
             };
@@ -680,6 +681,9 @@ background: rgba(217,119,6,0.1);
                             <div onClick={() => setView('training')} className={`sidebar-link ${view==='training'?'active':''}`}><i className="fas fa-graduation-cap w-5"></i> Training Cycles</div>
 
                             {(isSuperAdmin || isLeader) && (
+                                <div onClick={() => setView('audit')} className={`sidebar-link ${view==='audit'?'active':''}`}><i className="fas fa-scroll w-5 text-amber-500"></i> Audit Log</div>
+                            )}
+                            {(isSuperAdmin || isLeader) && (
                                 <div onClick={() => setView('access_mgmt')} className={`sidebar-link ${view==='access_mgmt'?'active':''} mt-6 border-t border-white/5 pt-6`}><i className="fas fa-user-shield w-5 text-amber-500"></i> Access Control</div>
                             )}
                         </div>
@@ -842,6 +846,9 @@ background: rgba(217,119,6,0.1);
                                     <div onClick={() => { setView('analytics'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='analytics'?'active':''}`}><i className="fas fa-chart-pie w-5 text-center text-base"></i> Analytics Hub</div>
                                     <div onClick={() => { setView('travel_hub'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='travel_hub'?'active':''}`}><i className="fas fa-map-marked-alt w-5 text-center text-base"></i> Field Travel Hub</div>
                                     <div onClick={() => { setView('training'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='training'?'active':''}`}><i className="fas fa-graduation-cap w-5 text-center text-base"></i> Training Cycles</div>
+                                    {(isSuperAdmin || isLeader) && (
+                                        <div onClick={() => { setView('audit'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer ${view==='audit'?'active':''}`}><i className="fas fa-scroll w-5 text-center text-base text-amber-500"></i> Audit Log</div>
+                                    )}
 
                                     {(isSuperAdmin || isLeader) && (
                                         <div onClick={() => { setView('access_mgmt'); setIsMobileMenuOpen(false); }} className={`sidebar-link flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all cursor-pointer mt-4 border-t border-white/5 pt-4 ${view==='access_mgmt'?'active':''}`}><i className="fas fa-user-shield w-5 text-center text-base text-amber-500"></i> Access Control</div>
@@ -3679,14 +3686,15 @@ alert("Failed to update trainer status: " + data.message);
             const handleStartEdit = (tr) => {
                 setEditTid(tr.id);
                 setEditName(tr.name);
-                setEditPassword(tr.plain_password || 'password123');
+                setEditPassword('');
                 setEditRole(tr.role || 'Trainer');
                 setShowEditModal(true);
             };
 
             const handleEditSubmit = (e) => {
                 e.preventDefault();
-                if (!editName || !editPassword) return alert("Please fill in Trainer Name and Password");
+                if (!editName) return alert("Please fill in Trainer Name");
+                if (editPassword && editPassword.length < 6) return alert("Password must be at least 6 characters.");
 
                 const payload = {
                     name: editName.trim(),
@@ -3891,7 +3899,7 @@ loadTrainers();
                                     {(isSuperAdmin || isLeader) && (
                                         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex justify-between items-center text-xs">
                                             <span className="text-slate-400 font-bold uppercase text-[10px]">Password:</span>
-                                            <code className="text-socrates-primary font-bold font-mono">{tr.plain_password || '********'}</code>
+                                            <code className="text-socrates-primary font-bold font-mono">{tr.password_set ? '••••••••' : 'NOT SET'}</code>
                                         </div>
                                     )}
 
@@ -3977,7 +3985,7 @@ loadTrainers();
                                                 {(isSuperAdmin || isLeader) && (
                                                     <td className="px-6 py-4">
                                                         <code className="bg-slate-100 px-2 py-1 rounded text-xs text-socrates-primary font-bold tracking-tight">
-                                                            {tr.plain_password || '********'}
+                                                            {tr.password_set ? '••••••••' : 'NOT SET'}
                                                         </code>
                                                     </td>
                                                 )}
@@ -7623,12 +7631,34 @@ className={`h-full rounded-full bg-gradient-to-r ${
             const [materials, setMaterials] = useState([]);
             const [matFilter, setMatFilter] = useState('');
             const [showMatModal, setShowMatModal] = useState(false);
-            const [matForm, setMatForm] = useState({ id: null, title: '', stage: 'DAY 0', topic: '', version: '1.0', applicable_teams: '', applicable_roles: '', module_id: '', content: '' });
+            const [matForm, setMatForm] = useState({ id: null, title: '', stage: 'DAY 0', topic: '', version: '1.0', applicable_teams: '', applicable_roles: '', module_id: '', content: '', apply_active_cycles: false });
             const [uploadBusy, setUploadBusy] = useState(false);
             const [matMsg, setMatMsg] = useState('');
 
             // ---- Reminders ----
             const [reminders, setReminders] = useState(null);
+
+            // ---- Bulk assign ----
+            const [showBulkModal, setShowBulkModal] = useState(false);
+            const [bulkFile, setBulkFile] = useState(null);
+            const [bulkBusy, setBulkBusy] = useState(false);
+            const [bulkResult, setBulkResult] = useState(null);
+            const [bulkMsg, setBulkMsg] = useState('');
+            const doBulkAssign = () => {
+                if (!bulkFile) { setBulkMsg('Please choose a CSV file first.'); return; }
+                setBulkBusy(true); setBulkMsg('');
+                const fd = new FormData();
+                fd.append('file', bulkFile);
+                fetch('/api/training/bulk-assign', { method: 'POST', body: fd })
+                    .then(r => r.json().then(d => ({ ok: r.ok, d })))
+                    .then(({ ok, d }) => {
+                        if (ok && d.status === 'success') {
+                            setBulkResult(d); setBulkFile(null); loadOverview(); loadCycles();
+                        } else { setBulkResult(null); setBulkMsg(d.message || 'Bulk assign failed.'); }
+                    })
+                    .catch(() => { setBulkResult(null); setBulkMsg('Network error while uploading CSV.'); })
+                    .finally(() => setBulkBusy(false));
+            };
 
             const STAGE_LABELS = { 'DAY 0': 'Day 0 · Orientation', 'DAY 6': 'Day 6 · Follow-up', 'DAY 21': 'Day 21 · Refresher', 'REFRESHER': 'Refresher', 'CUSTOM': 'Custom' };
             const stageLabel = (s) => STAGE_LABELS[s] || s;
@@ -7755,6 +7785,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                 if (!matForm.title.trim()) { setMatMsg('Title is required.'); return; }
                 setMatMsg('');
                 const body = { ...matForm, module_id: matForm.module_id ? parseInt(matForm.module_id) : null };
+                if (!body.apply_active_cycles) delete body.apply_active_cycles;
                 const url = matForm.id ? '/api/training/materials/' + matForm.id : '/api/training/materials';
                 const method = matForm.id ? 'PUT' : 'POST';
                 fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -7888,6 +7919,42 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                 <StatCard label="Overdue" value={overview?.overdue ?? '—'} color={(overview?.overdue || 0) > 0 ? 'text-red-600' : 'text-slate-600'} icon="triangle-exclamation" />
                                 <StatCard label="Materials" value={overview?.materials ?? '—'} color="text-fuchsia-600" icon="folder-open" />
                             </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3">
+                                    <h3 className="text-sm font-extrabold text-slate-700"><i className="fas fa-chart-simple mr-1.5 text-amber-500"></i>Training Coverage</h3>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Completion Rate</span>
+                                        <span className="text-sm font-black text-emerald-600">{overview?.analytics?.completion_rate ?? 0}%</span>
+                                    </div>
+                                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                                        <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" style={{ width: Math.min((overview?.analytics?.completion_rate ?? 0), 100) + '%' }}></div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">By Status</div>
+                                        {(overview?.analytics?.by_status || []).length === 0 ? <div className="text-[10px] text-slate-300">No cycles yet</div> :
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {(overview?.analytics?.by_status || []).map(s => (
+                                                <span key={s.status} className={`text-[9px] font-extrabold px-2 py-1 rounded-full ${s.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700' : s.status === 'OVERDUE' ? 'bg-red-100 text-red-600' : s.status === 'ACTIVE' ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`}>{s.status} · {s.c}</span>
+                                            ))}
+                                        </div>}
+                                    </div>
+                                </div>
+                                <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3">
+                                    <h3 className="text-sm font-extrabold text-slate-700"><i className="fas fa-building-columns mr-1.5 text-amber-500"></i>Branch Coverage</h3>
+                                    {(overview?.analytics?.by_branch || []).length === 0 ? <div className="text-[10px] text-slate-300">No branch data yet</div> :
+                                    <div className="space-y-1.5">
+                                        {(overview?.analytics?.by_branch || []).map(b => (
+                                            <div key={b.branch_name} className="flex items-center gap-2">
+                                                <span className="text-[10px] font-bold text-slate-600 truncate w-36">{b.branch_name}</span>
+                                                <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                                                    <div className="h-full rounded-full bg-amber-400" style={{ width: Math.min(Math.round((b.c / Math.max(1, (overview?.analytics?.by_branch || []).reduce((a, x) => a + (x.c || 0), 0))) * 100), 100) + '%' }}></div>
+                                                </div>
+                                                <span className="text-[10px] font-extrabold text-slate-500 w-6 text-right">{b.c}</span>
+                                            </div>
+                                        ))}
+                                    </div>}
+                                </div>
+                            </div>
                             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                                 <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
                                     <h3 className="text-sm font-extrabold text-slate-700">Recent Training Cycles</h3>
@@ -7916,7 +7983,15 @@ className={`h-full rounded-full bg-gradient-to-r ${
                     )}
 
                     {tab === 'assign' && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="space-y-4">
+                            <div className="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="text-white text-sm font-extrabold"><i className="fas fa-file-csv mr-2"></i>Bulk Assign via CSV</div>
+                                    <div className="text-indigo-100 text-[10px] font-bold mt-0.5">Assign multiple employees in one upload — employee code, module, mode, start date per row</div>
+                                </div>
+                                <button onClick={() => { setBulkResult(null); setBulkMsg(''); setBulkFile(null); setShowBulkModal(true); }} className="bg-white text-indigo-700 text-xs font-extrabold px-4 py-2.5 rounded-xl hover:opacity-90 transition-all shadow-md"><i className="fas fa-upload mr-1.5"></i>Bulk Assign CSV</button>
+                            </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-4 space-y-3">
                                 <h3 className="text-sm font-extrabold text-slate-700"><i className="fas fa-user-magnifying-glass mr-1.5 text-amber-500"></i>1 · Find Employee (Master Roster)</h3>
                                 <div className="flex gap-2">
@@ -8030,6 +8105,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                 )}
                             </div>
                         </div>
+                        </div>
                     )}
 
                     {tab === 'cycles' && (
@@ -8093,7 +8169,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                     <option value="">All stages</option>
                                     {['DAY 0', 'DAY 6', 'DAY 21', 'REFRESHER', 'ADVANCED', 'CUSTOM'].map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
-                                <button onClick={() => { setMatForm({ id: null, title: '', stage: 'DAY 0', topic: '', version: '1.0', applicable_teams: '', applicable_roles: '', module_id: '', content: '' }); setMatMsg(''); setShowMatModal(true); }} className="bg-gradient-to-r from-amber-500 to-yellow-600 text-[#090D16] text-xs font-extrabold px-4 py-2 rounded-xl shadow-md hover:shadow-lg"><i className="fas fa-plus mr-1.5"></i>New Material</button>
+                                <button onClick={() => { setMatForm({ id: null, title: '', stage: 'DAY 0', topic: '', version: '1.0', applicable_teams: '', applicable_roles: '', module_id: '', content: '', apply_active_cycles: false }); setMatMsg(''); setShowMatModal(true); }} className="bg-gradient-to-r from-amber-500 to-yellow-600 text-[#090D16] text-xs font-extrabold px-4 py-2 rounded-xl shadow-md hover:shadow-lg"><i className="fas fa-plus mr-1.5"></i>New Material</button>
                             </div>
                             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
                                 {materials.length === 0 ? (
@@ -8107,7 +8183,7 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                                     <div className="text-[10px] text-slate-400">{stageLabel(m.stage)} · v{m.version || '1.0'}{m.applicable_teams ? ' · Teams: ' + m.applicable_teams : ''}{m.file_path ? ' · file attached' : ''}</div>
                                                 </div>
                                                 <div className="flex items-center gap-1.5 shrink-0">
-                                                    <button onClick={() => { setMatForm({ id: m.id, title: m.title, stage: m.stage, topic: m.topic || '', version: m.version || '1.0', applicable_teams: m.applicable_teams || '', applicable_roles: m.applicable_roles || '', module_id: m.module_id || '', content: m.content || '' }); setMatMsg(''); setShowMatModal(true); }} className="text-[10px] font-extrabold text-sky-600 hover:underline"><i className="fas fa-pen mr-1"></i>Edit</button>
+                                                    <button onClick={() => { setMatForm({ id: m.id, title: m.title, stage: m.stage, topic: m.topic || '', version: m.version || '1.0', applicable_teams: m.applicable_teams || '', applicable_roles: m.applicable_roles || '', module_id: m.module_id || '', content: m.content || '', apply_active_cycles: false }); setMatMsg(''); setShowMatModal(true); }} className="text-[10px] font-extrabold text-sky-600 hover:underline"><i className="fas fa-pen mr-1"></i>Edit</button>
                                                     {m.active ? <button onClick={() => deactivateMaterial(m.id)} className="text-[10px] font-extrabold text-red-500 hover:underline"><i className="fas fa-toggle-off mr-1"></i>Deactivate</button> : null}
                                                 </div>
                                             </div>
@@ -8225,6 +8301,12 @@ className={`h-full rounded-full bg-gradient-to-r ${
                                             <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Version</label>
                                             <input value={matForm.version} onChange={(e) => setMatForm({ ...matForm, version: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
                                         </div>
+                                        {matForm.id && (
+                                            <label className="flex items-center gap-2 bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-indigo-100/70 transition-all">
+                                                <input type="checkbox" checked={!!matForm.apply_active_cycles} onChange={(e) => setMatForm({ ...matForm, apply_active_cycles: e.target.checked })} className="accent-indigo-600 w-4 h-4" />
+                                                <span className="text-[11px] font-extrabold text-indigo-700">Apply updated version to active training cycles <span className="font-bold text-indigo-400">(re-open pending stages with new material)</span></span>
+                                            </label>
+                                        )}
                                         <div>
                                             <label className="text-[9px] font-extrabold uppercase tracking-wider text-slate-400">Topic</label>
                                             <input value={matForm.topic} onChange={(e) => setMatForm({ ...matForm, topic: e.target.value })} className="w-full text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 focus:outline-none" />
@@ -8266,6 +8348,130 @@ className={`h-full rounded-full bg-gradient-to-r ${
                             </div>
                         </div>
                     )}
+                    {showBulkModal && (
+                        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => { if (!bulkBusy) setShowBulkModal(false); }}>
+                            <div className="w-full max-w-lg bg-white rounded-3xl shadow-2xl p-6 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-base font-extrabold text-slate-800"><i className="fas fa-file-csv mr-2 text-indigo-500"></i>Bulk Assign Training</h3>
+                                    <button onClick={() => { if (!bulkBusy) setShowBulkModal(false); }} className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs font-extrabold"><i className="fas fa-xmark"></i></button>
+                                </div>
+                                <p className="text-[11px] font-semibold text-slate-500 leading-relaxed mb-4">
+                                    Upload a CSV with columns: <code className="bg-slate-100 px-1 py-0.5 rounded text-[10px] font-extrabold">emp_code,module_id,mode,start_date,notes</code>.
+                                    Mode: <code className="bg-slate-100 px-1 py-0.5 rounded text-[10px] font-extrabold">FULL</code> (Day 0 → 6 → 21), <code className="bg-slate-100 px-1 py-0.5 rounded text-[10px] font-extrabold">DAY6_ONLY</code>, <code className="bg-slate-100 px-1 py-0.5 rounded text-[10px] font-extrabold">DAY21_ONLY</code>, <code className="bg-slate-100 px-1 py-0.5 rounded text-[10px] font-extrabold">REFRESHER</code> or <code className="bg-slate-100 px-1 py-0.5 rounded text-[10px] font-extrabold">CUSTOM</code>.
+                                </p>
+                                <div className="flex flex-wrap items-center gap-2 mb-3">
+                                    <a href="/api/training/bulk-assign/template" className="text-[11px] font-extrabold text-indigo-600 hover:underline"><i className="fas fa-download mr-1"></i>Download CSV template</a>
+                                </div>
+                                <label className="flex items-center justify-center gap-2 w-full border-2 border-dashed border-slate-300 rounded-2xl px-4 py-6 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/50 transition-all">
+                                    <i className="fas fa-cloud-arrow-up text-lg text-indigo-400"></i>
+                                    <span className="text-xs font-extrabold text-slate-600">{bulkFile ? bulkFile.name : 'Choose CSV file…'}</span>
+                                    <input type="file" className="hidden" accept=".csv,text/csv" onChange={(e) => { setBulkFile(e.target.files[0] || null); setBulkResult(null); setBulkMsg(''); }} />
+                                </label>
+                                {bulkMsg && <div className="mt-3 text-[11px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{bulkMsg}</div>}
+                                {bulkResult && bulkResult.assigned?.length > 0 && (
+                                    <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3 max-h-40 overflow-y-auto">
+                                        <div className="text-[10px] font-extrabold text-emerald-700 uppercase tracking-wider mb-1.5">✓ Assigned ({bulkResult.assigned.length})</div>
+                                        {bulkResult.assigned.map((a, i) => (
+                                            <div key={i} className="text-[10px] font-bold text-emerald-800">{a.emp_code} → <span className="text-emerald-600">{a.cycle_code}</span> ({a.mode})</div>
+                                        ))}
+                                    </div>
+                                )}
+                                {bulkResult && bulkResult.failed?.length > 0 && (
+                                    <div className="mt-2 bg-red-50 border border-red-100 rounded-xl p-3 max-h-40 overflow-y-auto">
+                                        <div className="text-[10px] font-extrabold text-red-600 uppercase tracking-wider mb-1.5">Failed ({bulkResult.failed.length})</div>
+                                        {bulkResult.failed.map((f, i) => (
+                                            <div key={i} className="text-[10px] font-bold text-red-700">Line {f.line}: {f.emp_code} — {f.error}</div>
+                                        ))}
+                                    </div>
+                                )}
+                                <button onClick={doBulkAssign} disabled={bulkBusy} className="mt-4 w-full bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-extrabold py-3 rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50">
+                                    {bulkBusy ? <><i className="fas fa-spinner fa-spin mr-1.5"></i>Uploading…</> : <><i className="fas fa-upload mr-1.5"></i>Upload &amp; Assign</>}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+        const AuditLogView = () => {
+            const [logs, setLogs] = useState([]);
+            const [action, setAction] = useState('');
+            const [actor, setActor] = useState('');
+            const [limit, setLimit] = useState(200);
+            const [busy, setBusy] = useState(false);
+            const [msg, setMsg] = useState('');
+            const loadLogs = () => {
+                setBusy(true); setMsg('');
+                const q = new URLSearchParams();
+                if (action) q.set('action', action);
+                if (actor.trim()) q.set('actor', actor.trim());
+                q.set('limit', limit);
+                fetch('/api/admin/audit-log?' + q.toString())
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.status === 'success') setLogs(d.logs || []);
+                        else { setLogs([]); setMsg(d.message || 'Could not load audit log.'); }
+                    })
+                    .catch(() => { setLogs([]); setMsg('Network error while loading audit log.'); })
+                    .finally(() => setBusy(false));
+            };
+            const actions = [...new Set((logs || []).map(l => l.action))].sort();
+            const filtered = (logs || []).filter(l => !action || l.action === action).filter(l => !actor.trim() || String(l.actor || '').toUpperCase().includes(actor.trim().toUpperCase()));
+            useEffect(() => { loadLogs(); }, []);
+            return (
+                <div className="p-4 md:p-6 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <h2 className="text-lg font-extrabold text-slate-800"><i className="fas fa-scroll mr-2 text-amber-500"></i>Audit Log</h2>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">Every login, password change, trainer update, material change &amp; training action — recorded</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <input value={actor} onChange={(e) => setActor(e.target.value)} placeholder="Search actor…" className="text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                            <select value={action} onChange={(e) => setAction(e.target.value)} className="text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 bg-white">
+                                <option value="">All actions</option>
+                                {actions.map(a => <option key={a} value={a}>{a}</option>)}
+                            </select>
+                            <select value={limit} onChange={(e) => setLimit(parseInt(e.target.value))} className="text-xs font-semibold border border-slate-200 rounded-xl px-2.5 py-2 bg-white">
+                                <option value={100}>100</option>
+                                <option value={200}>200</option>
+                                <option value={500}>500</option>
+                            </select>
+                            <button onClick={loadLogs} className="bg-[#090D16] text-amber-400 text-xs font-extrabold px-4 py-2 rounded-xl hover:opacity-90 transition-all"><i className="fas fa-magnifying-glass mr-1"></i>{busy ? 'Loading…' : 'Refresh'}</button>
+                        </div>
+                    </div>
+                    {msg && <div className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-100 rounded-xl px-3 py-2">{msg}</div>}
+                    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                        {filtered.length === 0 ? (
+                            <div className="p-10 text-center text-xs text-slate-400">No audit entries match these filters.</div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <thead>
+                                        <tr className="bg-slate-50 text-[9px] font-extrabold uppercase tracking-wider text-slate-400">
+                                            <th className="px-4 py-3">Time</th>
+                                            <th className="px-4 py-3">Actor</th>
+                                            <th className="px-4 py-3">Action</th>
+                                            <th className="px-4 py-3">Entity</th>
+                                            <th className="px-4 py-3">Detail</th>
+                                            <th className="px-4 py-3">IP</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {filtered.map(l => (
+                                            <tr key={l.id} className="hover:bg-slate-50/60">
+                                                <td className="px-4 py-2.5 text-[10px] font-bold text-slate-500 whitespace-nowrap">{l.ts}</td>
+                                                <td className="px-4 py-2.5 text-[10px] font-extrabold text-slate-700 whitespace-nowrap">{l.actor || '—'}</td>
+                                                <td className="px-4 py-2.5"><span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 whitespace-nowrap">{l.action}</span></td>
+                                                <td className="px-4 py-2.5 text-[10px] font-bold text-slate-500 whitespace-nowrap">{l.entity || '—'}{l.entity_id ? ' / ' + l.entity_id : ''}</td>
+                                                <td className="px-4 py-2.5 text-[10px] text-slate-600 max-w-xs truncate">{l.detail || '—'}</td>
+                                                <td className="px-4 py-2.5 text-[10px] font-bold text-slate-400 whitespace-nowrap">{l.ip || '—'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
                 </div>
             );
         };

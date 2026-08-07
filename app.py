@@ -21,27 +21,57 @@ import sqlite3
 import os
 import datetime
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 import csv
 import io
 import re
 import urllib.request
 import json
+import secrets as _secrets
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'socrates-secret-key-123'
+
+# SECRET KEY: read from environment (SECRET_KEY) or a persisted 0600 file next to
+# the DB, auto-generated on first boot. Never a hardcoded default.
+def _load_secret_key():
+    env = os.environ.get('SECRET_KEY')
+    if env:
+        return env
+    key_file = os.path.join(os.path.dirname(os.path.abspath(DB_FILE)) or '.', '.socrates_secret_key')
+    try:
+        if os.path.exists(key_file):
+            val = open(key_file, 'r').read().strip()
+            if val:
+                return val
+        val = _secrets.token_hex(32)
+        with open(key_file, 'w') as f:
+            f.write(val)
+        os.chmod(key_file, 0o600)
+        return val
+    except Exception:
+        # Fallback: per-process random key (sessions invalidate on restart only).
+        return _secrets.token_hex(32)
+
+DB_FILE = os.environ.get('SOCRATES_DB', "socrates.db")
+app.config['SECRET_KEY'] = _load_secret_key()
 app.config['UPLOAD_FOLDER'] = 'uploads'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Initialize SocketIO with threading async_mode for Python 3.12+ compatibility
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
-DB_FILE = "socrates.db"
+# Known default passwords — accounts provisioned with these carry must_change=1
+# until the owner sets a personal one. Defined BEFORE init_db() because the
+# credential migration inside init_db() consults it.
+DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
 
 # --- DATABASE SETUP ---
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
 
     def _table_exists(name):
         return cursor.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
@@ -104,10 +134,12 @@ def init_db():
     cursor.execute("SELECT * FROM trainers WHERE UPPER(trainer_id)='ADMIN'")
     admin_user = cursor.fetchone()
     if not admin_user:
-        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, status, must_change) VALUES ('ADMIN', 'Super Admin', 'All', 'admin123', 'SuperAdmin', 'Active', 1)")
+        cursor.execute("INSERT INTO trainers (trainer_id, name, zone, password, role, status, must_change) VALUES ('ADMIN', 'Super Admin', 'All', ?, 'SuperAdmin', 'Active', 1)",
+                       (generate_password_hash('admin123', method='pbkdf2:sha256'),))
     else:
         if not admin_user['password']:
-            cursor.execute("UPDATE trainers SET password='admin123', status='Active', role='SuperAdmin' WHERE UPPER(trainer_id)='ADMIN'")
+            cursor.execute("UPDATE trainers SET password=?, status='Active', role='SuperAdmin' WHERE UPPER(trainer_id)='ADMIN'",
+                           (generate_password_hash('admin123', method='pbkdf2:sha256'),))
         else:
             cursor.execute("UPDATE trainers SET status='Active', role='SuperAdmin' WHERE UPPER(trainer_id)='ADMIN'")
     
@@ -377,6 +409,47 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_training_cycle_stages_cycle ON training_cycle_stages(cycle_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_training_materials_stage ON training_materials(stage, active)")
 
+    # Audit log — append-only record of sensitive actions (auth, training, materials).
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts TEXT,
+        actor TEXT,
+        action TEXT,
+        entity TEXT,
+        entity_id TEXT,
+        detail TEXT,
+        ip TEXT
+    )''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log(actor)")
+
+    # In-app notifications (assigned cycles, due reminders). Gateway hook point
+    # for future WhatsApp/email delivery — no credentials configured yet.
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        emp_code TEXT,
+        kind TEXT,
+        title TEXT,
+        message TEXT,
+        created_at TEXT,
+        read INTEGER DEFAULT 0
+    )''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_notifications_emp ON notifications(emp_code, read)")
+
+    # ---- CREDENTIAL MIGRATION ----
+    # Upgrade any legacy plain-text passwords to pbkdf2:sha256 hashes. Accounts
+    # still on a known default get must_change=1 so the owner sets a real one.
+    for tr in cursor.execute("SELECT trainer_id, password, must_change FROM trainers").fetchall():
+        p = tr['password']
+        if p and not (isinstance(p, str) and p.startswith(('pbkdf2:', 'scrypt:', 'sha256$', 'md5$', 'bcrypt$'))):
+            is_default = str(p) in DEFAULT_PASSWORDS
+            cursor.execute(
+                "UPDATE trainers SET password=?, must_change=? WHERE trainer_id=?",
+                (generate_password_hash(str(p), method='pbkdf2:sha256'),
+                 1 if (is_default or int(tr['must_change'] or 0)) else 0, tr['trainer_id']))
+
     
     # AI Refresher Campaigns (trainees flagged below 60% for mandatory retraining)
     cursor.execute('''
@@ -463,12 +536,92 @@ init_db()
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+    except Exception:
+        pass
     return conn
 
 def _session_user():
     """Return the logged-in admin/trainer session user dict, or None."""
     user = session.get('user')
     return user if user else None
+
+
+# --- CREDENTIAL SECURITY HELPERS ---
+# Passwords are stored as werkzeug pbkdf2:sha256 hashes. Legacy rows written
+# before this migration hold plain text; they are upgraded lazily (see below).
+
+def _is_hash(pwd):
+    return isinstance(pwd, str) and pwd.startswith(('pbkdf2:', 'scrypt:', 'sha256$', 'md5$', 'bcrypt$'))
+
+def _hash_pwd(pwd):
+    return generate_password_hash(str(pwd), method='pbkdf2:sha256')
+
+def _verify_pwd(stored, plain):
+    """Verify a plain-text attempt against a stored credential. Works for both
+    hashed rows and legacy plain-text rows (comparison is constant-time-safe
+    only for hashed rows; plain legacy rows are migrated away ASAP)."""
+    if not stored:
+        return False
+    if _is_hash(stored):
+        return check_password_hash(stored, str(plain))
+    return _secrets.compare_digest(str(stored), str(plain))
+
+def _now_str():
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+# --- AUDIT LOG ---
+def _audit(action, entity='', entity_id='', detail=''):
+    """Append a row to audit_log. Never raises — auditing must not break flows."""
+    try:
+        conn = get_db_connection()
+        user = _session_user()
+        actor = (user or {}).get('trainer_id') or 'SYSTEM'
+        ip = ''
+        try:
+            ip = request.remote_addr or ''
+        except Exception:
+            ip = ''
+        conn.execute(
+            "INSERT INTO audit_log (ts, actor, action, entity, entity_id, detail, ip) VALUES (?,?,?,?,?,?,?)",
+            (_now_str(), actor, action, entity, entity_id, detail[:2000], ip))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+# --- NOTIFICATIONS (in-app notice board; hook point for WhatsApp/email gateway) ---
+def _notify(emp_code, kind, title, message):
+    """Record a notification for an employee. Future WhatsApp/email gateway can
+    call the same helper (a hook function) — no gateway credentials exist yet."""
+    try:
+        conn = get_db_connection()
+        conn.execute(
+            "INSERT INTO notifications (emp_code, kind, title, message, created_at) VALUES (?,?,?,?,?)",
+            (emp_code or '', kind, title, message, _now_str()))
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+# --- FORGOT-PASSWORD RATE LIMIT (in-memory per-process: 5 tries / 15 min / target) ---
+_FP_ATTEMPTS = {}
+
+def _fp_rate_limited(tid, ip):
+    key = (str(tid or '').upper(), str(ip or ''))
+    now = datetime.datetime.now()
+    window = now - datetime.timedelta(minutes=15)
+    _FP_ATTEMPTS[key] = [t for t in _FP_ATTEMPTS.get(key, []) if t > window]
+    return len(_FP_ATTEMPTS[key]) >= 5
+
+def _fp_note_attempt(tid, ip):
+    key = (str(tid or '').upper(), str(ip or ''))
+    _FP_ATTEMPTS.setdefault(key, []).append(datetime.datetime.now())
 
 
 def _norm_name(text):
@@ -581,7 +734,6 @@ def admin_me():
         conn.close()
         must_change = 0
         if row:
-            DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
             must_change = int(row['must_change'] or 0) or (1 if str(row['password'] or '') in DEFAULT_PASSWORDS else 0)
         s_user['must_change'] = must_change
         return jsonify({
@@ -611,14 +763,15 @@ def admin_change_password():
     if not row:
         conn.close()
         return jsonify({"status": "error", "message": "Account not found."}), 404
-    if str(row['password'] or '') != old_pwd:
+    if not _verify_pwd(row['password'], old_pwd):
         conn.close()
+        _audit('password_change_failed', 'trainer', user.get('trainer_id', ''), 'wrong current password')
         return jsonify({"status": "error", "message": "Current password is incorrect."}), 401
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    conn.execute("UPDATE trainers SET password=?, must_change=0, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (new_pwd, now, user.get('trainer_id', '')))
+    conn.execute("UPDATE trainers SET password=?, must_change=0, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (_hash_pwd(new_pwd), _now_str(), user.get('trainer_id', '')))
     conn.commit()
     conn.close()
+    _audit('password_changed', 'trainer', user.get('trainer_id', ''), 'self-service password change')
     return jsonify({"status": "success", "message": "Password changed successfully!"})
 
 
@@ -637,6 +790,15 @@ def admin_forgot_password():
     if len(new_pwd) < 6:
         return jsonify({"status": "error", "message": "New password must be at least 6 characters long."}), 400
 
+    ip = ''
+    try:
+        ip = request.remote_addr or ''
+    except Exception:
+        ip = ''
+    if _fp_rate_limited(tid, ip):
+        _audit('password_reset_blocked', 'trainer', tid, 'rate limit exceeded (5 tries / 15 min)')
+        return jsonify({"status": "error", "message": "Too many reset attempts for this account. Please wait 15 minutes or contact your Super Admin."}), 429
+
     conn = get_db_connection()
     row = conn.execute(
         "SELECT * FROM trainers WHERE UPPER(TRIM(trainer_id))=UPPER(?)",
@@ -644,20 +806,23 @@ def admin_forgot_password():
     ).fetchone()
     if not row:
         conn.close()
+        _fp_note_attempt(tid, ip)
         return jsonify({"status": "error", "message": f"Trainer ID '{tid}' is not registered in the system. Contact your Super Admin to create your account."}), 404
     # Tolerant name check: collapse internal whitespace + case-insensitive, so
     # 'Ritwik  Kumar' (double space) or 'ritwik kumar' still verify.
     if _norm_name(row['name']) != _norm_name(name):
         conn.close()
+        _fp_note_attempt(tid, ip)
+        _audit('password_reset_failed', 'trainer', tid, 'name mismatch on identity verification')
         return jsonify({"status": "error", "message": "Identity could not be verified. The Trainer ID is registered, but the full name does not match. Check the exact spelling (e.g. 'RITWIK KUMAR' vs 'Ritwik Kumar')."}, 404)
     if row['status'] and str(row['status']).lower() == 'inactive':
         conn.close()
         return jsonify({"status": "error", "message": "Account is inactive. Contact your Super Admin."}), 403
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    conn.execute("UPDATE trainers SET password=?, must_change=0, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (new_pwd, now, tid))
+    conn.execute("UPDATE trainers SET password=?, must_change=0, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (_hash_pwd(new_pwd), _now_str(), tid))
     conn.commit()
     conn.close()
+    _audit('password_reset', 'trainer', tid, 'self-service reset (ID + name verified)')
     return jsonify({"status": "success", "message": "Password reset successfully! Please log in with your new password."})
 
 
@@ -678,11 +843,11 @@ def reset_trainer_password(trainer_id):
         conn.close()
         return jsonify({"status": "error", "message": "Trainer not found."}), 404
 
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     default_pwd = 'pass123'
-    conn.execute("UPDATE trainers SET password=?, must_change=1, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (default_pwd, now, trainer_id))
+    conn.execute("UPDATE trainers SET password=?, must_change=1, updated_at=? WHERE UPPER(trainer_id)=UPPER(?)", (_hash_pwd(default_pwd), _now_str(), trainer_id))
     conn.commit()
     conn.close()
+    _audit('password_admin_reset', 'trainer', trainer_id, 'superadmin/leader forced reset to default')
     return jsonify({"status": "success", "message": f"Password for {trainer_id} reset to '{default_pwd}'. They must change it on next login."})
 
 @app.route('/api/admin/login', methods=['POST'])
@@ -695,34 +860,39 @@ def admin_login():
         return jsonify({"status": "error", "message": "Please enter both Trainer ID and Password."}), 400
         
     conn = get_db_connection()
-    # Primary path: exact Trainer ID (case-insensitive) + password.
+    # Primary path: exact Trainer ID (case-insensitive) + password. Verification
+    # happens in Python so both hashed and legacy plain-text rows work.
     user = conn.execute(
-        "SELECT * FROM trainers WHERE UPPER(TRIM(trainer_id))=UPPER(?) AND password=?",
-        (raw_id, password)
+        "SELECT * FROM trainers WHERE UPPER(TRIM(trainer_id))=UPPER(?)",
+        (raw_id,)
     ).fetchone()
-    if not user:
+    if not user or not _verify_pwd(user['password'], password):
         # Fallback: log in by full name with tolerant matching (case + whitespace
         # normalized) — the name is only a convenience alias, never a hard key.
-        cands = conn.execute("SELECT * FROM trainers WHERE password=?", (password,)).fetchall()
         target = _norm_name(raw_id)
-        user = next((c for c in cands if _norm_name(c['name'] or '') == target), None)
+        user = None
+        for cand in conn.execute("SELECT * FROM trainers").fetchall():
+            if _norm_name(cand['name'] or '') == target and _verify_pwd(cand['password'], password):
+                user = cand
+                break
     
     if user:
         if user['status'] and str(user['status']).lower() == 'inactive':
             conn.close()
+            _audit('login_failed', 'trainer', raw_id, 'inactive account')
             return jsonify({"status": "error", "message": "Account is inactive. Access revoked by Super Admin."}), 403
             
-        now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-        conn.execute("UPDATE trainers SET last_login=? WHERE trainer_id=?", (now, user['trainer_id']))
+        conn.execute("UPDATE trainers SET last_login=? WHERE trainer_id=?", (_now_str(), user['trainer_id']))
+        # Lazily upgrade any legacy plain-text credential to a hash.
+        if not _is_hash(user['password']):
+            conn.execute("UPDATE trainers SET password=?, must_change=? WHERE trainer_id=?",
+                         (_hash_pwd(user['password']), int(user['must_change'] or 0), user['trainer_id']))
         conn.commit()
 
-        # Password hygiene: users provisioned with a default/known password must
-        # set their own on first login. must_change is set by the admin (reset /
-        # create / CSV import) or when the password still matches a known default.
-        DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
-        current_pwd = str(user['password'] or '')
-        is_default_pwd = current_pwd in DEFAULT_PASSWORDS
-        must_change = int(user['must_change'] or 0) or (1 if is_default_pwd else 0)
+        # Password hygiene: accounts provisioned with a default password carry
+        # must_change=1 (set at create / CSV import / migration), forcing the
+        # owner to pick a personal one on first login.
+        must_change = int(user['must_change'] or 0)
 
         user_data = {
             "trainer_id": user['trainer_id'],
@@ -732,6 +902,7 @@ def admin_login():
         }
         session['user'] = user_data
         conn.close()
+        _audit('login', 'trainer', user['trainer_id'], 'login success')
         
         return jsonify({
             "status": "success",
@@ -742,6 +913,7 @@ def admin_login():
         })
         
     conn.close()
+    _audit('login_failed', 'trainer', raw_id, 'bad credentials')
     return jsonify({"status": "error", "message": "Invalid Credentials or Access Revoked"}), 401
 
 @app.route('/api/admin/logout', methods=['POST'])
@@ -775,7 +947,7 @@ def gdrive_status():
 def handle_trainers():
     conn = get_db_connection()
     if request.method == 'GET':
-        trainers = conn.execute("SELECT trainer_id as id, name, zone, status, role, last_login, password as plain_password, business_units, divisions, branches FROM trainers ORDER BY trainer_id ASC").fetchall()
+        trainers = conn.execute("SELECT trainer_id as id, name, zone, status, role, last_login, (password IS NOT NULL AND password != '') AS password_set, business_units, divisions, branches FROM trainers ORDER BY trainer_id ASC").fetchall()
         conn.close()
         return jsonify([dict(t) for t in trainers])
     
@@ -794,14 +966,14 @@ def handle_trainers():
             conn.close()
             return jsonify({"status": "error", "message": "Trainer ID and Name are required."}), 400
 
-        DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
         must_change = 1 if password in DEFAULT_PASSWORDS else 0
         conn.execute(
             "INSERT INTO trainers (trainer_id, name, zone, password, role, status, business_units, divisions, branches, must_change) VALUES (?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?) ON CONFLICT(trainer_id) DO UPDATE SET name=excluded.name, password=excluded.password, role=excluded.role, status='Active', business_units=excluded.business_units, divisions=excluded.divisions, branches=excluded.branches, must_change=excluded.must_change",
-            (t_id, name, zone, password, role, business_units, divisions, branches, must_change)
+            (t_id, name, zone, _hash_pwd(password), role, business_units, divisions, branches, must_change)
         )
         conn.commit()
         conn.close()
+        _audit('trainer_created', 'trainer', t_id, 'new trainer account')
         return jsonify({"status": "success", "message": f"Trainer '{t_id}' created successfully!"})
 
 @app.route('/api/trainers/<trainer_id>/status', methods=['PUT'])
@@ -838,8 +1010,9 @@ def manage_single_trainer(trainer_id):
         branches = str(data.get('branches', 'ALL')).strip() or 'ALL'
 
         # If the admin is setting the password to a known default, force the user
-        # to change it on next login (default-password hygiene).
-        DEFAULT_PASSWORDS = {'admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123'}
+        # to change it on next login (default-password hygiene). Empty password
+        # keeps the existing credential (front-end never sends the stored hash).
+        hashed_pwd = _hash_pwd(password) if password else ''
         must_change = 1 if password and password in DEFAULT_PASSWORDS else 0
         conn.execute("""
             UPDATE trainers SET
@@ -852,9 +1025,10 @@ def manage_single_trainer(trainer_id):
                 branches=?,
                 must_change=?
             WHERE UPPER(trainer_id)=?
-        """, (name, password, role, zone, business_units, divisions, branches, must_change, trainer_id))
+        """, (name, hashed_pwd, role, zone, business_units, divisions, branches, must_change, trainer_id))
         conn.commit()
         conn.close()
+        _audit('trainer_updated', 'trainer', trainer_id, 'profile updated')
         return jsonify({"status": "success", "message": f"Trainer profile '{trainer_id}' updated successfully."})
 
 @app.route('/api/trainers/upload', methods=['POST'])
@@ -925,11 +1099,12 @@ def bulk_upload_trainers():
                             divisions=excluded.divisions,
                             branches=excluded.branches,
                             must_change=excluded.must_change
-                    """, (t_id, t_name, t_zone, t_pwd, t_role, t_bu, t_div, t_br, 1 if t_pwd in ('admin123', 'pass123', 'password123', 'pass456', '123456', 'welcome123') else 0))
+                    """, (t_id, t_name, t_zone, _hash_pwd(t_pwd), t_role, t_bu, t_div, t_br, 1 if t_pwd in DEFAULT_PASSWORDS else 0))
                     rows_processed += 1
                     
             conn.commit()
             conn.close()
+            _audit('trainers_bulk_upload', 'trainer', '', '{} trainer accounts from CSV'.format(rows_processed))
             return jsonify({
                 "status": "success",
                 "message": f"Successfully processed {rows_processed} trainer accounts from CSV!"
@@ -4407,12 +4582,33 @@ def training_overview():
             item['total_stages'] = conn.execute(
                 "SELECT COUNT(*) AS c FROM training_cycle_stages WHERE cycle_id=?", (r['id'],)).fetchone()['c']
             recent_list.append(item)
+        # Analytics mini-stats: status distribution, branch coverage, completion rate.
+        by_status = [dict(r) for r in conn.execute(
+            "SELECT status, COUNT(*) AS c FROM training_cycles GROUP BY status ORDER BY c DESC").fetchall()]
+        by_branch = [dict(r) for r in conn.execute("""
+            SELECT COALESCE(e.branch_name, '—') AS branch_name, COUNT(*) AS c
+            FROM training_cycles c LEFT JOIN employees e ON UPPER(e.emp_code)=UPPER(c.emp_code)
+            GROUP BY COALESCE(e.branch_name, '—') ORDER BY c DESC LIMIT 8
+        """).fetchall()]
+        by_zone = [dict(r) for r in conn.execute("""
+            SELECT COALESCE(e.zone, '—') AS zone, COUNT(*) AS c
+            FROM training_cycles c LEFT JOIN employees e ON UPPER(e.emp_code)=UPPER(c.emp_code)
+            GROUP BY COALESCE(e.zone, '—') ORDER BY c DESC LIMIT 8
+        """).fetchall()]
+        total = total_cycles or 1
+        completion_rate = round(100.0 * completed / total, 1)
         conn.close()
         return jsonify({
             "status": "success",
             "total_cycles": total_cycles, "active": active, "completed": completed,
             "due_today": due_today, "due_week": due_week, "overdue": overdue,
             "materials": materials, "recent": recent_list,
+            "analytics": {
+                "by_status": by_status,
+                "by_branch": by_branch,
+                "by_zone": by_zone,
+                "completion_rate": completion_rate,
+            },
         })
     except Exception as e:
         conn.close()
@@ -4577,6 +4773,7 @@ def training_materials_route():
             conn.commit()
             mid = cur.lastrowid
             conn.close()
+            _audit('training_material_created', 'material', str(mid), title)
             return jsonify({"status": "success", "material": {"id": mid}}), 201
     except Exception as e:
         conn.close()
@@ -4600,9 +4797,11 @@ def training_material_item(material_id):
                          (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), material_id))
             conn.commit()
             conn.close()
+            _audit('training_material_deactivated', 'material', str(material_id), m['title'])
             return jsonify({"status": "success", "message": "Material deactivated"})
         data = request.json or {}
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_version = (data.get('version') or m['version'] or '1.0').strip()
         conn.execute("""
             UPDATE training_materials SET title=?, stage=?, topic=?, version=?, applicable_teams=?, applicable_roles=?, module_id=?, content=?, updated_at=?
             WHERE id=?
@@ -4610,16 +4809,28 @@ def training_material_item(material_id):
             (data.get('title') or m['title']).strip(),
             (data.get('stage') or m['stage']).strip(),
             (data.get('topic') if 'topic' in data else m['topic'] or '').strip(),
-            (data.get('version') or m['version'] or '1.0').strip(),
+            new_version,
             (data.get('applicable_teams') if 'applicable_teams' in data else m['applicable_teams'] or '').strip(),
             (data.get('applicable_roles') if 'applicable_roles' in data else m['applicable_roles'] or '').strip(),
             data.get('module_id') if 'module_id' in data else m['module_id'],
             (data.get('content') if 'content' in data else m['content'] or '').strip(),
             now, material_id,
         ))
+        # Version-bump propagation: optionally re-open (mark pending again) every
+        # stage of an ACTIVE cycle that uses this material, so trainees get the
+        # revised kit instead of silently keeping the old one.
+        reopens = 0
+        if data.get('apply_active_cycles') and str(new_version) != str(m['version'] or '1.0'):
+            cur = conn.execute("""
+                UPDATE training_cycle_stages SET status='ASSIGNED', completed_at=NULL,
+                       notes=COALESCE(notes, '') || ' | material updated to v' || ?
+                WHERE material_id=? AND cycle_id IN (SELECT id FROM training_cycles WHERE status='ACTIVE')
+            """, (new_version, material_id))
+            reopens = cur.rowcount
         conn.commit()
         conn.close()
-        return jsonify({"status": "success", "message": "Material updated"})
+        _audit('training_material_updated', 'material', str(material_id), m['title'] + ' -> v' + new_version + (' (reopened {} active stages)'.format(reopens) if reopens else ''))
+        return jsonify({"status": "success", "message": "Material updated", "reopened_stages": reopens})
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -4653,6 +4864,7 @@ def training_material_upload(material_id):
                      (rel_path, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), material_id))
         conn.commit()
         conn.close()
+        _audit('training_material_uploaded', 'material', str(material_id), m['title'] + ' / ' + filename)
         return jsonify({"status": "success", "message": "File uploaded", "file_path": rel_path})
     except Exception as e:
         conn.close()
@@ -4728,6 +4940,8 @@ def training_assign():
             conn.execute("UPDATE training_cycle_stages SET material_id=? WHERE id=?", (mat_id(pending['stage']), pending['id']))
             conn.commit()
             conn.close()
+            _audit('training_assign', 'cycle', latest['cycle_code'], 'CONTINUE ' + emp_code + ' stage ' + pending['stage'])
+            _notify(emp_code, 'training', 'Training continued', 'Stage ' + pending['stage'] + ' of cycle ' + latest['cycle_code'] + ' scheduled for ' + (pending['stage_date'] or ''))
             return jsonify({"status": "success", "message": "Continued cycle " + latest['cycle_code'], "cycle_id": latest['id'], "stage": pending['stage']})
 
         def insert_cycle(cmode, cstart, cnotes):
@@ -4758,7 +4972,156 @@ def training_assign():
         conn.commit()
         detail = _cycle_dict(conn, cycle_id)
         conn.close()
+        _audit('training_assign', 'cycle', detail.get('cycle_code', ''), mode + ' ' + emp_code + ' module=' + str(module_id) + ' start=' + start_date)
+        _notify(emp_code, 'training', 'Training assigned', 'Cycle ' + detail.get('cycle_code', '') + ' (' + mode + ') scheduled from ' + start_date)
         return jsonify({"status": "success", "message": "Training assigned", "cycle": detail}), 201
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/training/bulk-assign/template', methods=['GET'])
+def training_bulk_assign_template():
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    csv_text = "emp_code,module_id,mode,start_date,notes\nSF-1001,1,FULL,2026-08-10,New hire orientation\nSF-1002,,REFRESHER,2026-08-12,Quarterly refresher\n"
+    buf = io.StringIO(csv_text)
+    return Response(buf.getvalue(), mimetype='text/csv',
+                    headers={"Content-Disposition": "attachment; filename=training_bulk_assign_template.csv"})
+
+
+@app.route('/api/training/bulk-assign', methods=['POST'])
+def training_bulk_assign():
+    """CSV bulk training assignment.
+    Columns: emp_code, module_id, mode (FULL/CONTINUE/REFRESHER/CUSTOM), start_date, notes
+    Each valid row creates a new cycle (history preserved). Invalid rows are
+    reported per-row without aborting the batch."""
+    user = _session_user()
+    if not user:
+        return jsonify({"status": "error", "message": "Login required"}), 401
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part provided."}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No file selected."}), 400
+    try:
+        raw = file.read().decode('utf-8-sig', errors='replace')
+        reader = csv.reader(io.StringIO(raw))
+        header = next(reader, None)
+        def find_col(kw):
+            return next((i for i, h in enumerate(header) if any(k in (h or '').strip().lower() for k in kw)), -1)
+        if header is None:
+            return jsonify({"status": "error", "message": "CSV is empty."}), 400
+        c_emp = find_col(['emp_code', 'employee code', 'employee_code', 'emp'])
+        c_mod = find_col(['module_id', 'module id', 'module'])
+        c_mode = find_col(['mode'])
+        c_start = find_col(['start_date', 'start date', 'date'])
+        c_notes = find_col(['notes', 'note'])
+        if c_emp == -1:
+            return jsonify({"status": "error", "message": "CSV must contain an 'emp_code' column."}), 400
+
+        conn = get_db_connection()
+        ok, fail = [], []
+        _bulk_notifs = []
+        for line_no, r in enumerate(reader, start=2):
+            if not r or not any(cell.strip() for cell in r):
+                continue
+            def cell(idx):
+                return r[idx].strip() if idx != -1 and len(r) > idx else ''
+            emp_code = cell(c_emp).upper()
+            module_id_raw = cell(c_mod)
+            mode = (cell(c_mode) or 'FULL').upper()
+            start_date = cell(c_start) or datetime.date.today().strftime("%Y-%m-%d")
+            notes = cell(c_notes)
+            if not emp_code:
+                fail.append({"line": line_no, "emp_code": '', "error": "empty employee code"})
+                continue
+            if mode not in ('FULL', 'CONTINUE', 'REFRESHER', 'CUSTOM'):
+                fail.append({"line": line_no, "emp_code": emp_code, "error": "invalid mode '" + mode + "'"})
+                continue
+            try:
+                datetime.datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                fail.append({"line": line_no, "emp_code": emp_code, "error": "start_date must be YYYY-MM-DD"})
+                continue
+            emp = _emp_dict(conn, emp_code)
+            if not emp:
+                fail.append({"line": line_no, "emp_code": emp_code, "error": "employee not in master roster"})
+                continue
+            module_id = int(module_id_raw) if module_id_raw.isdigit() else None
+            now = _now_str()
+            code = _next_cycle_code(conn)
+            cur = conn.execute("""
+                INSERT INTO training_cycles (cycle_code, emp_code, module_id, trainer_id, start_date, mode, status, notes, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)
+            """, (code, emp_code, module_id, user.get('trainer_id') or 'ADMIN', start_date, mode,
+                  notes or ('Bulk assign ' + mode), user.get('trainer_id') or 'ADMIN', now))
+            cid = cur.lastrowid
+            if mode == 'REFRESHER':
+                conn.execute("INSERT INTO training_cycle_stages (cycle_id, stage, stage_date) VALUES (?, 'REFRESHER', ?)", (cid, start_date))
+            elif mode == 'CUSTOM':
+                conn.execute("INSERT INTO training_cycle_stages (cycle_id, stage, stage_date) VALUES (?, 'CUSTOM', ?)", (cid, start_date))
+            else:
+                for st, sd in _training_stage_dates(start_date).items():
+                    conn.execute("INSERT INTO training_cycle_stages (cycle_id, stage, stage_date) VALUES (?, ?, ?)", (cid, st, sd))
+            ok.append({"line": line_no, "emp_code": emp_code, "cycle_code": code, "mode": mode})
+            _bulk_notifs.append((emp_code, code, mode, start_date))
+        conn.commit()
+        conn.close()
+        # Notify AFTER commit: SQLite holds the write lock until commit, so
+        # inserts from a second connection here would fail with 'database is locked'.
+        for emp_code, code, mode, start_date in _bulk_notifs:
+            _notify(emp_code, 'training', 'Training assigned', 'Cycle ' + code + ' (' + mode + ') scheduled from ' + start_date)
+        _audit('training_bulk_assign', 'cycle', '', '{} assigned, {} failed'.format(len(ok), len(fail)))
+        return jsonify({"status": "success", "assigned": ok, "failed": fail,
+                        "message": "Bulk assign complete: {} assigned, {} failed".format(len(ok), len(fail))})
+    except Exception as e:
+        return jsonify({"status": "error", "message": "Bulk assign failed: " + str(e)}), 500
+
+
+@app.route('/api/training/notifications', methods=['GET'])
+def training_notifications():
+    """Student-facing notice board: notifications for one employee. No login
+    required — follows the student-portal access pattern (emp_code param)."""
+    emp_code = request.args.get('emp_code', '').strip()
+    if not emp_code:
+        return jsonify({"status": "success", "notifications": []})
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, kind, title, message, created_at, read FROM notifications WHERE UPPER(emp_code)=UPPER(?) ORDER BY id DESC LIMIT 30",
+            (emp_code,)).fetchall()
+        conn.close()
+        return jsonify({"status": "success", "notifications": [dict(r) for r in rows]})
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/admin/audit-log', methods=['GET'])
+def admin_audit_log():
+    user = _session_user()
+    if not user or not _is_global_role(user.get('role', '')):
+        return jsonify({"status": "error", "message": "Only Super Admin or Leader can view the audit log."}), 403
+    conn = get_db_connection()
+    try:
+        action = request.args.get('action', '').strip()
+        actor = request.args.get('actor', '').strip()
+        limit = min(int(request.args.get('limit', 200)), 1000)
+        sql = "SELECT * FROM audit_log WHERE 1=1"
+        params = []
+        if action:
+            sql += " AND action=?"
+            params.append(action)
+        if actor:
+            sql += " AND UPPER(actor)=UPPER(?)"
+            params.append(actor)
+        sql += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, params).fetchall()
+        conn.close()
+        return jsonify({"status": "success", "logs": [dict(r) for r in rows]})
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -4870,6 +5233,7 @@ def training_cycle_restart(cycle_id):
         conn.commit()
         detail = _cycle_dict(conn, new_id)
         conn.close()
+        _audit('training_cycle_restart', 'cycle', c['cycle_code'], 'restarted -> ' + detail.get('cycle_code', '') + ' for ' + c['emp_code'])
         return jsonify({"status": "success", "message": "New cycle started; old cycle preserved as SUPERSEDED", "cycle": detail}), 201
     except Exception as e:
         conn.close()
@@ -4891,10 +5255,15 @@ def training_stage_complete(cycle_id, stage):
         conn.execute("UPDATE training_cycle_stages SET status='COMPLETED', completed_at=?, notes=? WHERE id=?",
                      (datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), data.get('notes') or st['notes'], st['id']))
         left = conn.execute("SELECT COUNT(*) AS c FROM training_cycle_stages WHERE cycle_id=? AND status!='COMPLETED'", (cycle_id,)).fetchone()['c']
-        if left == 0:
+        cycle_finished = left == 0
+        if cycle_finished:
             conn.execute("UPDATE training_cycles SET status='COMPLETED' WHERE id=?", (cycle_id,))
         conn.commit()
+        cyc = conn.execute("SELECT cycle_code, emp_code FROM training_cycles WHERE id=?", (cycle_id,)).fetchone()
         conn.close()
+        _audit('training_stage_completed', 'cycle', (cyc['cycle_code'] if cyc else '') + '/' + stage, 'stage completed' + (' (cycle COMPLETED)' if cycle_finished else ''))
+        if cyc:
+            _notify(cyc['emp_code'], 'training', 'Stage completed', stage + ' completed for cycle ' + (cyc['cycle_code'] or ''))
         return jsonify({"status": "success", "message": "Stage completed"})
     except Exception as e:
         conn.close()
@@ -4936,6 +5305,7 @@ def training_cycle_cancel(cycle_id):
         conn.execute("UPDATE training_cycles SET status='CANCELLED' WHERE id=?", (cycle_id,))
         conn.commit()
         conn.close()
+        _audit('training_cycle_cancelled', 'cycle', c['cycle_code'], 'cancelled for ' + c['emp_code'])
         return jsonify({"status": "success", "message": "Cycle cancelled"})
     except Exception as e:
         conn.close()

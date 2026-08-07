@@ -5,3 +5,9 @@ __pycache__/
 .DS_Store
 output.txt
 socrates.db
+
+.socrates_secret_key
+socrates.db.bak_*
+seed_analytics_test.py
+uploads/*.csv
+Icon
